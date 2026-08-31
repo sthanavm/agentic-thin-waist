@@ -103,9 +103,13 @@ if (host.indexOf('youtube.com') !== -1 || host.indexOf('youtu.be') !== -1) {
 }
 const video = document.querySelector('video');
 if (!video) { return {platform: 'unknown', error: 'no_video'}; }
-const out = {
-    platform: host.indexOf('meet.google.com') !== -1 ? 'google_meet' : 'unknown'
-};
+let platform = 'unknown';
+if (host.indexOf('meet.google.com') !== -1) {
+    platform = 'google_meet';
+} else if (host.indexOf('tubitv.com') !== -1) {
+    platform = 'tubi';
+}
+const out = {platform};
 addVideoElementStats(out, video);
 return out;
 """
@@ -530,6 +534,39 @@ def run_job(
                     f"[{app}] synchronized play nudge failed: "
                     f"{type(exc).__name__}: {exc}"
                 )
+
+            ad_wait_deadline = time.monotonic() + 60
+            last_time = None
+            while time.monotonic() < ad_wait_deadline:
+                try:
+                    state = driver.execute_script(
+                        """
+                        const video = document.querySelector('video');
+                        if (!video) return null;
+                        if (video.paused) { video.muted = true; video.play().catch(() => {}); }
+                        return {paused: video.paused, current_time: video.currentTime};
+                        """
+                    )
+                except Exception:  # noqa: BLE001
+                    state = None
+                if (
+                    state
+                    and not state["paused"]
+                    and last_time is not None
+                    and state["current_time"] > last_time + 0.2
+                ):
+                    print(
+                        f"[{app}] playback advancing "
+                        f"(t={state['current_time']:.2f}s); starting measurement window"
+                    )
+                    break
+                last_time = state["current_time"] if state else last_time
+                time.sleep(1)
+            else:
+                print(
+                    f"[{app}] gave up waiting for playback to advance after "
+                    "60s; measuring anyway"
+                )
         deadline = time.monotonic() + duration_seconds
         previous_meet_stats = meet_ready_stats
         previous_meet_timestamp = meet_ready_timestamp
@@ -619,6 +656,9 @@ def main() -> int:
                 ),
             }
         ]
+
+    os.makedirs("/tmp/.X11-unix", exist_ok=True)
+    os.chmod("/tmp/.X11-unix", 0o1777)
 
     launch_lock = threading.Lock()
     sampling_barrier = threading.Barrier(len(jobs))
