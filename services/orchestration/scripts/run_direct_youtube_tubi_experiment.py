@@ -74,7 +74,12 @@ def write_json(path: Path, value: Any) -> None:
     path.write_text(json.dumps(value, indent=2, default=str) + "\n", encoding="utf-8")
 
 
-def build_experiment(capacity_mbps: int, duration_seconds: int) -> dict[str, Any]:
+def build_experiment(
+    capacity_mbps: int,
+    duration_seconds: int,
+    browser_resolution: tuple[int, int],
+) -> dict[str, Any]:
+    window_width, window_height = browser_resolution
     return {
         "experiment_id": f"youtube-tubi-{capacity_mbps}mbps-100ms-pfifo",
         "applications": ["youtube", "tubi"],
@@ -87,6 +92,7 @@ def build_experiment(capacity_mbps: int, duration_seconds: int) -> dict[str, Any
         "buffer_packets": 50,
         "cc_algorithm": "cubic",
         "duration_seconds": duration_seconds,
+        "browser_resolution": f"{window_width}x{window_height}",
     }
 
 
@@ -102,11 +108,15 @@ def run_video_collectors_concurrently(
     display_nums: dict[str, int] | None = None,
     job_options: dict[str, dict[str, Any]] | None = None,
     volume_mounts: list[str] | None = None,
+    browser_resolution: tuple[int, int] = (1920, 1080),
 ) -> None:
     video_urls = video_urls or VIDEO_URLS
     display_nums = display_nums or DISPLAY_NUMS
     job_options = job_options or {}
     volume_mounts = volume_mounts or []
+    window_width, window_height = browser_resolution
+    if window_width <= 0 or window_height <= 0:
+        raise ValueError("browser resolution dimensions must be positive")
 
     ns1_pid = docker(
         "exec", network_container, "cat", "/var/run/substrate/ns1.pid"
@@ -123,6 +133,8 @@ def run_video_collectors_concurrently(
             "out_path": f"/out/{app}_stats.jsonl",
             "duration_seconds": duration_seconds,
             "sample_interval_seconds": 1.0,
+            "window_width": window_width,
+            "window_height": window_height,
         }
         job.update(job_options.get(app, {}))
         jobs.append(job)
@@ -189,8 +201,14 @@ def summarize_stats_jsonl(path: Any) -> dict[str, Any]:
     }
 
 
-def run_one_tier(capacity_mbps: int, duration_seconds: int) -> int:
-    experiment = build_experiment(capacity_mbps, duration_seconds)
+def run_one_tier(
+    capacity_mbps: int,
+    duration_seconds: int,
+    browser_resolution: tuple[int, int],
+) -> int:
+    experiment = build_experiment(
+        capacity_mbps, duration_seconds, browser_resolution
+    )
     result_dir = result_dir_for(capacity_mbps)
 
     result_dir.mkdir(parents=True, exist_ok=True)
@@ -297,7 +315,12 @@ def run_one_tier(capacity_mbps: int, duration_seconds: int) -> int:
             f"[{capacity_mbps}mbps] 4/5 playing YouTube and Tubi concurrently "
             "(SeleniumBase + undetected-chromedriver)"
         )
-        run_video_collectors_concurrently(container, result_dir, duration_seconds)
+        run_video_collectors_concurrently(
+            container,
+            result_dir,
+            duration_seconds,
+            browser_resolution=browser_resolution,
+        )
 
         summaries: dict[str, Any] = {}
         for app in VIDEO_URLS:
@@ -348,11 +371,41 @@ def run_one_tier(capacity_mbps: int, duration_seconds: int) -> int:
         ctp_temp.cleanup()
 
 
-def main(capacities_mbps: list[int], duration_seconds: int) -> int:
+def main(
+    capacities_mbps: list[int],
+    duration_seconds: int,
+    browser_resolution: tuple[int, int],
+) -> int:
     exit_code = 0
     for capacity_mbps in capacities_mbps:
-        exit_code = run_one_tier(capacity_mbps, duration_seconds) or exit_code
+        exit_code = (
+            run_one_tier(capacity_mbps, duration_seconds, browser_resolution)
+            or exit_code
+        )
     return exit_code
+
+
+def parse_browser_resolution(value: str) -> tuple[int, int]:
+    aliases = {
+        "1080p": (1920, 1080),
+        "2k": (2560, 1440),
+        "1440p": (2560, 1440),
+        "4k": (3840, 2160),
+        "2160p": (3840, 2160),
+    }
+    normalized = value.strip().lower()
+    if normalized in aliases:
+        return aliases[normalized]
+    try:
+        width_text, height_text = normalized.split("x", 1)
+        width, height = int(width_text), int(height_text)
+    except (ValueError, TypeError) as exc:
+        raise argparse.ArgumentTypeError(
+            "use 1080p, 2k, 4k, or WIDTHxHEIGHT"
+        ) from exc
+    if width <= 0 or height <= 0:
+        raise argparse.ArgumentTypeError("resolution dimensions must be positive")
+    return width, height
 
 
 def parse_args() -> argparse.Namespace:
@@ -370,9 +423,22 @@ def parse_args() -> argparse.Namespace:
         default=60,
         help="QoE collection window per tier (default: 60, i.e. one minute)",
     )
+    parser.add_argument(
+        "--browser-resolution",
+        type=parse_browser_resolution,
+        default=(1920, 1080),
+        metavar="RESOLUTION",
+        help="Chrome/Xvfb size: 1080p, 2k, 4k, or WIDTHxHEIGHT (default: 1080p)",
+    )
     return parser.parse_args()
 
 
 if __name__ == "__main__":
     args = parse_args()
-    raise SystemExit(main(args.capacities_mbps, args.duration_seconds))
+    raise SystemExit(
+        main(
+            args.capacities_mbps,
+            args.duration_seconds,
+            args.browser_resolution,
+        )
+    )
