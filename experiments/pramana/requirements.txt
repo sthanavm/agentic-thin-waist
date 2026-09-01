@@ -1,0 +1,28 @@
+# Client-side dependencies for the Pramana experiment notebook.
+#
+# These are for the machine running the NOTEBOOK. The browser stack (Chrome,
+# SeleniumBase, undetected-chromedriver, Xvfb) lives inside the
+# video-qoe-collector image and is pinned separately in
+# services/orchestration/scripts/selenium_video_qoe/requirements.txt — you do not
+# install a browser here.
+#
+# Verified against Python 3.12.3 on the lab VM.
+
+# Drives the substrate worker / telemetry HTTP APIs.
+requests>=2.31.0,<3.0.0
+
+# Per-app throughput + QoE plots. The pcap reader and QoE summarizer are pure
+# stdlib, so matplotlib is only needed for rendering.
+matplotlib>=3.8,<4.0
+
+# load_dataset() / show_player_qoe() tables. Optional: both fall back to plain
+# dicts when pandas is absent, but the notebook displays are much better with it.
+pandas>=2.0
+
+# Notebook runtime.
+jupyter>=1.0
+ipython>=8.0
+
+# Optional: non-interactive execution of the notebook for long sweeps
+#   papermill experiments/pramana/pramana_demo.ipynb out.ipynb
+# papermill>=2.4
