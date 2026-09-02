@@ -324,6 +324,16 @@ def build_driver(
         f"--window-size={window_width},{window_height}",
         "--start-maximized",
         "--disable-gpu",
+        # Fresh Chrome profiles otherwise download Optimization Guide models
+        # and component metadata in the background. Those transfers can fill
+        # the shaped bottleneck and be mistaken for application video traffic.
+        "--disable-background-networking",
+        "--disable-component-update",
+        "--disable-default-apps",
+        "--disable-domain-reliability",
+        "--disable-sync",
+        "--metrics-recording-only",
+        "--no-first-run",
         # Without this, autoplay=1 in the URL is silently ignored by Chrome's
         # autoplay policy and the player sits paused at t=0 forever (found via
         # live debugging - not in the netgent-dev reference recipe).
@@ -335,6 +345,7 @@ def build_driver(
         headed=True,
         browser="chrome",
         chromium_arg=chromium_arg,
+        host_resolver_rules="MAP optimizationguide-pa.googleapis.com ~NOTFOUND",
         use_auto_ext=False,
         undetectable=True,
     )
@@ -344,6 +355,65 @@ def build_driver(
     if user_data_dir:
         kwargs["user_data_dir"] = user_data_dir
     return Driver(**kwargs)
+
+
+def capture_driver_launch_failure(
+    app: str,
+    video_url: str,
+    display_num: str,
+    screenshot_path: Path | None,
+    window_width: int,
+    window_height: int,
+) -> None:
+    """Capture what the URL renders even when Selenium cannot create a driver.
+
+    Driver construction can fail after Xvfb starts but before Selenium returns
+    an object, which means ``driver.save_screenshot`` is unavailable. Launch a
+    plain headed Chrome against the same display and use scrot to capture the
+    X framebuffer so failed startup attempts still leave useful evidence.
+    """
+    if screenshot_path is None:
+        return
+
+    screenshot_path.parent.mkdir(parents=True, exist_ok=True)
+    binary = os.environ.get("CHROME_BINARY", "google-chrome-stable")
+    profile_dir = f"/tmp/{app}-diagnostic-profile-{os.getpid()}"
+    env = {**os.environ, "DISPLAY": f":{display_num}"}
+    chrome = None
+    try:
+        print(f"[{app}] launching fallback Chrome for failure screenshot")
+        chrome = subprocess.Popen(
+            [
+                binary,
+                "--no-sandbox",
+                "--disable-dev-shm-usage",
+                "--autoplay-policy=no-user-gesture-required",
+                f"--window-size={window_width},{window_height}",
+                f"--user-data-dir={profile_dir}",
+                video_url,
+            ],
+            env=env,
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+        )
+        time.sleep(10)
+        subprocess.run(
+            ["scrot", "--overwrite", str(screenshot_path)],
+            check=True,
+            env=env,
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+        )
+        print(f"[{app}] failure screenshot written to {screenshot_path}")
+    except Exception as exc:  # noqa: BLE001 - preserve the original failure
+        print(f"[{app}] warning: failure screenshot failed: {exc}")
+    finally:
+        if chrome is not None:
+            chrome.terminate()
+            try:
+                chrome.wait(timeout=5)
+            except subprocess.TimeoutExpired:
+                chrome.kill()
 
 
 def install_webrtc_hook(driver: Any) -> None:
@@ -453,13 +523,28 @@ def run_job(
     job: dict[str, Any],
     launch_lock: threading.Lock,
     sampling_barrier: threading.Barrier,
+    stop_event: threading.Event,
 ) -> None:
     app = job["app"]
     video_url = job["url"]
     display_num = str(job["display_num"])
     out_path = Path(job["out_path"])
+    screenshot_path_value = job.get("screenshot_path")
+    screenshot_path = (
+        Path(screenshot_path_value) if screenshot_path_value else None
+    )
+    screenshot_dir_value = job.get("screenshot_dir")
+    screenshot_dir = Path(screenshot_dir_value) if screenshot_dir_value else None
+    screenshot_interval_seconds = float(
+        job.get("screenshot_interval_seconds", 5)
+    )
     duration_seconds = float(job["duration_seconds"])
     sample_interval_seconds = float(job.get("sample_interval_seconds", 1.0))
+    playback_start_timeout_seconds = float(
+        job.get("playback_start_timeout_seconds", duration_seconds)
+    )
+    if playback_start_timeout_seconds <= 0:
+        raise ValueError("playback_start_timeout_seconds must be positive")
     window_width = int(job.get("window_width", 1920))
     window_height = int(job.get("window_height", 1080))
     if window_width <= 0 or window_height <= 0:
@@ -491,11 +576,22 @@ def run_job(
             print(f"[{app}] warning: could not wire Xlib display for pyautogui: {exc}")
 
         print(f"[{app}] launching undetected-chromedriver Chrome (headed, DISPLAY=:{display_num})")
-        driver = build_driver(
-            user_data_dir=user_data_dir,
-            window_width=window_width,
-            window_height=window_height,
-        )
+        try:
+            driver = build_driver(
+                user_data_dir=user_data_dir,
+                window_width=window_width,
+                window_height=window_height,
+            )
+        except BaseException:
+            capture_driver_launch_failure(
+                app,
+                video_url,
+                display_num,
+                screenshot_path,
+                window_width,
+                window_height,
+            )
+            raise
         # Chrome/SeleniumBase may ignore --window-size under Xvfb/fluxbox.
         # Setting the window rect after launch ensures adaptive video players
         # see the requested viewport and can select the intended quality.
@@ -533,7 +629,37 @@ def run_job(
 
         print(f"[{app}] ready; waiting for all applications before sampling")
         sampling_barrier.wait(timeout=barrier_timeout_seconds)
+        if stop_event.is_set():
+            raise RuntimeError(f"[{app}] cancelled because another job failed")
         print(f"[{app}] all applications ready; starting synchronized sampling")
+        periodic_started = time.monotonic()
+        next_screenshot_elapsed = 0.0
+
+        def capture_periodic_screenshot_if_due() -> None:
+            nonlocal next_screenshot_elapsed
+            elapsed = time.monotonic() - periodic_started
+            if screenshot_dir is None or elapsed < next_screenshot_elapsed:
+                return
+            screenshot_dir.mkdir(parents=True, exist_ok=True)
+            periodic_path = screenshot_dir / (
+                f"{int(next_screenshot_elapsed):03d}s.png"
+            )
+            try:
+                subprocess.run(
+                    ["scrot", "--overwrite", str(periodic_path)],
+                    check=True,
+                    env={**os.environ, "DISPLAY": f":{display_num}"},
+                    stdout=subprocess.DEVNULL,
+                    stderr=subprocess.DEVNULL,
+                )
+                print(
+                    f"[{app}] periodic framebuffer screenshot written to "
+                    f"{periodic_path}"
+                )
+            except Exception as exc:  # noqa: BLE001
+                print(f"[{app}] warning: periodic screenshot failed: {exc}")
+            next_screenshot_elapsed += screenshot_interval_seconds
+
         if app != "google_meet":
             try:
                 play_result = driver.execute_script(
@@ -557,9 +683,16 @@ def run_job(
                     f"{type(exc).__name__}: {exc}"
                 )
 
-            ad_wait_deadline = time.monotonic() + 60
+            playback_wait_deadline = (
+                time.monotonic() + playback_start_timeout_seconds
+            )
             last_time = None
-            while time.monotonic() < ad_wait_deadline:
+            while time.monotonic() < playback_wait_deadline:
+                capture_periodic_screenshot_if_due()
+                if stop_event.is_set():
+                    raise RuntimeError(
+                        f"[{app}] cancelled because another job failed"
+                    )
                 try:
                     state = driver.execute_script(
                         """
@@ -583,17 +716,28 @@ def run_job(
                     )
                     break
                 last_time = state["current_time"] if state else last_time
-                time.sleep(1)
+                if stop_event.wait(1):
+                    raise RuntimeError(
+                        f"[{app}] cancelled because another job failed"
+                    )
             else:
-                print(
-                    f"[{app}] gave up waiting for playback to advance after "
-                    "60s; measuring anyway"
+                stop_event.set()
+                raise RuntimeError(
+                    f"[{app}] playback did not advance within "
+                    f"{playback_start_timeout_seconds:g}s"
                 )
         deadline = time.monotonic() + duration_seconds
         previous_meet_stats = meet_ready_stats
         previous_meet_timestamp = meet_ready_timestamp
         with open(out_path, "a", buffering=1) as f:
             while time.monotonic() < deadline:
+                if stop_event.is_set():
+                    print(
+                        f"[{app}] stopping measurement because another job "
+                        f"failed; keeping {len(samples)} collected samples"
+                    )
+                    break
+                capture_periodic_screenshot_if_due()
                 sample = {"timestamp": time.time()}
                 try:
                     sample["url"] = driver.current_url
@@ -624,8 +768,37 @@ def run_job(
 
                 f.write(json.dumps(sample) + "\n")
                 samples.append(sample)
-                time.sleep(sample_interval_seconds)
+                if stop_event.wait(sample_interval_seconds):
+                    print(
+                        f"[{app}] stopping measurement because another job "
+                        f"failed; keeping {len(samples)} collected samples"
+                    )
+                    break
     finally:
+        if screenshot_path is not None:
+            try:
+                screenshot_path.parent.mkdir(parents=True, exist_ok=True)
+                driver.save_screenshot(str(screenshot_path))
+                print(f"[{app}] screenshot written to {screenshot_path}")
+            except Exception as exc:  # noqa: BLE001 - retain original outcome
+                print(f"[{app}] warning: screenshot failed: {exc}")
+                try:
+                    subprocess.run(
+                        ["scrot", "--overwrite", str(screenshot_path)],
+                        check=True,
+                        env={**os.environ, "DISPLAY": f":{display_num}"},
+                        stdout=subprocess.DEVNULL,
+                        stderr=subprocess.DEVNULL,
+                    )
+                    print(
+                        f"[{app}] framebuffer screenshot written to "
+                        f"{screenshot_path}"
+                    )
+                except Exception as fallback_exc:  # noqa: BLE001
+                    print(
+                        f"[{app}] warning: framebuffer screenshot failed: "
+                        f"{fallback_exc}"
+                    )
         try:
             driver.quit()
         except Exception as exc:  # noqa: BLE001
@@ -684,12 +857,18 @@ def main() -> int:
 
     launch_lock = threading.Lock()
     sampling_barrier = threading.Barrier(len(jobs))
-    errors: list[tuple[str, Exception]] = []
+    stop_event = threading.Event()
+    errors: list[tuple[str, BaseException]] = []
 
     def run_job_checked(job: dict[str, Any]) -> None:
         try:
-            run_job(job, launch_lock, sampling_barrier)
-        except Exception as exc:  # propagate thread failures through process exit
+            run_job(job, launch_lock, sampling_barrier, stop_event)
+        except BaseException as exc:  # SeleniumBase may terminate via SystemExit
+            stop_event.set()
+            try:
+                sampling_barrier.abort()
+            except Exception:
+                pass
             errors.append((job["app"], exc))
             print(
                 f"[{job['app']}] collector failed: {type(exc).__name__}: {exc}",

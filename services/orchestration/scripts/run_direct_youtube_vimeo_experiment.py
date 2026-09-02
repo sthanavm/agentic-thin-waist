@@ -5,6 +5,8 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
+import shutil
 import subprocess
 import tempfile
 import time
@@ -28,8 +30,13 @@ IMAGE = "agentic-thin-waist-substrate-worker:latest"
 # worker's shaped ns1 namespace, so both browsers traverse the same bottleneck.
 VIDEO_QOE_IMAGE = "video-qoe-collector:latest"
 
+# Chrome background endpoints that polluted fresh-profile experiments with
+# downloads unrelated to either video application.
+BLOCKED_BACKGROUND_IPS = ("34.104.35.123",)
+
 VIDEO_URLS: dict[str, str] = {
     "youtube": "https://www.youtube.com/watch?v=dQw4w9WgXcQ&autoplay=1&mute=1",
+    # Keep the exact Vimeo player URL proven to work in this headed collector.
     "vimeo": "https://player.vimeo.com/video/911411289?autoplay=1&muted=1",
 }
 
@@ -50,11 +57,16 @@ DISPLAY_NUMS: dict[str, int] = {"youtube": 99, "vimeo": 100}
 def docker(*args: str, check: bool = True) -> str:
     completed = subprocess.run(
         ["docker", *args],
-        check=check,
+        check=False,
         text=True,
         stdout=subprocess.PIPE,
         stderr=subprocess.STDOUT,
     )
+    if check and completed.returncode != 0:
+        raise RuntimeError(
+            f"docker {' '.join(args[:2])} failed with exit code "
+            f"{completed.returncode}:\n{completed.stdout.strip()}"
+        )
     return completed.stdout.strip()
 
 
@@ -94,7 +106,12 @@ def write_json(path: Path, value: Any) -> None:
     path.write_text(json.dumps(value, indent=2, default=str) + "\n", encoding="utf-8")
 
 
-def build_experiment(capacity_mbps: int, duration_seconds: int) -> dict[str, Any]:
+def build_experiment(
+    capacity_mbps: int,
+    duration_seconds: int,
+    browser_resolution: tuple[int, int],
+) -> dict[str, Any]:
+    window_width, window_height = browser_resolution
     return {
         "experiment_id": f"youtube-vimeo-{capacity_mbps}mbps-100ms-pfifo",
         "applications": ["youtube", "vimeo"],
@@ -107,17 +124,12 @@ def build_experiment(capacity_mbps: int, duration_seconds: int) -> dict[str, Any
         "buffer_packets": 50,
         "cc_algorithm": "cubic",
         "duration_seconds": duration_seconds,
+        "browser_resolution": f"{window_width}x{window_height}",
     }
 
 
 def result_dir_for(capacity_mbps: int) -> Path:
-    return (
-        REPO_ROOT
-        / "experiments"
-        / "youtube_vimeo_100ms_pfifo"
-        / "results"
-        / f"{capacity_mbps}mbps"
-    )
+    return REPO_ROOT / "experiments" / "youtube_vimeo_experiment" / f"{capacity_mbps}mbps"
 
 
 def run_video_collectors_concurrently(
@@ -128,6 +140,7 @@ def run_video_collectors_concurrently(
     display_nums: dict[str, int] | None = None,
     job_options: dict[str, dict[str, Any]] | None = None,
     volume_mounts: list[str] | None = None,
+    browser_resolution: tuple[int, int] = (1920, 1080),
 ) -> None:
     """Play multiple video applications as sibling threads inside one
     video-qoe-collector container, network-namespace-joined onto ns1 (the
@@ -150,6 +163,9 @@ def run_video_collectors_concurrently(
     display_nums = display_nums or DISPLAY_NUMS
     job_options = job_options or {}
     volume_mounts = volume_mounts or []
+    window_width, window_height = browser_resolution
+    if window_width <= 0 or window_height <= 0:
+        raise ValueError("browser resolution dimensions must be positive")
 
     ns1_pid = docker(
         "exec", network_container, "cat", "/var/run/substrate/ns1.pid"
@@ -164,8 +180,13 @@ def run_video_collectors_concurrently(
             "url": url,
             "display_num": display_nums[app],
             "out_path": f"/out/{app}_stats.jsonl",
+            "screenshot_path": f"/out/{app}_screenshot.png",
+            "screenshot_dir": f"/out/{app}_screenshots",
+            "screenshot_interval_seconds": 5,
             "duration_seconds": duration_seconds,
             "sample_interval_seconds": 1.0,
+            "window_width": window_width,
+            "window_height": window_height,
         }
         job.update(job_options.get(app, {}))
         jobs.append(job)
@@ -261,18 +282,28 @@ def summarize_stats_jsonl(path: Any) -> dict[str, Any]:
     return summary
 
 
-def main(capacity_mbps: int = 3, duration_seconds: int = 15) -> int:
-    experiment = build_experiment(capacity_mbps, duration_seconds)
+def run_one_tier(
+    capacity_mbps: int,
+    duration_seconds: int,
+    browser_resolution: tuple[int, int] = (1920, 1080),
+) -> int:
+    experiment = build_experiment(
+        capacity_mbps, duration_seconds, browser_resolution
+    )
     result_dir = result_dir_for(capacity_mbps)
 
     result_dir.mkdir(parents=True, exist_ok=True)
     for artifact_name in (
         "youtube_stats.jsonl",
         "vimeo_stats.jsonl",
+        "youtube_screenshot.png",
+        "vimeo_screenshot.png",
         f"{experiment['experiment_id']}.pcap",
         "failure.log",
     ):
         (result_dir / artifact_name).unlink(missing_ok=True)
+    for app in VIDEO_URLS:
+        shutil.rmtree(result_dir / f"{app}_screenshots", ignore_errors=True)
     write_json(result_dir / "experiment.json", experiment)
 
     container = f"youtube-vimeo-direct-{uuid.uuid4().hex[:8]}"
@@ -282,7 +313,7 @@ def main(capacity_mbps: int = 3, duration_seconds: int = 15) -> int:
     failed = False
 
     try:
-        print("1/5 creating one ephemeral substrate worker")
+        print(f"[{capacity_mbps}mbps] 1/5 creating one ephemeral substrate worker")
         docker(
             "run",
             "--detach",
@@ -326,8 +357,15 @@ def main(capacity_mbps: int = 3, duration_seconds: int = 15) -> int:
         endpoint = f"http://127.0.0.1:{published.rsplit(':', 1)[-1]}"
         wait_for_worker(endpoint)
 
+        for blocked_ip in BLOCKED_BACKGROUND_IPS:
+            docker(
+                "exec", container, "ip", "netns", "exec", "ns1",
+                "ip", "route", "replace", "blackhole", f"{blocked_ip}/32",
+            )
+
         print(
-            f"2/5 shaping once: {capacity_mbps} Mbps / 100 ms / pfifo (50 packets)"
+            f"[{capacity_mbps}mbps] 2/5 shaping once: "
+            f"{capacity_mbps} Mbps / 100 ms / pfifo (50 packets)"
         )
         shaping = request_json(
             "POST",
@@ -352,7 +390,8 @@ def main(capacity_mbps: int = 3, duration_seconds: int = 15) -> int:
             {"algorithm": experiment["cc_algorithm"], "namespace": "ns1"},
         )
 
-        print("3/5 starting one shared packet capture")
+        print(f"[{capacity_mbps}mbps] 3/5 starting one shared packet capture")
+        docker("exec", container, "chown", "root:root", "/out")
         capture = request_json(
             "POST",
             f"{endpoint}/capture",
@@ -367,10 +406,15 @@ def main(capacity_mbps: int = 3, duration_seconds: int = 15) -> int:
         time.sleep(1)
 
         print(
-            "4/5 playing YouTube and Vimeo concurrently "
+            f"[{capacity_mbps}mbps] 4/5 playing YouTube and Vimeo concurrently "
             "(SeleniumBase + undetected-chromedriver)"
         )
-        run_video_collectors_concurrently(container, result_dir, duration_seconds)
+        run_video_collectors_concurrently(
+            container,
+            result_dir,
+            duration_seconds,
+            browser_resolution=browser_resolution,
+        )
 
         summaries: dict[str, Any] = {}
         for app in VIDEO_URLS:
@@ -383,9 +427,10 @@ def main(capacity_mbps: int = 3, duration_seconds: int = 15) -> int:
                 )
             summaries[app] = summary
 
-        print("5/5 finalizing the shared capture")
+        print(f"[{capacity_mbps}mbps] 5/5 finalizing the shared capture")
         request_json("DELETE", f"{endpoint}/capture/{capture_id}", timeout=15)
         capture_id = None
+        docker("exec", container, "chown", "-R", f"{os.getuid()}:{os.getgid()}", "/out")
         pcap = result_dir / f"{experiment['experiment_id']}.pcap"
         if not pcap.is_file() or pcap.stat().st_size <= 24:
             raise RuntimeError(f"PCAP is missing or empty: {pcap}")
@@ -398,7 +443,7 @@ def main(capacity_mbps: int = 3, duration_seconds: int = 15) -> int:
         return 0
     except Exception as exc:
         failed = True
-        print(f"FAILED: {exc}")
+        print(f"[{capacity_mbps}mbps] FAILED: {exc}")
         return 1
     finally:
         if capture_id and endpoint:
@@ -406,6 +451,13 @@ def main(capacity_mbps: int = 3, duration_seconds: int = 15) -> int:
                 request_json("DELETE", f"{endpoint}/capture/{capture_id}", timeout=15)
             except Exception:
                 pass
+        try:
+            docker(
+                "exec", container, "chown", "-R",
+                f"{os.getuid()}:{os.getgid()}", "/out", check=False,
+            )
+        except Exception:
+            pass
         if failed:
             logs = docker("logs", container, check=False)
             (result_dir / "failure.log").write_text(logs + "\n", encoding="utf-8")
@@ -413,17 +465,74 @@ def main(capacity_mbps: int = 3, duration_seconds: int = 15) -> int:
         ctp_temp.cleanup()
 
 
+def main(
+    capacities_mbps: list[int],
+    duration_seconds: int,
+    browser_resolution: tuple[int, int],
+) -> int:
+    exit_code = 0
+    for capacity_mbps in capacities_mbps:
+        exit_code = (
+            run_one_tier(capacity_mbps, duration_seconds, browser_resolution)
+            or exit_code
+        )
+    return exit_code
+
+
+def parse_browser_resolution(value: str) -> tuple[int, int]:
+    aliases = {
+        "1080p": (1920, 1080),
+        "2k": (2560, 1440),
+        "1440p": (2560, 1440),
+        "4k": (3840, 2160),
+        "2160p": (3840, 2160),
+    }
+    normalized = value.strip().lower()
+    if normalized in aliases:
+        return aliases[normalized]
+    try:
+        width_text, height_text = normalized.split("x", 1)
+        width, height = int(width_text), int(height_text)
+    except (ValueError, TypeError) as exc:
+        raise argparse.ArgumentTypeError(
+            "use 1080p, 2k, 4k, or WIDTHxHEIGHT"
+        ) from exc
+    if width <= 0 or height <= 0:
+        raise argparse.ArgumentTypeError("resolution dimensions must be positive")
+    return width, height
+
+
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument(
-        "--capacity-mbps", type=int, default=3, help="Shared bottleneck capacity"
+        "--capacities-mbps",
+        type=int,
+        nargs="+",
+        default=[3, 6, 10],
+        help="Shared bottleneck capacities to run, one tier each (default: 3 6 10)",
     )
     parser.add_argument(
-        "--duration-seconds", type=int, default=15, help="QoE collection window"
+        "--duration-seconds",
+        type=int,
+        default=30,
+        help="QoE collection window per tier (default: 30 seconds)",
+    )
+    parser.add_argument(
+        "--browser-resolution",
+        type=parse_browser_resolution,
+        default=(1920, 1080),
+        metavar="RESOLUTION",
+        help="Chrome/Xvfb size: 1080p, 2k, 4k, or WIDTHxHEIGHT (default: 1080p)",
     )
     return parser.parse_args()
 
 
 if __name__ == "__main__":
     args = parse_args()
-    raise SystemExit(main(args.capacity_mbps, args.duration_seconds))
+    raise SystemExit(
+        main(
+            args.capacities_mbps,
+            args.duration_seconds,
+            args.browser_resolution,
+        )
+    )
