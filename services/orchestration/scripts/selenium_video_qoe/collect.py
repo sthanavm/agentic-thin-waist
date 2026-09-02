@@ -289,9 +289,13 @@ return {clicked: false};
 """
 
 
-def start_display(dnum: str) -> None:
+def start_display(
+    dnum: str,
+    window_width: int = 1920,
+    window_height: int = 1080,
+) -> None:
     """Start Xvfb + fluxbox on display :dnum, matching netgent-dev's start.sh."""
-    resolution = os.environ.get("RESOLUTION", "1920x1080x24")
+    resolution = f"{window_width}x{window_height}x24"
     subprocess.Popen(["Xvfb", f":{dnum}", "-screen", "0", resolution])
     time.sleep(2)
     subprocess.Popen(
@@ -303,7 +307,11 @@ def start_display(dnum: str) -> None:
     time.sleep(1)
 
 
-def build_driver(user_data_dir: str | None = None):
+def build_driver(
+    user_data_dir: str | None = None,
+    window_width: int = 1920,
+    window_height: int = 1080,
+):
     from seleniumbase import Driver
 
     args = [
@@ -313,7 +321,7 @@ def build_driver(user_data_dir: str | None = None):
         "--no-sandbox",
         "--use-fake-ui-for-media-stream",
         "--use-fake-device-for-media-stream",
-        "--window-size=1920,1080",
+        f"--window-size={window_width},{window_height}",
         "--start-maximized",
         "--disable-gpu",
         # Without this, autoplay=1 in the URL is silently ignored by Chrome's
@@ -452,6 +460,10 @@ def run_job(
     out_path = Path(job["out_path"])
     duration_seconds = float(job["duration_seconds"])
     sample_interval_seconds = float(job.get("sample_interval_seconds", 1.0))
+    window_width = int(job.get("window_width", 1920))
+    window_height = int(job.get("window_height", 1080))
+    if window_width <= 0 or window_height <= 0:
+        raise ValueError("window_width and window_height must be positive")
     user_data_dir = job.get("user_data_dir")
     guest_name = str(job.get("guest_name", "NetGent QoE Collector"))
     meet_join_timeout_seconds = float(job.get("join_timeout_seconds", 180))
@@ -459,7 +471,7 @@ def run_job(
     out_path.parent.mkdir(parents=True, exist_ok=True)
 
     print(f"[{app}] starting Xvfb+fluxbox on :{display_num}")
-    start_display(display_num)
+    start_display(display_num, window_width, window_height)
 
     # os.environ and pyautogui's X11 backend are process-global, so only one
     # job may be mid-launch (setting DISPLAY, then constructing the Driver
@@ -479,7 +491,17 @@ def run_job(
             print(f"[{app}] warning: could not wire Xlib display for pyautogui: {exc}")
 
         print(f"[{app}] launching undetected-chromedriver Chrome (headed, DISPLAY=:{display_num})")
-        driver = build_driver(user_data_dir=user_data_dir)
+        driver = build_driver(
+            user_data_dir=user_data_dir,
+            window_width=window_width,
+            window_height=window_height,
+        )
+        # Chrome/SeleniumBase may ignore --window-size under Xvfb/fluxbox.
+        # Setting the window rect after launch ensures adaptive video players
+        # see the requested viewport and can select the intended quality.
+        driver.set_window_rect(
+            x=0, y=0, width=window_width, height=window_height
+        )
 
     samples: list[dict] = []
     meet_ready_stats: dict[str, Any] | None = None
