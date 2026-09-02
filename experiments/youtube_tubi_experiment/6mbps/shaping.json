@@ -15,7 +15,7 @@
       "FAIL: upload out of \u00b120% range",
       "download: measured=5.59Mbps expected=6.0Mbps diff=6.8%",
       "PASS: download",
-      "latency: measured_rtt=108.29ms expected_rtt=100.00ms diff=8.29ms",
+      "latency: measured_rtt=108.83ms expected_rtt=100.00ms diff=8.83ms",
       "PASS: latency"
     ]
   },
