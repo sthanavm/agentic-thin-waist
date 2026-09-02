@@ -21,7 +21,7 @@ VIDEO_QOE_IMAGE = "video-qoe-collector:latest"
 
 VIDEO_URLS: dict[str, str] = {
     "youtube": "https://www.youtube.com/watch?v=dQw4w9WgXcQ&autoplay=1&mute=1",
-    "tubi": "https://tubitv.com/movies/312932/mission-impossible",
+    "tubi": "https://tubitv.com/movies/100016098/the-legend-of-tarzan",
 }
 
 DISPLAY_NUMS: dict[str, int] = {"youtube": 99, "tubi": 100}

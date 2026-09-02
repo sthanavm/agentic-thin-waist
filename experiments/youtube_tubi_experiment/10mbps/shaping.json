@@ -11,11 +11,11 @@
     "qdisc_params": null,
     "loss_rate_percent": 0.0,
     "verification_log": [
-      "upload: measured=14.32Mbps expected=10.0Mbps diff=43.2%",
+      "upload: measured=15.37Mbps expected=10.0Mbps diff=53.7%",
       "FAIL: upload out of \u00b120% range",
       "download: measured=9.43Mbps expected=10.0Mbps diff=5.7%",
       "PASS: download",
-      "latency: measured_rtt=100.25ms expected_rtt=100.00ms diff=0.25ms",
+      "latency: measured_rtt=100.95ms expected_rtt=100.00ms diff=0.95ms",
       "PASS: latency"
     ]
   },

@@ -12,5 +12,6 @@
   "aqm_policy": "pfifo",
   "buffer_packets": 50,
   "cc_algorithm": "cubic",
-  "duration_seconds": 60
+  "duration_seconds": 60,
+  "browser_resolution": "1920x1080"
 }
