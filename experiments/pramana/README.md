@@ -130,6 +130,66 @@ Open `experiments/pramana/pramana_demo.ipynb` and run top to bottom.
 
 ## Running one experiment
 
+### Scripted deterministic runner
+
+For a repeatable run that does not use intent parsing, use the direct runner.
+It reuses the same proven shaped-namespace collector as the repository's
+YouTube/Vimeo and YouTube/Tubi experiments:
+
+```bash
+python3 experiments/pramana/run_pramana_direct.py \
+  --apps youtube vimeo \
+  --capacities-mbps 3 6 10 \
+  --duration-seconds 30 \
+  --latency-ms 100 \
+  --browser-resolution 1080p
+```
+
+Each invocation creates one timestamped directory under
+`experiments/pramana/results/deterministic/`. Every bandwidth tier contains
+its own `experiment.json`, shaping response, PCAP, raw QoE JSONL, browser
+screenshots, five-second screenshot timeline, and self-contained
+`report.html`. Use `--apps youtube tubi` for the corresponding Tubi run.
+
+### Intent-driven runner
+
+To exercise the orchestration service and its intent parser instead:
+
+```bash
+python3 experiments/pramana/run_pramana_intent.py \
+  "Run YouTube and Vimeo concurrently at 6 Mbps and 100 ms for 30 seconds"
+```
+
+This creates `experiments/pramana/results/intent/<orchestration-id>/` with the
+submitted intent, final orchestration record, result metadata, downloaded
+telemetry artifacts, and an HTML report. The report renders only artifacts
+actually returned for that orchestration; missing PCAP or player samples are
+labeled unavailable.
+
+### Re-rendering or changing the report target
+
+The new `pramana_report.ipynb` has one editable configuration cell that can
+launch either runner and then display its report. It is also reusable for either
+existing output structure:
+
+```bash
+PRAMANA_RUN_DIR=/path/to/a/tier-or-intent-folder \
+PRAMANA_REPORT_TITLE="My experiment" \
+jupyter nbconvert --to html --execute \
+  experiments/pramana/pramana_report.ipynb \
+  --output report.html --output-dir /path/to/a/tier-or-intent-folder
+```
+
+Compared with the existing YouTube/Vimeo notebook, this report intentionally
+adds Pramana's validation-oriented delivery fraction, estimated stall count and
+duration, explicit missing-data status, average/p95/peak delivery table, and
+Jain fairness index. Those derived summaries make starvation and unequal link
+sharing directly reviewable. It retains the existing report's stronger raw QoE,
+per-endpoint traffic, and screenshot timeline views. Startup delay is not
+reported because the current collector begins JSONL sampling only after it has
+confirmed advancing playback; inventing a startup value from that data would be
+misleading.
+
 The notebook's config cell is the only thing you normally edit:
 
 ```python
