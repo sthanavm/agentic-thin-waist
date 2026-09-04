@@ -10,11 +10,13 @@ from pathlib import Path
 import matplotlib.pyplot as plt
 import pandas as pd
 
+REPO_ROOT = Path(__file__).resolve().parents[3]
+
 
 def load_report_context(bandwidth_mbps: int) -> dict:
     candidates = [
         Path(f"youtube_vimeo_experiment/{bandwidth_mbps}mbps"),
-        Path(f"experiments/youtube_vimeo_experiment/{bandwidth_mbps}mbps"),
+        REPO_ROOT / f"experiments/youtube_vimeo_experiment/{bandwidth_mbps}mbps",
     ]
     result_dir = next((path.resolve() for path in candidates if path.is_dir()), None)
     if result_dir is None:
