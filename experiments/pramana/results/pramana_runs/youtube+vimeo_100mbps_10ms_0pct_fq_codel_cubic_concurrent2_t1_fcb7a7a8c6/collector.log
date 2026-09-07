@@ -1,0 +1,17 @@
+[vimeo] starting Xvfb+fluxbox on :100
+[youtube] starting Xvfb+fluxbox on :99
+[vimeo] launching undetected-chromedriver Chrome (headed, DISPLAY=:100)
+[vimeo] navigating to https://player.vimeo.com/video/76979871?autoplay=1&muted=1
+[youtube] launching undetected-chromedriver Chrome (headed, DISPLAY=:99)
+[vimeo] ready; waiting for all applications before sampling
+[youtube] navigating to https://www.youtube.com/watch?v=dQw4w9WgXcQ&autoplay=1&mute=1
+[youtube] ready; waiting for all applications before sampling
+[youtube] all applications ready; starting synchronized sampling
+[vimeo] all applications ready; starting synchronized sampling
+[vimeo] synchronized play result: {'current_time': 1.40194, 'paused': False, 'ready_state': 4, 'started': True}
+[youtube] synchronized play result: {'current_time': 0.792061, 'paused': False, 'ready_state': 4, 'started': True}
+[youtube] summary: 54 samples written to /out/youtube_stats.jsonl | current_time_secs range=[0.910469, 60.227867] | advanced=True | final_resolution=854x480
+[vimeo] summary: 58 samples written to /out/vimeo_stats.jsonl | current_time_secs range=[1.445666, 60.983088] | advanced=True | final_resolution=1280x720
+_XSERVTransmkdir: ERROR: Cannot create /tmp/.X11-unix
+_XSERVTransSocketUNIXCreateListener: mkdir(/tmp/.X11-unix) failed, errno = 17
+_XSERVTransMakeAllCOTSServerListeners: failed to create listener for unix

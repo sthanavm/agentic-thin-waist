@@ -1,0 +1,1615 @@
+{
+  "experiment_id": "exp-44e68ffab2",
+  "slug": "youtube_6mbps_50ms_0pct_pfifo_cubic_solo_t1",
+  "mode": "direct",
+  "timestamp": 1788410143.4674156,
+  "config": {
+    "apps": [
+      "youtube"
+    ],
+    "bandwidth_mbps": 6.0,
+    "upload_mbps": 6.0,
+    "latency_ms": 50.0,
+    "loss_pct": 0.0,
+    "aqm": "pfifo",
+    "buffer_packets": 1000,
+    "qdisc_params": null,
+    "cca": "cubic",
+    "duration_s": 60,
+    "controller": "playwright",
+    "trial": 1,
+    "tag": "",
+    "app_urls": null,
+    "peers": null,
+    "concurrency": "solo"
+  },
+  "plot_combined_throughput": false,
+  "per_app_plots": true,
+  "player_qoe": {
+    "youtube": {
+      "app": "youtube",
+      "kind": "html5_video",
+      "player_qoe_available": true,
+      "status": "ok",
+      "video_startup_time_ms": 3343.0,
+      "mean_bitrate_mbps": null,
+      "max_bitrate_mbps": null,
+      "min_bitrate_mbps": null,
+      "mean_watched_bitrate_mbps": null,
+      "bitrate_changes": null,
+      "rebuffer_events": 0,
+      "rebuffer_duration_ms": 0.0,
+      "stall_duration_ms": 0.0,
+      "video_resolution_p": 480,
+      "frame_rate_fps": 25.02,
+      "dropped_frame_pct": 0.942,
+      "dropped_video_frames": 15,
+      "total_video_frames": 1593,
+      "resolution_changes": 1,
+      "resolutions_observed": [
+        360,
+        480
+      ],
+      "mean_buffer_ahead_secs": 48.1185,
+      "min_buffer_ahead_secs": 11.34,
+      "connection_speed_estimate_mbps": 1.3512,
+      "watched_seconds": 56.39,
+      "session_seconds": 59.72,
+      "total_samples": 56,
+      "is_live": false,
+      "video_duration_secs": 213.061,
+      "derivation": {
+        "startup_basis": "play_trigger",
+        "bitrate_basis": "unavailable (player reports an activity gauge, not a counter)",
+        "fps_basis": "total_video_frames_delta",
+        "rebuffer_rule": "current_time_secs not advancing while not paused and not ended, corroborated by empty buffer or vendor BUFFERING state"
+      },
+      "series": {
+        "buffer_ahead_secs": [
+          {
+            "t": 0.0,
+            "v": 11.344231
+          },
+          {
+            "t": 3.34,
+            "v": 15.738339
+          },
+          {
+            "t": 4.37,
+            "v": 18.834226
+          },
+          {
+            "t": 5.39,
+            "v": 22.351427
+          },
+          {
+            "t": 6.45,
+            "v": 21.178556
+          },
+          {
+            "t": 7.62,
+            "v": 23.669185
+          },
+          {
+            "t": 8.63,
+            "v": 28.482178
+          },
+          {
+            "t": 9.67,
+            "v": 28.809563
+          },
+          {
+            "t": 10.7,
+            "v": 27.781444
+          },
+          {
+            "t": 11.73,
+            "v": 26.7053
+          },
+          {
+            "t": 12.81,
+            "v": 29.298466
+          },
+          {
+            "t": 13.85,
+            "v": 32.347786
+          },
+          {
+            "t": 14.88,
+            "v": 36.175809
+          },
+          {
+            "t": 15.93,
+            "v": 35.669471
+          },
+          {
+            "t": 16.96,
+            "v": 34.648622
+          },
+          {
+            "t": 17.97,
+            "v": 33.582777
+          },
+          {
+            "t": 19.04,
+            "v": 32.568797
+          },
+          {
+            "t": 20.05,
+            "v": 31.949467999999996
+          },
+          {
+            "t": 21.07,
+            "v": 37.009858
+          },
+          {
+            "t": 22.09,
+            "v": 43.630821000000005
+          },
+          {
+            "t": 23.61,
+            "v": 45.155409000000006
+          },
+          {
+            "t": 24.63,
+            "v": 44.141834
+          },
+          {
+            "t": 25.65,
+            "v": 43.105198
+          },
+          {
+            "t": 26.68,
+            "v": 42.076578
+          },
+          {
+            "t": 27.71,
+            "v": 41.049987
+          },
+          {
+            "t": 28.74,
+            "v": 46.510242999999996
+          },
+          {
+            "t": 29.8,
+            "v": 48.765664
+          },
+          {
+            "t": 30.82,
+            "v": 48.30093
+          },
+          {
+            "t": 31.84,
+            "v": 47.279932
+          },
+          {
+            "t": 32.86,
+            "v": 46.977917
+          },
+          {
+            "t": 33.9,
+            "v": 52.268599
+          },
+          {
+            "t": 34.96,
+            "v": 52.521572
+          },
+          {
+            "t": 35.98,
+            "v": 55.887663
+          },
+          {
+            "t": 37.02,
+            "v": 55.504245999999995
+          },
+          {
+            "t": 38.04,
+            "v": 54.48734499999999
+          },
+          {
+            "t": 39.05,
+            "v": 59.060351000000004
+          },
+          {
+            "t": 40.09,
+            "v": 63.476717
+          },
+          {
+            "t": 41.11,
+            "v": 63.41046699999999
+          },
+          {
+            "t": 42.13,
+            "v": 62.37996799999999
+          },
+          {
+            "t": 43.17,
+            "v": 61.35017199999999
+          },
+          {
+            "t": 44.2,
+            "v": 60.311505999999994
+          },
+          {
+            "t": 45.24,
+            "v": 59.28495699999999
+          },
+          {
+            "t": 46.26,
+            "v": 60.286073
+          },
+          {
+            "t": 47.3,
+            "v": 65.85142099999999
+          },
+          {
+            "t": 48.33,
+            "v": 69.58658199999999
+          },
+          {
+            "t": 49.36,
+            "v": 68.55789999999999
+          },
+          {
+            "t": 50.39,
+            "v": 67.531431
+          },
+          {
+            "t": 51.41,
+            "v": 66.50109599999999
+          },
+          {
+            "t": 52.45,
+            "v": 65.438421
+          },
+          {
+            "t": 53.51,
+            "v": 64.396815
+          },
+          {
+            "t": 54.55,
+            "v": 66.95268099999998
+          },
+          {
+            "t": 55.6,
+            "v": 72.333348
+          },
+          {
+            "t": 56.61,
+            "v": 75.696698
+          },
+          {
+            "t": 57.65,
+            "v": 76.513895
+          },
+          {
+            "t": 58.67,
+            "v": 75.471214
+          },
+          {
+            "t": 59.72,
+            "v": 74.43213600000001
+          }
+        ],
+        "resolution_p": [
+          {
+            "t": 0.0,
+            "v": 360
+          },
+          {
+            "t": 3.34,
+            "v": 360
+          },
+          {
+            "t": 4.37,
+            "v": 360
+          },
+          {
+            "t": 5.39,
+            "v": 360
+          },
+          {
+            "t": 6.45,
+            "v": 360
+          },
+          {
+            "t": 7.62,
+            "v": 360
+          },
+          {
+            "t": 8.63,
+            "v": 360
+          },
+          {
+            "t": 9.67,
+            "v": 360
+          },
+          {
+            "t": 10.7,
+            "v": 360
+          },
+          {
+            "t": 11.73,
+            "v": 360
+          },
+          {
+            "t": 12.81,
+            "v": 360
+          },
+          {
+            "t": 13.85,
+            "v": 480
+          },
+          {
+            "t": 14.88,
+            "v": 480
+          },
+          {
+            "t": 15.93,
+            "v": 480
+          },
+          {
+            "t": 16.96,
+            "v": 480
+          },
+          {
+            "t": 17.97,
+            "v": 480
+          },
+          {
+            "t": 19.04,
+            "v": 480
+          },
+          {
+            "t": 20.05,
+            "v": 480
+          },
+          {
+            "t": 21.07,
+            "v": 480
+          },
+          {
+            "t": 22.09,
+            "v": 480
+          },
+          {
+            "t": 23.61,
+            "v": 480
+          },
+          {
+            "t": 24.63,
+            "v": 480
+          },
+          {
+            "t": 25.65,
+            "v": 480
+          },
+          {
+            "t": 26.68,
+            "v": 480
+          },
+          {
+            "t": 27.71,
+            "v": 480
+          },
+          {
+            "t": 28.74,
+            "v": 480
+          },
+          {
+            "t": 29.8,
+            "v": 480
+          },
+          {
+            "t": 30.82,
+            "v": 480
+          },
+          {
+            "t": 31.84,
+            "v": 480
+          },
+          {
+            "t": 32.86,
+            "v": 480
+          },
+          {
+            "t": 33.9,
+            "v": 480
+          },
+          {
+            "t": 34.96,
+            "v": 480
+          },
+          {
+            "t": 35.98,
+            "v": 480
+          },
+          {
+            "t": 37.02,
+            "v": 480
+          },
+          {
+            "t": 38.04,
+            "v": 480
+          },
+          {
+            "t": 39.05,
+            "v": 480
+          },
+          {
+            "t": 40.09,
+            "v": 480
+          },
+          {
+            "t": 41.11,
+            "v": 480
+          },
+          {
+            "t": 42.13,
+            "v": 480
+          },
+          {
+            "t": 43.17,
+            "v": 480
+          },
+          {
+            "t": 44.2,
+            "v": 480
+          },
+          {
+            "t": 45.24,
+            "v": 480
+          },
+          {
+            "t": 46.26,
+            "v": 480
+          },
+          {
+            "t": 47.3,
+            "v": 480
+          },
+          {
+            "t": 48.33,
+            "v": 480
+          },
+          {
+            "t": 49.36,
+            "v": 480
+          },
+          {
+            "t": 50.39,
+            "v": 480
+          },
+          {
+            "t": 51.41,
+            "v": 480
+          },
+          {
+            "t": 52.45,
+            "v": 480
+          },
+          {
+            "t": 53.51,
+            "v": 480
+          },
+          {
+            "t": 54.55,
+            "v": 480
+          },
+          {
+            "t": 55.6,
+            "v": 480
+          },
+          {
+            "t": 56.61,
+            "v": 480
+          },
+          {
+            "t": 57.65,
+            "v": 480
+          },
+          {
+            "t": 58.67,
+            "v": 480
+          },
+          {
+            "t": 59.72,
+            "v": 480
+          }
+        ],
+        "current_time_secs": [
+          {
+            "t": 0.0,
+            "v": 6.015769
+          },
+          {
+            "t": 3.34,
+            "v": 7.141661
+          },
+          {
+            "t": 4.37,
+            "v": 8.165774
+          },
+          {
+            "t": 5.39,
+            "v": 9.208573
+          },
+          {
+            "t": 6.45,
+            "v": 10.381444
+          },
+          {
+            "t": 7.62,
+            "v": 11.410815
+          },
+          {
+            "t": 8.63,
+            "v": 12.437822
+          },
+          {
+            "t": 9.67,
+            "v": 13.470437
+          },
+          {
+            "t": 10.7,
+            "v": 14.498556
+          },
+          {
+            "t": 11.73,
+            "v": 15.5747
+          },
+          {
+            "t": 12.81,
+            "v": 16.621534
+          },
+          {
+            "t": 13.85,
+            "v": 17.653214
+          },
+          {
+            "t": 14.88,
+            "v": 18.704191
+          },
+          {
+            "t": 15.93,
+            "v": 19.730529
+          },
+          {
+            "t": 16.96,
+            "v": 20.751378
+          },
+          {
+            "t": 17.97,
+            "v": 21.817223
+          },
+          {
+            "t": 19.04,
+            "v": 22.831203
+          },
+          {
+            "t": 20.05,
+            "v": 23.850532
+          },
+          {
+            "t": 21.07,
+            "v": 24.870142
+          },
+          {
+            "t": 22.09,
+            "v": 26.370179
+          },
+          {
+            "t": 23.61,
+            "v": 27.404591
+          },
+          {
+            "t": 24.63,
+            "v": 28.418166
+          },
+          {
+            "t": 25.65,
+            "v": 29.454802
+          },
+          {
+            "t": 26.68,
+            "v": 30.483422
+          },
+          {
+            "t": 27.71,
+            "v": 31.510013
+          },
+          {
+            "t": 28.74,
+            "v": 32.569757
+          },
+          {
+            "t": 29.8,
+            "v": 33.594336
+          },
+          {
+            "t": 30.82,
+            "v": 34.61907
+          },
+          {
+            "t": 31.84,
+            "v": 35.640068
+          },
+          {
+            "t": 32.86,
+            "v": 36.662083
+          },
+          {
+            "t": 33.9,
+            "v": 37.732401
+          },
+          {
+            "t": 34.96,
+            "v": 38.758428
+          },
+          {
+            "t": 35.98,
+            "v": 39.792337
+          },
+          {
+            "t": 37.02,
+            "v": 40.815754
+          },
+          {
+            "t": 38.04,
+            "v": 41.832655
+          },
+          {
+            "t": 39.05,
+            "v": 42.859649
+          },
+          {
+            "t": 40.09,
+            "v": 43.883283
+          },
+          {
+            "t": 41.11,
+            "v": 44.909533
+          },
+          {
+            "t": 42.13,
+            "v": 45.940032
+          },
+          {
+            "t": 43.17,
+            "v": 46.969828
+          },
+          {
+            "t": 44.2,
+            "v": 48.008494
+          },
+          {
+            "t": 45.24,
+            "v": 49.035043
+          },
+          {
+            "t": 46.26,
+            "v": 50.074927
+          },
+          {
+            "t": 47.3,
+            "v": 51.108579
+          },
+          {
+            "t": 48.33,
+            "v": 52.133418
+          },
+          {
+            "t": 49.36,
+            "v": 53.1621
+          },
+          {
+            "t": 50.39,
+            "v": 54.188569
+          },
+          {
+            "t": 51.41,
+            "v": 55.218904
+          },
+          {
+            "t": 52.45,
+            "v": 56.281579
+          },
+          {
+            "t": 53.51,
+            "v": 57.323185
+          },
+          {
+            "t": 54.55,
+            "v": 58.367319
+          },
+          {
+            "t": 55.6,
+            "v": 59.387652
+          },
+          {
+            "t": 56.61,
+            "v": 60.423302
+          },
+          {
+            "t": 57.65,
+            "v": 61.446105
+          },
+          {
+            "t": 58.67,
+            "v": 62.488786
+          },
+          {
+            "t": 59.72,
+            "v": 63.527864
+          }
+        ]
+      },
+      "rebuffer_spans": [],
+      "delivered_fraction_of_video": 0.265
+    }
+  },
+  "player_qoe_available": true,
+  "limitations": {
+    "player_qoe_available": true,
+    "player_qoe_source": "real Chrome (Xvfb + SeleniumBase/undetected-chromedriver) driven inside the shaped ns1 namespace; metrics derived by shared/qoe.py",
+    "player_qoe_skipped": {},
+    "latency_scope": "link-wide (netem, not per-flow)",
+    "qtrace_available": false,
+    "per_app_throughput": true,
+    "per_app_attribution_method": "remote_hostname",
+    "per_app_attribution_note": "local_alias_ip = exact split by each app's namespace IP; remote_hostname = split by remote endpoint identified from in-capture DNS answers + TLS SNI (the deployed worker runs all browser apps in one namespace, so there is only one local IP)",
+    "attributed_byte_fraction": 0.9131
+  },
+  "network_stats": {
+    "packets": 47191,
+    "duration_s": 72.11,
+    "total_mb": 50.75,
+    "avg_throughput_mbps": 5.63,
+    "peak_throughput_mbps": 6.331,
+    "p95_throughput_mbps": 6.289,
+    "delivered_fraction": 0.938,
+    "stall_seconds": 0.0,
+    "shaping_verified": true,
+    "shaping_error_pct": -6.2
+  },
+  "per_app_stats": {
+    "youtube": {
+      "download": {
+        "app": "youtube",
+        "direction": "download",
+        "total_mb": 14.125,
+        "packets": 10050,
+        "avg_throughput_mbps": 1.548,
+        "peak_throughput_mbps": 5.816,
+        "p95_throughput_mbps": 5.543,
+        "stall_seconds": 30.0,
+        "delivered_fraction": 0.589,
+        "mean_over_cap": 0.258,
+        "classification": "served",
+        "hosts": [
+          "i.ytimg.com",
+          "r6---sn-jxopj-n5oe.gvt1.com",
+          "rr2---sn-a5m7lnld.c.youtube.com",
+          "rr2---sn-jxopj-n5oe.googlevideo.com",
+          "www.youtube.com",
+          "youtube.com",
+          "yt3.ggpht.com"
+        ]
+      },
+      "upload": {
+        "app": "youtube",
+        "direction": "upload",
+        "total_mb": 0.343,
+        "packets": 3241,
+        "avg_throughput_mbps": 0.038,
+        "peak_throughput_mbps": 0.311,
+        "p95_throughput_mbps": 0.176,
+        "stall_seconds": 72.0,
+        "delivered_fraction": 0.014,
+        "mean_over_cap": 0.006,
+        "classification": "starved",
+        "hosts": [
+          "i.ytimg.com",
+          "r6---sn-jxopj-n5oe.gvt1.com",
+          "rr2---sn-a5m7lnld.c.youtube.com",
+          "rr2---sn-jxopj-n5oe.googlevideo.com",
+          "www.youtube.com",
+          "youtube.com",
+          "yt3.ggpht.com"
+        ]
+      },
+      "plotted_directions": [
+        "download"
+      ],
+      "classification": "served",
+      "player_qoe_status": "ok",
+      "attribution_method": "remote_hostname",
+      "player_qoe_available": true
+    }
+  },
+  "capture_buckets_mb": {
+    "browser_infra": 31.868,
+    "youtube": 14.468,
+    "other": 4.411
+  },
+  "capture_top_hosts_bytes": {
+    "content-autofill.googleapis.com": 31176644,
+    "rr2---sn-jxopj-n5oe.googlevideo.com": 9426377,
+    "www.youtube.com": 4183922,
+    "www.google.com": 1255867,
+    "r6---sn-jxopj-n5oe.gvt1.com": 499274,
+    "www.gstatic.com": 263288,
+    "i.ytimg.com": 238331,
+    "fonts.gstatic.com": 165979,
+    "dns.google": 102609,
+    "yt3.ggpht.com": 85841,
+    "redirector.gvt1.com": 85177,
+    "fonts.googleapis.com": 45702,
+    "ogads-pa.clients6.google.com": 29727,
+    "accounts.google.com": 27854,
+    "rr2---sn-a5m7lnld.c.youtube.com": 18424,
+    "youtube.com": 15787,
+    "optimizationguide-pa.googleapis.com": 14534,
+    "play.google.com": 14215,
+    "static.doubleclick.net": 13135,
+    "mtalk.google.com": 10916,
+    "clients2.google.com": 2365
+  },
+  "shaping_applied": {
+    "download_mbps": 6.0,
+    "upload_mbps": 6.0,
+    "latency_ms": 50.0,
+    "latency_location": "upstream",
+    "qdisc": "pfifo",
+    "verified": false,
+    "buffer_packets": 1000,
+    "qdisc_params": null,
+    "loss_rate_percent": 0.0,
+    "verification_log": [
+      "upload: measured=7.31Mbps expected=6.0Mbps diff=21.8%",
+      "FAIL: upload out of \u00b120% range",
+      "download: measured=5.24Mbps expected=6.0Mbps diff=12.6%",
+      "PASS: download",
+      "latency: measured_rtt=120.56ms expected_rtt=50.00ms diff=70.56ms",
+      "FAIL: latency out of \u00b110.0ms range"
+    ]
+  },
+  "per_app": {
+    "youtube": {
+      "type": "streaming",
+      "traffic_verdict": "served",
+      "player_qoe_available": true,
+      "qoe": {
+        "app": "youtube",
+        "kind": "html5_video",
+        "player_qoe_available": true,
+        "status": "ok",
+        "video_startup_time_ms": 3343.0,
+        "mean_bitrate_mbps": null,
+        "max_bitrate_mbps": null,
+        "min_bitrate_mbps": null,
+        "mean_watched_bitrate_mbps": null,
+        "bitrate_changes": null,
+        "rebuffer_events": 0,
+        "rebuffer_duration_ms": 0.0,
+        "stall_duration_ms": 0.0,
+        "video_resolution_p": 480,
+        "frame_rate_fps": 25.02,
+        "dropped_frame_pct": 0.942,
+        "dropped_video_frames": 15,
+        "total_video_frames": 1593,
+        "resolution_changes": 1,
+        "resolutions_observed": [
+          360,
+          480
+        ],
+        "mean_buffer_ahead_secs": 48.1185,
+        "min_buffer_ahead_secs": 11.34,
+        "connection_speed_estimate_mbps": 1.3512,
+        "watched_seconds": 56.39,
+        "session_seconds": 59.72,
+        "total_samples": 56,
+        "is_live": false,
+        "video_duration_secs": 213.061,
+        "derivation": {
+          "startup_basis": "play_trigger",
+          "bitrate_basis": "unavailable (player reports an activity gauge, not a counter)",
+          "fps_basis": "total_video_frames_delta",
+          "rebuffer_rule": "current_time_secs not advancing while not paused and not ended, corroborated by empty buffer or vendor BUFFERING state"
+        },
+        "series": {
+          "buffer_ahead_secs": [
+            {
+              "t": 0.0,
+              "v": 11.344231
+            },
+            {
+              "t": 3.34,
+              "v": 15.738339
+            },
+            {
+              "t": 4.37,
+              "v": 18.834226
+            },
+            {
+              "t": 5.39,
+              "v": 22.351427
+            },
+            {
+              "t": 6.45,
+              "v": 21.178556
+            },
+            {
+              "t": 7.62,
+              "v": 23.669185
+            },
+            {
+              "t": 8.63,
+              "v": 28.482178
+            },
+            {
+              "t": 9.67,
+              "v": 28.809563
+            },
+            {
+              "t": 10.7,
+              "v": 27.781444
+            },
+            {
+              "t": 11.73,
+              "v": 26.7053
+            },
+            {
+              "t": 12.81,
+              "v": 29.298466
+            },
+            {
+              "t": 13.85,
+              "v": 32.347786
+            },
+            {
+              "t": 14.88,
+              "v": 36.175809
+            },
+            {
+              "t": 15.93,
+              "v": 35.669471
+            },
+            {
+              "t": 16.96,
+              "v": 34.648622
+            },
+            {
+              "t": 17.97,
+              "v": 33.582777
+            },
+            {
+              "t": 19.04,
+              "v": 32.568797
+            },
+            {
+              "t": 20.05,
+              "v": 31.949467999999996
+            },
+            {
+              "t": 21.07,
+              "v": 37.009858
+            },
+            {
+              "t": 22.09,
+              "v": 43.630821000000005
+            },
+            {
+              "t": 23.61,
+              "v": 45.155409000000006
+            },
+            {
+              "t": 24.63,
+              "v": 44.141834
+            },
+            {
+              "t": 25.65,
+              "v": 43.105198
+            },
+            {
+              "t": 26.68,
+              "v": 42.076578
+            },
+            {
+              "t": 27.71,
+              "v": 41.049987
+            },
+            {
+              "t": 28.74,
+              "v": 46.510242999999996
+            },
+            {
+              "t": 29.8,
+              "v": 48.765664
+            },
+            {
+              "t": 30.82,
+              "v": 48.30093
+            },
+            {
+              "t": 31.84,
+              "v": 47.279932
+            },
+            {
+              "t": 32.86,
+              "v": 46.977917
+            },
+            {
+              "t": 33.9,
+              "v": 52.268599
+            },
+            {
+              "t": 34.96,
+              "v": 52.521572
+            },
+            {
+              "t": 35.98,
+              "v": 55.887663
+            },
+            {
+              "t": 37.02,
+              "v": 55.504245999999995
+            },
+            {
+              "t": 38.04,
+              "v": 54.48734499999999
+            },
+            {
+              "t": 39.05,
+              "v": 59.060351000000004
+            },
+            {
+              "t": 40.09,
+              "v": 63.476717
+            },
+            {
+              "t": 41.11,
+              "v": 63.41046699999999
+            },
+            {
+              "t": 42.13,
+              "v": 62.37996799999999
+            },
+            {
+              "t": 43.17,
+              "v": 61.35017199999999
+            },
+            {
+              "t": 44.2,
+              "v": 60.311505999999994
+            },
+            {
+              "t": 45.24,
+              "v": 59.28495699999999
+            },
+            {
+              "t": 46.26,
+              "v": 60.286073
+            },
+            {
+              "t": 47.3,
+              "v": 65.85142099999999
+            },
+            {
+              "t": 48.33,
+              "v": 69.58658199999999
+            },
+            {
+              "t": 49.36,
+              "v": 68.55789999999999
+            },
+            {
+              "t": 50.39,
+              "v": 67.531431
+            },
+            {
+              "t": 51.41,
+              "v": 66.50109599999999
+            },
+            {
+              "t": 52.45,
+              "v": 65.438421
+            },
+            {
+              "t": 53.51,
+              "v": 64.396815
+            },
+            {
+              "t": 54.55,
+              "v": 66.95268099999998
+            },
+            {
+              "t": 55.6,
+              "v": 72.333348
+            },
+            {
+              "t": 56.61,
+              "v": 75.696698
+            },
+            {
+              "t": 57.65,
+              "v": 76.513895
+            },
+            {
+              "t": 58.67,
+              "v": 75.471214
+            },
+            {
+              "t": 59.72,
+              "v": 74.43213600000001
+            }
+          ],
+          "resolution_p": [
+            {
+              "t": 0.0,
+              "v": 360
+            },
+            {
+              "t": 3.34,
+              "v": 360
+            },
+            {
+              "t": 4.37,
+              "v": 360
+            },
+            {
+              "t": 5.39,
+              "v": 360
+            },
+            {
+              "t": 6.45,
+              "v": 360
+            },
+            {
+              "t": 7.62,
+              "v": 360
+            },
+            {
+              "t": 8.63,
+              "v": 360
+            },
+            {
+              "t": 9.67,
+              "v": 360
+            },
+            {
+              "t": 10.7,
+              "v": 360
+            },
+            {
+              "t": 11.73,
+              "v": 360
+            },
+            {
+              "t": 12.81,
+              "v": 360
+            },
+            {
+              "t": 13.85,
+              "v": 480
+            },
+            {
+              "t": 14.88,
+              "v": 480
+            },
+            {
+              "t": 15.93,
+              "v": 480
+            },
+            {
+              "t": 16.96,
+              "v": 480
+            },
+            {
+              "t": 17.97,
+              "v": 480
+            },
+            {
+              "t": 19.04,
+              "v": 480
+            },
+            {
+              "t": 20.05,
+              "v": 480
+            },
+            {
+              "t": 21.07,
+              "v": 480
+            },
+            {
+              "t": 22.09,
+              "v": 480
+            },
+            {
+              "t": 23.61,
+              "v": 480
+            },
+            {
+              "t": 24.63,
+              "v": 480
+            },
+            {
+              "t": 25.65,
+              "v": 480
+            },
+            {
+              "t": 26.68,
+              "v": 480
+            },
+            {
+              "t": 27.71,
+              "v": 480
+            },
+            {
+              "t": 28.74,
+              "v": 480
+            },
+            {
+              "t": 29.8,
+              "v": 480
+            },
+            {
+              "t": 30.82,
+              "v": 480
+            },
+            {
+              "t": 31.84,
+              "v": 480
+            },
+            {
+              "t": 32.86,
+              "v": 480
+            },
+            {
+              "t": 33.9,
+              "v": 480
+            },
+            {
+              "t": 34.96,
+              "v": 480
+            },
+            {
+              "t": 35.98,
+              "v": 480
+            },
+            {
+              "t": 37.02,
+              "v": 480
+            },
+            {
+              "t": 38.04,
+              "v": 480
+            },
+            {
+              "t": 39.05,
+              "v": 480
+            },
+            {
+              "t": 40.09,
+              "v": 480
+            },
+            {
+              "t": 41.11,
+              "v": 480
+            },
+            {
+              "t": 42.13,
+              "v": 480
+            },
+            {
+              "t": 43.17,
+              "v": 480
+            },
+            {
+              "t": 44.2,
+              "v": 480
+            },
+            {
+              "t": 45.24,
+              "v": 480
+            },
+            {
+              "t": 46.26,
+              "v": 480
+            },
+            {
+              "t": 47.3,
+              "v": 480
+            },
+            {
+              "t": 48.33,
+              "v": 480
+            },
+            {
+              "t": 49.36,
+              "v": 480
+            },
+            {
+              "t": 50.39,
+              "v": 480
+            },
+            {
+              "t": 51.41,
+              "v": 480
+            },
+            {
+              "t": 52.45,
+              "v": 480
+            },
+            {
+              "t": 53.51,
+              "v": 480
+            },
+            {
+              "t": 54.55,
+              "v": 480
+            },
+            {
+              "t": 55.6,
+              "v": 480
+            },
+            {
+              "t": 56.61,
+              "v": 480
+            },
+            {
+              "t": 57.65,
+              "v": 480
+            },
+            {
+              "t": 58.67,
+              "v": 480
+            },
+            {
+              "t": 59.72,
+              "v": 480
+            }
+          ],
+          "current_time_secs": [
+            {
+              "t": 0.0,
+              "v": 6.015769
+            },
+            {
+              "t": 3.34,
+              "v": 7.141661
+            },
+            {
+              "t": 4.37,
+              "v": 8.165774
+            },
+            {
+              "t": 5.39,
+              "v": 9.208573
+            },
+            {
+              "t": 6.45,
+              "v": 10.381444
+            },
+            {
+              "t": 7.62,
+              "v": 11.410815
+            },
+            {
+              "t": 8.63,
+              "v": 12.437822
+            },
+            {
+              "t": 9.67,
+              "v": 13.470437
+            },
+            {
+              "t": 10.7,
+              "v": 14.498556
+            },
+            {
+              "t": 11.73,
+              "v": 15.5747
+            },
+            {
+              "t": 12.81,
+              "v": 16.621534
+            },
+            {
+              "t": 13.85,
+              "v": 17.653214
+            },
+            {
+              "t": 14.88,
+              "v": 18.704191
+            },
+            {
+              "t": 15.93,
+              "v": 19.730529
+            },
+            {
+              "t": 16.96,
+              "v": 20.751378
+            },
+            {
+              "t": 17.97,
+              "v": 21.817223
+            },
+            {
+              "t": 19.04,
+              "v": 22.831203
+            },
+            {
+              "t": 20.05,
+              "v": 23.850532
+            },
+            {
+              "t": 21.07,
+              "v": 24.870142
+            },
+            {
+              "t": 22.09,
+              "v": 26.370179
+            },
+            {
+              "t": 23.61,
+              "v": 27.404591
+            },
+            {
+              "t": 24.63,
+              "v": 28.418166
+            },
+            {
+              "t": 25.65,
+              "v": 29.454802
+            },
+            {
+              "t": 26.68,
+              "v": 30.483422
+            },
+            {
+              "t": 27.71,
+              "v": 31.510013
+            },
+            {
+              "t": 28.74,
+              "v": 32.569757
+            },
+            {
+              "t": 29.8,
+              "v": 33.594336
+            },
+            {
+              "t": 30.82,
+              "v": 34.61907
+            },
+            {
+              "t": 31.84,
+              "v": 35.640068
+            },
+            {
+              "t": 32.86,
+              "v": 36.662083
+            },
+            {
+              "t": 33.9,
+              "v": 37.732401
+            },
+            {
+              "t": 34.96,
+              "v": 38.758428
+            },
+            {
+              "t": 35.98,
+              "v": 39.792337
+            },
+            {
+              "t": 37.02,
+              "v": 40.815754
+            },
+            {
+              "t": 38.04,
+              "v": 41.832655
+            },
+            {
+              "t": 39.05,
+              "v": 42.859649
+            },
+            {
+              "t": 40.09,
+              "v": 43.883283
+            },
+            {
+              "t": 41.11,
+              "v": 44.909533
+            },
+            {
+              "t": 42.13,
+              "v": 45.940032
+            },
+            {
+              "t": 43.17,
+              "v": 46.969828
+            },
+            {
+              "t": 44.2,
+              "v": 48.008494
+            },
+            {
+              "t": 45.24,
+              "v": 49.035043
+            },
+            {
+              "t": 46.26,
+              "v": 50.074927
+            },
+            {
+              "t": 47.3,
+              "v": 51.108579
+            },
+            {
+              "t": 48.33,
+              "v": 52.133418
+            },
+            {
+              "t": 49.36,
+              "v": 53.1621
+            },
+            {
+              "t": 50.39,
+              "v": 54.188569
+            },
+            {
+              "t": 51.41,
+              "v": 55.218904
+            },
+            {
+              "t": 52.45,
+              "v": 56.281579
+            },
+            {
+              "t": 53.51,
+              "v": 57.323185
+            },
+            {
+              "t": 54.55,
+              "v": 58.367319
+            },
+            {
+              "t": 55.6,
+              "v": 59.387652
+            },
+            {
+              "t": 56.61,
+              "v": 60.423302
+            },
+            {
+              "t": 57.65,
+              "v": 61.446105
+            },
+            {
+              "t": 58.67,
+              "v": 62.488786
+            },
+            {
+              "t": 59.72,
+              "v": 63.527864
+            }
+          ]
+        },
+        "rebuffer_spans": [],
+        "delivered_fraction_of_video": 0.265
+      }
+    }
+  },
+  "workflow_ok": true,
+  "artifacts": {
+    "pcap": "/home/student/sthanav-agentic-thin-waist/experiments/pramana/results/pramana_runs/youtube_6mbps_50ms_0pct_pfifo_cubic_solo_t1_44e68ffab2/capture.pcap",
+    "pcap_saved": true,
+    "plots": {
+      "throughput_youtube": "/home/student/sthanav-agentic-thin-waist/experiments/pramana/results/pramana_runs/youtube_6mbps_50ms_0pct_pfifo_cubic_solo_t1_44e68ffab2/throughput_youtube.png",
+      "qoe_summary_youtube": "/home/student/sthanav-agentic-thin-waist/experiments/pramana/results/pramana_runs/youtube_6mbps_50ms_0pct_pfifo_cubic_solo_t1_44e68ffab2/qoe_summary_youtube.png"
+    },
+    "dir": "/home/student/sthanav-agentic-thin-waist/experiments/pramana/results/pramana_runs/youtube_6mbps_50ms_0pct_pfifo_cubic_solo_t1_44e68ffab2"
+  }
+}

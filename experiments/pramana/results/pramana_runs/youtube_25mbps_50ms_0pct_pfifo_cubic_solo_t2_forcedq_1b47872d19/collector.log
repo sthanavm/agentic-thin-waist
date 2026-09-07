@@ -1,0 +1,8 @@
+[youtube] starting Xvfb+fluxbox on :99
+[youtube] launching undetected-chromedriver Chrome (headed, DISPLAY=:99)
+[youtube] navigating to https://www.youtube.com/watch?v=dQw4w9WgXcQ&autoplay=1&mute=1
+[youtube] force_max_quality(hd2160) -> {'levels': ['hd2160', 'hd1440', 'hd1080', 'hd720', 'large', 'medium', 'small', 'tiny', 'auto'], 'ok': True, 'quality_after': 'hd720', 'range_applied': True, 'single_applied': False}
+[youtube] ready; waiting for all applications before sampling
+[youtube] all applications ready; starting synchronized sampling
+[youtube] synchronized play result: {'current_time': 0, 'paused': False, 'ready_state': 0, 'started': True}
+[youtube] summary: 28 samples written to /out/youtube_stats.jsonl | current_time_secs range=[0, 19.633154] | advanced=True | final_resolution=3840x2160

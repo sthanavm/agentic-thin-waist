@@ -234,3 +234,11 @@ docker-compose.override.yml
 
 # Analysis notebook pcap cache (gitignored, generated on demand)
 _pcap_cache/
+
+# Pramana experiment artifacts — captures, records and plots are generated on
+# demand and can be hundreds of MB. Never commit captured data.
+experiments/pramana/results/
+experiments/pramana/**/*.pcap
+experiments/pramana/**/*.pcapng
+experiments/pramana/**/*_stats.jsonl
+experiments/pramana/.ipynb_checkpoints/
