@@ -1,0 +1,14 @@
+[youtube] starting Xvfb+fluxbox on :99
+[vimeo] starting Xvfb+fluxbox on :100
+[youtube] launching undetected-chromedriver Chrome (headed, DISPLAY=:99)
+[youtube] navigating to https://www.youtube.com/watch?v=dQw4w9WgXcQ&autoplay=1&mute=1
+[vimeo] launching undetected-chromedriver Chrome (headed, DISPLAY=:100)
+[youtube] ready; waiting for all applications before sampling
+[vimeo] navigating to https://player.vimeo.com/video/76979871?autoplay=1&muted=1
+[vimeo] ready; waiting for all applications before sampling
+[vimeo] all applications ready; starting synchronized sampling
+[youtube] all applications ready; starting synchronized sampling
+[vimeo] synchronized play result: {'reason': 'no_video', 'started': False}
+[youtube] synchronized play result: {'current_time': 21.571585, 'paused': False, 'ready_state': 4, 'started': True}
+[vimeo] summary: 55 samples written to /out/vimeo_stats.jsonl | current_time_secs range=[0, 29.290202] | advanced=True | final_resolution=1280x720
+[youtube] summary: 58 samples written to /out/youtube_stats.jsonl | current_time_secs range=[21.935165, 81.215579] | advanced=True | final_resolution=854x480
