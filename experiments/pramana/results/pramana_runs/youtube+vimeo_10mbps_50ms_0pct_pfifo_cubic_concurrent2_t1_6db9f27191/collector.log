@@ -1,0 +1,21 @@
+[vimeo] starting Xvfb+fluxbox on :100
+[youtube] starting Xvfb+fluxbox on :99
+[vimeo] launching undetected-chromedriver Chrome (headed, DISPLAY=:100)
+[vimeo] navigating to https://player.vimeo.com/video/911411289?autoplay=1&muted=1
+[youtube] launching undetected-chromedriver Chrome (headed, DISPLAY=:99)
+[vimeo] ready; waiting for all applications before sampling
+[youtube] navigating to https://www.youtube.com/watch?v=dQw4w9WgXcQ&autoplay=1&mute=1
+[youtube] ready; waiting for all applications before sampling
+[youtube] all applications ready; starting synchronized sampling
+[vimeo] all applications ready; starting synchronized sampling
+[vimeo] media ready after 0.0s (readyState=4, buffered=0..29.9935)
+[youtube] media ready after 0.1s (readyState=4, buffered=0..17.36)
+[vimeo] playback confirmed on attempt 1 (clock 8.41 -> 9.47)
+[vimeo] synchronized play result: {'current_time': 8.411954, 'paused': False, 'ready_state': 4, 'started': True, 'attempts': 1, 'confirmed': True, 'ready_wait': {'buffered_end': 29.9935, 'buffered_ranges': 1, 'buffered_start': 0, 'current_time': 8.387129, 'network_state': 2, 'ok': True, 'paused': False, 'ready_state': 4, 'ready': True}}
+[youtube] playback confirmed on attempt 1 (clock 3.72 -> 6.11)
+[youtube] synchronized play result: {'current_time': 3.715114, 'paused': False, 'ready_state': 4, 'started': True, 'attempts': 1, 'confirmed': True, 'ready_wait': {'buffered_end': 17.36, 'buffered_ranges': 1, 'buffered_start': 0, 'current_time': 3.633169, 'network_state': 2, 'ok': True, 'paused': False, 'ready_state': 4, 'ready': True}}
+[vimeo] summary: 114 samples written to /out/vimeo_stats.jsonl | current_time_secs range=[9.574871, 104.085016] | advanced=True | final_resolution=1440x1080
+[youtube] summary: 114 samples written to /out/youtube_stats.jsonl | current_time_secs range=[6.199104, 126.075077] | advanced=True | final_resolution=854x480
+_XSERVTransmkdir: ERROR: Cannot create /tmp/.X11-unix
+_XSERVTransSocketUNIXCreateListener: mkdir(/tmp/.X11-unix) failed, errno = 17
+_XSERVTransMakeAllCOTSServerListeners: failed to create listener for unix

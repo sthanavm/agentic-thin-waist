@@ -1,0 +1,1197 @@
+{
+  "experiment_id": "exp-4bdd0056ce",
+  "slug": "vimeo_10mbps_50ms_0pct_pfifo_cubic_solo_t3",
+  "mode": "direct",
+  "timestamp": 1789094505.4174178,
+  "config": {
+    "apps": [
+      "vimeo"
+    ],
+    "bandwidth_mbps": 10.0,
+    "upload_mbps": 10.0,
+    "latency_ms": 50.0,
+    "loss_pct": 0.0,
+    "aqm": "pfifo",
+    "buffer_packets": 1000,
+    "qdisc_params": null,
+    "cca": "cubic",
+    "duration_s": 40,
+    "controller": "playwright",
+    "trial": 3,
+    "tag": "default_confirm",
+    "app_urls": null,
+    "peers": null,
+    "force_max_quality": false,
+    "force_quality_level": "hd2160",
+    "concurrency": "solo"
+  },
+  "plot_combined_throughput": false,
+  "per_app_plots": true,
+  "force_max_quality": false,
+  "player_qoe": {
+    "vimeo": {
+      "app": "vimeo",
+      "kind": "html5_video",
+      "player_qoe_available": true,
+      "status": "ok",
+      "video_startup_time_ms": 1020.2,
+      "mean_bitrate_mbps": null,
+      "max_bitrate_mbps": null,
+      "min_bitrate_mbps": null,
+      "mean_watched_bitrate_mbps": null,
+      "bitrate_changes": null,
+      "rebuffer_events": 0,
+      "rebuffer_duration_ms": 0.0,
+      "stall_duration_ms": 0.0,
+      "video_resolution_p": 1080,
+      "frame_rate_fps": 24.03,
+      "dropped_frame_pct": 0.101,
+      "dropped_video_frames": 1,
+      "total_video_frames": 991,
+      "resolution_changes": 0,
+      "resolutions_observed": [
+        1080
+      ],
+      "mean_buffer_ahead_secs": 17.3604,
+      "min_buffer_ahead_secs": 12.11,
+      "connection_speed_estimate_mbps": null,
+      "watched_seconds": 39.65,
+      "session_seconds": 39.64,
+      "total_samples": 39,
+      "is_live": false,
+      "video_duration_secs": null,
+      "derivation": {
+        "startup_basis": "play_trigger",
+        "bitrate_basis": "unavailable (none)",
+        "fps_basis": "total_video_frames_delta",
+        "rebuffer_rule": "current_time_secs not advancing while not paused and not ended, corroborated by empty buffer or vendor BUFFERING state"
+      },
+      "series": {
+        "buffer_ahead_secs": [
+          {
+            "t": 0.0,
+            "v": 16.53171
+          },
+          {
+            "t": 1.02,
+            "v": 15.639747
+          },
+          {
+            "t": 2.05,
+            "v": 14.612775
+          },
+          {
+            "t": 3.08,
+            "v": 13.579180999999998
+          },
+          {
+            "t": 4.1,
+            "v": 18.424725000000002
+          },
+          {
+            "t": 5.14,
+            "v": 17.428581
+          },
+          {
+            "t": 6.31,
+            "v": 16.378228
+          },
+          {
+            "t": 7.35,
+            "v": 15.347996
+          },
+          {
+            "t": 8.38,
+            "v": 14.309075
+          },
+          {
+            "t": 9.42,
+            "v": 13.266107
+          },
+          {
+            "t": 10.47,
+            "v": 12.110705
+          },
+          {
+            "t": 11.66,
+            "v": 17.08796
+          },
+          {
+            "t": 12.68,
+            "v": 16.059348
+          },
+          {
+            "t": 13.71,
+            "v": 15.032618999999999
+          },
+          {
+            "t": 14.74,
+            "v": 14.003183999999997
+          },
+          {
+            "t": 15.77,
+            "v": 18.742521999999997
+          },
+          {
+            "t": 16.82,
+            "v": 17.708228999999996
+          },
+          {
+            "t": 17.85,
+            "v": 22.662117999999996
+          },
+          {
+            "t": 18.89,
+            "v": 21.642716999999998
+          },
+          {
+            "t": 19.91,
+            "v": 20.627596999999998
+          },
+          {
+            "t": 20.93,
+            "v": 19.585496999999997
+          },
+          {
+            "t": 21.97,
+            "v": 18.564317
+          },
+          {
+            "t": 23.0,
+            "v": 17.496584
+          },
+          {
+            "t": 24.06,
+            "v": 16.661824000000003
+          },
+          {
+            "t": 25.16,
+            "v": 15.612330000000004
+          },
+          {
+            "t": 26.21,
+            "v": 20.283768
+          },
+          {
+            "t": 27.28,
+            "v": 19.251058999999998
+          },
+          {
+            "t": 28.3,
+            "v": 18.225614999999998
+          },
+          {
+            "t": 29.33,
+            "v": 17.492134999999998
+          },
+          {
+            "t": 30.36,
+            "v": 16.478306
+          },
+          {
+            "t": 31.38,
+            "v": 21.144774999999996
+          },
+          {
+            "t": 32.41,
+            "v": 20.122792999999994
+          },
+          {
+            "t": 33.43,
+            "v": 19.098217999999996
+          },
+          {
+            "t": 34.46,
+            "v": 18.065977999999994
+          },
+          {
+            "t": 35.49,
+            "v": 17.377708
+          },
+          {
+            "t": 36.52,
+            "v": 16.340342
+          },
+          {
+            "t": 37.57,
+            "v": 15.269152999999996
+          },
+          {
+            "t": 38.62,
+            "v": 19.912589999999994
+          },
+          {
+            "t": 39.64,
+            "v": 18.878763
+          }
+        ],
+        "resolution_p": [
+          {
+            "t": 0.0,
+            "v": 1080
+          },
+          {
+            "t": 1.02,
+            "v": 1080
+          },
+          {
+            "t": 2.05,
+            "v": 1080
+          },
+          {
+            "t": 3.08,
+            "v": 1080
+          },
+          {
+            "t": 4.1,
+            "v": 1080
+          },
+          {
+            "t": 5.14,
+            "v": 1080
+          },
+          {
+            "t": 6.31,
+            "v": 1080
+          },
+          {
+            "t": 7.35,
+            "v": 1080
+          },
+          {
+            "t": 8.38,
+            "v": 1080
+          },
+          {
+            "t": 9.42,
+            "v": 1080
+          },
+          {
+            "t": 10.47,
+            "v": 1080
+          },
+          {
+            "t": 11.66,
+            "v": 1080
+          },
+          {
+            "t": 12.68,
+            "v": 1080
+          },
+          {
+            "t": 13.71,
+            "v": 1080
+          },
+          {
+            "t": 14.74,
+            "v": 1080
+          },
+          {
+            "t": 15.77,
+            "v": 1080
+          },
+          {
+            "t": 16.82,
+            "v": 1080
+          },
+          {
+            "t": 17.85,
+            "v": 1080
+          },
+          {
+            "t": 18.89,
+            "v": 1080
+          },
+          {
+            "t": 19.91,
+            "v": 1080
+          },
+          {
+            "t": 20.93,
+            "v": 1080
+          },
+          {
+            "t": 21.97,
+            "v": 1080
+          },
+          {
+            "t": 23.0,
+            "v": 1080
+          },
+          {
+            "t": 24.06,
+            "v": 1080
+          },
+          {
+            "t": 25.16,
+            "v": 1080
+          },
+          {
+            "t": 26.21,
+            "v": 1080
+          },
+          {
+            "t": 27.28,
+            "v": 1080
+          },
+          {
+            "t": 28.3,
+            "v": 1080
+          },
+          {
+            "t": 29.33,
+            "v": 1080
+          },
+          {
+            "t": 30.36,
+            "v": 1080
+          },
+          {
+            "t": 31.38,
+            "v": 1080
+          },
+          {
+            "t": 32.41,
+            "v": 1080
+          },
+          {
+            "t": 33.43,
+            "v": 1080
+          },
+          {
+            "t": 34.46,
+            "v": 1080
+          },
+          {
+            "t": 35.49,
+            "v": 1080
+          },
+          {
+            "t": 36.52,
+            "v": 1080
+          },
+          {
+            "t": 37.57,
+            "v": 1080
+          },
+          {
+            "t": 38.62,
+            "v": 1080
+          },
+          {
+            "t": 39.64,
+            "v": 1080
+          }
+        ],
+        "current_time_secs": [
+          {
+            "t": 0.0,
+            "v": 1.46179
+          },
+          {
+            "t": 1.02,
+            "v": 2.485252
+          },
+          {
+            "t": 2.05,
+            "v": 3.512224
+          },
+          {
+            "t": 3.08,
+            "v": 4.545818
+          },
+          {
+            "t": 4.1,
+            "v": 5.568775
+          },
+          {
+            "t": 5.14,
+            "v": 6.738085
+          },
+          {
+            "t": 6.31,
+            "v": 7.788438
+          },
+          {
+            "t": 7.35,
+            "v": 8.81867
+          },
+          {
+            "t": 8.38,
+            "v": 9.857591
+          },
+          {
+            "t": 9.42,
+            "v": 10.900559
+          },
+          {
+            "t": 10.47,
+            "v": 12.055961
+          },
+          {
+            "t": 11.66,
+            "v": 13.120372
+          },
+          {
+            "t": 12.68,
+            "v": 14.148984
+          },
+          {
+            "t": 13.71,
+            "v": 15.175713
+          },
+          {
+            "t": 14.74,
+            "v": 16.205148
+          },
+          {
+            "t": 15.77,
+            "v": 17.250978
+          },
+          {
+            "t": 16.82,
+            "v": 18.285271
+          },
+          {
+            "t": 17.85,
+            "v": 19.331382
+          },
+          {
+            "t": 18.89,
+            "v": 20.350783
+          },
+          {
+            "t": 19.91,
+            "v": 21.365903
+          },
+          {
+            "t": 20.93,
+            "v": 22.408003
+          },
+          {
+            "t": 21.97,
+            "v": 23.429183
+          },
+          {
+            "t": 23.0,
+            "v": 24.496916
+          },
+          {
+            "t": 24.06,
+            "v": 25.588175
+          },
+          {
+            "t": 25.16,
+            "v": 26.637669
+          },
+          {
+            "t": 26.21,
+            "v": 27.709732
+          },
+          {
+            "t": 27.28,
+            "v": 28.742441
+          },
+          {
+            "t": 28.3,
+            "v": 29.767885
+          },
+          {
+            "t": 29.33,
+            "v": 30.799531
+          },
+          {
+            "t": 30.36,
+            "v": 31.81336
+          },
+          {
+            "t": 31.38,
+            "v": 32.848725
+          },
+          {
+            "t": 32.41,
+            "v": 33.870707
+          },
+          {
+            "t": 33.43,
+            "v": 34.895282
+          },
+          {
+            "t": 34.46,
+            "v": 35.927522
+          },
+          {
+            "t": 35.49,
+            "v": 36.955624
+          },
+          {
+            "t": 36.52,
+            "v": 37.99299
+          },
+          {
+            "t": 37.57,
+            "v": 39.064179
+          },
+          {
+            "t": 38.62,
+            "v": 40.08091
+          },
+          {
+            "t": 39.64,
+            "v": 41.114737
+          }
+        ]
+      },
+      "rebuffer_spans": []
+    }
+  },
+  "player_qoe_available": true,
+  "limitations": {
+    "player_qoe_available": true,
+    "player_qoe_source": "real Chrome (Xvfb + SeleniumBase/undetected-chromedriver) driven inside the shaped ns1 namespace; metrics derived by shared/qoe.py",
+    "player_qoe_skipped": {},
+    "latency_scope": "link-wide (netem, not per-flow)",
+    "qtrace_available": false,
+    "per_app_throughput": true,
+    "per_app_attribution_method": "remote_hostname",
+    "per_app_attribution_note": "local_alias_ip = exact split by each app's namespace IP; remote_hostname = split by remote endpoint identified from in-capture DNS answers + TLS SNI (the deployed worker runs all browser apps in one namespace, so there is only one local IP)",
+    "attributed_byte_fraction": 0.9779
+  },
+  "network_stats": {
+    "packets": 24835,
+    "duration_s": 45.36,
+    "total_mb": 27.9,
+    "avg_throughput_mbps": 4.781,
+    "peak_throughput_mbps": 9.944,
+    "p95_throughput_mbps": 9.934,
+    "delivered_fraction": 0.478,
+    "stall_seconds": 14.0,
+    "shaping_verified": true,
+    "shaping_error_pct": -52.2
+  },
+  "per_app_stats": {
+    "vimeo": {
+      "download": {
+        "app": "vimeo",
+        "direction": "download",
+        "total_mb": 26.368,
+        "packets": 14832,
+        "avg_throughput_mbps": 4.586,
+        "peak_throughput_mbps": 9.932,
+        "p95_throughput_mbps": 9.924,
+        "stall_seconds": 15.0,
+        "delivered_fraction": 0.674,
+        "mean_over_cap": 0.459,
+        "classification": "served",
+        "hosts": [
+          "arclight.vimeo.com",
+          "i.vimeocdn.com",
+          "lensflare.vimeo.com",
+          "player.vimeo.com",
+          "vod-adaptive-ak.vimeocdn.com"
+        ]
+      },
+      "upload": {
+        "app": "vimeo",
+        "direction": "upload",
+        "total_mb": 0.677,
+        "packets": 8681,
+        "avg_throughput_mbps": 0.118,
+        "peak_throughput_mbps": 0.379,
+        "p95_throughput_mbps": 0.262,
+        "stall_seconds": 46.0,
+        "delivered_fraction": 0.0,
+        "mean_over_cap": 0.012,
+        "classification": "starved",
+        "hosts": [
+          "arclight.vimeo.com",
+          "i.vimeocdn.com",
+          "lensflare.vimeo.com",
+          "player.vimeo.com",
+          "vod-adaptive-ak.vimeocdn.com"
+        ]
+      },
+      "plotted_directions": [
+        "download"
+      ],
+      "classification": "served",
+      "player_qoe_status": "ok",
+      "attribution_method": "remote_hostname",
+      "player_qoe_available": true
+    }
+  },
+  "capture_buckets_mb": {
+    "vimeo": 27.045,
+    "other": 0.616,
+    "browser_infra": 0.237
+  },
+  "capture_top_hosts_bytes": {
+    "vod-adaptive-ak.vimeocdn.com": 26279070,
+    "i.vimeocdn.com": 555386,
+    "r6---sn-jxopj-n5oe.gvt1.com": 498374,
+    "www.google.com": 106965,
+    "player.vimeo.com": 103546,
+    "www.gstatic.com": 77606,
+    "lensflare.vimeo.com": 56104,
+    "arclight.vimeo.com": 50980,
+    "dns.google": 50701,
+    "update.googleapis.com": 34425,
+    "android.clients.google.com": 30528,
+    "edgedl.me.gvt1.com": 16902,
+    "accounts.google.com": 12536,
+    "redirector.gvt1.com": 12106,
+    "mtalk.google.com": 10732,
+    "clients2.google.com": 2371
+  },
+  "shaping_applied": {
+    "download_mbps": 10.0,
+    "upload_mbps": 10.0,
+    "latency_ms": 50.0,
+    "latency_location": "upstream",
+    "qdisc": "pfifo",
+    "verified": false,
+    "buffer_packets": 1000,
+    "qdisc_params": null,
+    "loss_rate_percent": 0.0,
+    "verification_log": [
+      "upload: measured=10.81Mbps expected=10.0Mbps diff=8.1%",
+      "PASS: upload",
+      "download: measured=9.09Mbps expected=10.0Mbps diff=9.1%",
+      "PASS: download",
+      "latency: measured_rtt=95.02ms expected_rtt=50.00ms diff=45.02ms",
+      "FAIL: latency out of \u00b110.0ms range"
+    ]
+  },
+  "per_app": {
+    "vimeo": {
+      "type": "streaming",
+      "traffic_verdict": "served",
+      "player_qoe_available": true,
+      "qoe": {
+        "app": "vimeo",
+        "kind": "html5_video",
+        "player_qoe_available": true,
+        "status": "ok",
+        "video_startup_time_ms": 1020.2,
+        "mean_bitrate_mbps": null,
+        "max_bitrate_mbps": null,
+        "min_bitrate_mbps": null,
+        "mean_watched_bitrate_mbps": null,
+        "bitrate_changes": null,
+        "rebuffer_events": 0,
+        "rebuffer_duration_ms": 0.0,
+        "stall_duration_ms": 0.0,
+        "video_resolution_p": 1080,
+        "frame_rate_fps": 24.03,
+        "dropped_frame_pct": 0.101,
+        "dropped_video_frames": 1,
+        "total_video_frames": 991,
+        "resolution_changes": 0,
+        "resolutions_observed": [
+          1080
+        ],
+        "mean_buffer_ahead_secs": 17.3604,
+        "min_buffer_ahead_secs": 12.11,
+        "connection_speed_estimate_mbps": null,
+        "watched_seconds": 39.65,
+        "session_seconds": 39.64,
+        "total_samples": 39,
+        "is_live": false,
+        "video_duration_secs": null,
+        "derivation": {
+          "startup_basis": "play_trigger",
+          "bitrate_basis": "unavailable (none)",
+          "fps_basis": "total_video_frames_delta",
+          "rebuffer_rule": "current_time_secs not advancing while not paused and not ended, corroborated by empty buffer or vendor BUFFERING state"
+        },
+        "series": {
+          "buffer_ahead_secs": [
+            {
+              "t": 0.0,
+              "v": 16.53171
+            },
+            {
+              "t": 1.02,
+              "v": 15.639747
+            },
+            {
+              "t": 2.05,
+              "v": 14.612775
+            },
+            {
+              "t": 3.08,
+              "v": 13.579180999999998
+            },
+            {
+              "t": 4.1,
+              "v": 18.424725000000002
+            },
+            {
+              "t": 5.14,
+              "v": 17.428581
+            },
+            {
+              "t": 6.31,
+              "v": 16.378228
+            },
+            {
+              "t": 7.35,
+              "v": 15.347996
+            },
+            {
+              "t": 8.38,
+              "v": 14.309075
+            },
+            {
+              "t": 9.42,
+              "v": 13.266107
+            },
+            {
+              "t": 10.47,
+              "v": 12.110705
+            },
+            {
+              "t": 11.66,
+              "v": 17.08796
+            },
+            {
+              "t": 12.68,
+              "v": 16.059348
+            },
+            {
+              "t": 13.71,
+              "v": 15.032618999999999
+            },
+            {
+              "t": 14.74,
+              "v": 14.003183999999997
+            },
+            {
+              "t": 15.77,
+              "v": 18.742521999999997
+            },
+            {
+              "t": 16.82,
+              "v": 17.708228999999996
+            },
+            {
+              "t": 17.85,
+              "v": 22.662117999999996
+            },
+            {
+              "t": 18.89,
+              "v": 21.642716999999998
+            },
+            {
+              "t": 19.91,
+              "v": 20.627596999999998
+            },
+            {
+              "t": 20.93,
+              "v": 19.585496999999997
+            },
+            {
+              "t": 21.97,
+              "v": 18.564317
+            },
+            {
+              "t": 23.0,
+              "v": 17.496584
+            },
+            {
+              "t": 24.06,
+              "v": 16.661824000000003
+            },
+            {
+              "t": 25.16,
+              "v": 15.612330000000004
+            },
+            {
+              "t": 26.21,
+              "v": 20.283768
+            },
+            {
+              "t": 27.28,
+              "v": 19.251058999999998
+            },
+            {
+              "t": 28.3,
+              "v": 18.225614999999998
+            },
+            {
+              "t": 29.33,
+              "v": 17.492134999999998
+            },
+            {
+              "t": 30.36,
+              "v": 16.478306
+            },
+            {
+              "t": 31.38,
+              "v": 21.144774999999996
+            },
+            {
+              "t": 32.41,
+              "v": 20.122792999999994
+            },
+            {
+              "t": 33.43,
+              "v": 19.098217999999996
+            },
+            {
+              "t": 34.46,
+              "v": 18.065977999999994
+            },
+            {
+              "t": 35.49,
+              "v": 17.377708
+            },
+            {
+              "t": 36.52,
+              "v": 16.340342
+            },
+            {
+              "t": 37.57,
+              "v": 15.269152999999996
+            },
+            {
+              "t": 38.62,
+              "v": 19.912589999999994
+            },
+            {
+              "t": 39.64,
+              "v": 18.878763
+            }
+          ],
+          "resolution_p": [
+            {
+              "t": 0.0,
+              "v": 1080
+            },
+            {
+              "t": 1.02,
+              "v": 1080
+            },
+            {
+              "t": 2.05,
+              "v": 1080
+            },
+            {
+              "t": 3.08,
+              "v": 1080
+            },
+            {
+              "t": 4.1,
+              "v": 1080
+            },
+            {
+              "t": 5.14,
+              "v": 1080
+            },
+            {
+              "t": 6.31,
+              "v": 1080
+            },
+            {
+              "t": 7.35,
+              "v": 1080
+            },
+            {
+              "t": 8.38,
+              "v": 1080
+            },
+            {
+              "t": 9.42,
+              "v": 1080
+            },
+            {
+              "t": 10.47,
+              "v": 1080
+            },
+            {
+              "t": 11.66,
+              "v": 1080
+            },
+            {
+              "t": 12.68,
+              "v": 1080
+            },
+            {
+              "t": 13.71,
+              "v": 1080
+            },
+            {
+              "t": 14.74,
+              "v": 1080
+            },
+            {
+              "t": 15.77,
+              "v": 1080
+            },
+            {
+              "t": 16.82,
+              "v": 1080
+            },
+            {
+              "t": 17.85,
+              "v": 1080
+            },
+            {
+              "t": 18.89,
+              "v": 1080
+            },
+            {
+              "t": 19.91,
+              "v": 1080
+            },
+            {
+              "t": 20.93,
+              "v": 1080
+            },
+            {
+              "t": 21.97,
+              "v": 1080
+            },
+            {
+              "t": 23.0,
+              "v": 1080
+            },
+            {
+              "t": 24.06,
+              "v": 1080
+            },
+            {
+              "t": 25.16,
+              "v": 1080
+            },
+            {
+              "t": 26.21,
+              "v": 1080
+            },
+            {
+              "t": 27.28,
+              "v": 1080
+            },
+            {
+              "t": 28.3,
+              "v": 1080
+            },
+            {
+              "t": 29.33,
+              "v": 1080
+            },
+            {
+              "t": 30.36,
+              "v": 1080
+            },
+            {
+              "t": 31.38,
+              "v": 1080
+            },
+            {
+              "t": 32.41,
+              "v": 1080
+            },
+            {
+              "t": 33.43,
+              "v": 1080
+            },
+            {
+              "t": 34.46,
+              "v": 1080
+            },
+            {
+              "t": 35.49,
+              "v": 1080
+            },
+            {
+              "t": 36.52,
+              "v": 1080
+            },
+            {
+              "t": 37.57,
+              "v": 1080
+            },
+            {
+              "t": 38.62,
+              "v": 1080
+            },
+            {
+              "t": 39.64,
+              "v": 1080
+            }
+          ],
+          "current_time_secs": [
+            {
+              "t": 0.0,
+              "v": 1.46179
+            },
+            {
+              "t": 1.02,
+              "v": 2.485252
+            },
+            {
+              "t": 2.05,
+              "v": 3.512224
+            },
+            {
+              "t": 3.08,
+              "v": 4.545818
+            },
+            {
+              "t": 4.1,
+              "v": 5.568775
+            },
+            {
+              "t": 5.14,
+              "v": 6.738085
+            },
+            {
+              "t": 6.31,
+              "v": 7.788438
+            },
+            {
+              "t": 7.35,
+              "v": 8.81867
+            },
+            {
+              "t": 8.38,
+              "v": 9.857591
+            },
+            {
+              "t": 9.42,
+              "v": 10.900559
+            },
+            {
+              "t": 10.47,
+              "v": 12.055961
+            },
+            {
+              "t": 11.66,
+              "v": 13.120372
+            },
+            {
+              "t": 12.68,
+              "v": 14.148984
+            },
+            {
+              "t": 13.71,
+              "v": 15.175713
+            },
+            {
+              "t": 14.74,
+              "v": 16.205148
+            },
+            {
+              "t": 15.77,
+              "v": 17.250978
+            },
+            {
+              "t": 16.82,
+              "v": 18.285271
+            },
+            {
+              "t": 17.85,
+              "v": 19.331382
+            },
+            {
+              "t": 18.89,
+              "v": 20.350783
+            },
+            {
+              "t": 19.91,
+              "v": 21.365903
+            },
+            {
+              "t": 20.93,
+              "v": 22.408003
+            },
+            {
+              "t": 21.97,
+              "v": 23.429183
+            },
+            {
+              "t": 23.0,
+              "v": 24.496916
+            },
+            {
+              "t": 24.06,
+              "v": 25.588175
+            },
+            {
+              "t": 25.16,
+              "v": 26.637669
+            },
+            {
+              "t": 26.21,
+              "v": 27.709732
+            },
+            {
+              "t": 27.28,
+              "v": 28.742441
+            },
+            {
+              "t": 28.3,
+              "v": 29.767885
+            },
+            {
+              "t": 29.33,
+              "v": 30.799531
+            },
+            {
+              "t": 30.36,
+              "v": 31.81336
+            },
+            {
+              "t": 31.38,
+              "v": 32.848725
+            },
+            {
+              "t": 32.41,
+              "v": 33.870707
+            },
+            {
+              "t": 33.43,
+              "v": 34.895282
+            },
+            {
+              "t": 34.46,
+              "v": 35.927522
+            },
+            {
+              "t": 35.49,
+              "v": 36.955624
+            },
+            {
+              "t": 36.52,
+              "v": 37.99299
+            },
+            {
+              "t": 37.57,
+              "v": 39.064179
+            },
+            {
+              "t": 38.62,
+              "v": 40.08091
+            },
+            {
+              "t": 39.64,
+              "v": 41.114737
+            }
+          ]
+        },
+        "rebuffer_spans": []
+      }
+    }
+  },
+  "workflow_ok": true,
+  "artifacts": {
+    "pcap": "/home/student/sthanav-agentic-thin-waist/experiments/pramana/results/pramana_runs/vimeo_10mbps_50ms_0pct_pfifo_cubic_solo_t3_4bdd0056ce/capture.pcap",
+    "pcap_saved": true,
+    "plots": {
+      "throughput_vimeo": "/home/student/sthanav-agentic-thin-waist/experiments/pramana/results/pramana_runs/vimeo_10mbps_50ms_0pct_pfifo_cubic_solo_t3_4bdd0056ce/throughput_vimeo.png",
+      "qoe_summary_vimeo": "/home/student/sthanav-agentic-thin-waist/experiments/pramana/results/pramana_runs/vimeo_10mbps_50ms_0pct_pfifo_cubic_solo_t3_4bdd0056ce/qoe_summary_vimeo.png"
+    },
+    "dir": "/home/student/sthanav-agentic-thin-waist/experiments/pramana/results/pramana_runs/vimeo_10mbps_50ms_0pct_pfifo_cubic_solo_t3_4bdd0056ce"
+  }
+}

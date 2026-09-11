@@ -1,0 +1,9 @@
+[vimeo] starting Xvfb+fluxbox on :99
+[vimeo] launching undetected-chromedriver Chrome (headed, DISPLAY=:99)
+[vimeo] navigating to https://player.vimeo.com/video/911411289?autoplay=1&muted=1
+[vimeo] ready; waiting for all applications before sampling
+[vimeo] all applications ready; starting synchronized sampling
+[vimeo] media ready after 1.6s (readyState=4, buffered=0..5.9935)
+[vimeo] playback confirmed on attempt 1 (clock 0.26 -> 1.44)
+[vimeo] synchronized play result: {'current_time': 0.261414, 'paused': False, 'ready_state': 4, 'started': True, 'attempts': 1, 'confirmed': True, 'ready_wait': {'buffered_end': 5.9935, 'buffered_ranges': 1, 'buffered_start': 0, 'current_time': 0.244643, 'network_state': 2, 'ok': True, 'paused': False, 'ready_state': 4, 'ready': True}}
+[vimeo] summary: 39 samples written to /out/vimeo_stats.jsonl | current_time_secs range=[1.46179, 41.114737] | advanced=True | final_resolution=1440x1080
