@@ -1,0 +1,18 @@
+[youtube] starting Xvfb+fluxbox on :99
+[vimeo] starting Xvfb+fluxbox on :100
+[vimeo] launching undetected-chromedriver Chrome (headed, DISPLAY=:100)
+[vimeo] navigating to https://player.vimeo.com/video/911411289?autoplay=1&muted=1
+[youtube] launching undetected-chromedriver Chrome (headed, DISPLAY=:99)
+[vimeo] ready; waiting for all applications before sampling
+[youtube] navigating to https://www.youtube.com/watch?v=dQw4w9WgXcQ&autoplay=1&mute=1
+[youtube] ready; waiting for all applications before sampling
+[youtube] all applications ready; starting synchronized sampling
+[vimeo] all applications ready; starting synchronized sampling
+[vimeo] media ready after 0.1s (readyState=4, buffered=0..24.166666)
+[youtube] media ready after 0.2s (readyState=4, buffered=0..20.72)
+[vimeo] playback confirmed on attempt 1 (clock 6.86 -> 7.89)
+[vimeo] synchronized play result: {'current_time': 6.855277, 'paused': False, 'ready_state': 4, 'started': True, 'attempts': 1, 'confirmed': True, 'ready_wait': {'buffered_end': 24.166666, 'buffered_ranges': 1, 'buffered_start': 0, 'current_time': 6.780708, 'network_state': 2, 'ok': True, 'paused': False, 'ready_state': 4, 'ready': True}}
+[youtube] playback confirmed on attempt 1 (clock 0.94 -> 3.58)
+[youtube] synchronized play result: {'current_time': 0.942197, 'paused': False, 'ready_state': 4, 'started': True, 'attempts': 1, 'confirmed': True, 'ready_wait': {'buffered_end': 20.72, 'buffered_ranges': 1, 'buffered_start': 0, 'current_time': 0.765657, 'network_state': 2, 'ok': True, 'paused': False, 'ready_state': 4, 'ready': True}}
+[vimeo] summary: 115 samples written to /out/vimeo_stats.jsonl | current_time_secs range=[7.920231, 127.678459] | advanced=True | final_resolution=1440x1080
+[youtube] summary: 114 samples written to /out/youtube_stats.jsonl | current_time_secs range=[4.612465, 123.072829] | advanced=True | final_resolution=854x480
