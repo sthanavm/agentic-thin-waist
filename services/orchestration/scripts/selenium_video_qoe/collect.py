@@ -118,6 +118,19 @@ function addVideoElementStats(out, video) {
         }
         out.ready_state = video.readyState;
         out.network_state = video.networkState;
+        // Viewport + rendered player size. An adaptive player picks its
+        // rendition to fit the element it is drawn into, so without these a
+        // run that was capped by a small window is indistinguishable from one
+        // capped by the shaped link.
+        try {
+            out.window_outer_w = window.outerWidth;
+            out.window_outer_h = window.outerHeight;
+            out.window_inner_w = window.innerWidth;
+            out.window_inner_h = window.innerHeight;
+            const r = video.getBoundingClientRect();
+            out.player_elem_w = Math.round(r.width);
+            out.player_elem_h = Math.round(r.height);
+        } catch (e) { /* geometry is observability only - never fail a sample */ }
         if (typeof video.getVideoPlaybackQuality === 'function') {
             const q = video.getVideoPlaybackQuality();
             out.dropped_video_frames = q.droppedVideoFrames;
@@ -529,6 +542,61 @@ def force_youtube_max_quality(
     return result if isinstance(result, dict) else {"ok": False, "reason": "bad_result"}
 
 
+GEOMETRY_JS = """
+const v = document.querySelector('video');
+const r = v ? v.getBoundingClientRect() : null;
+return {
+    outer_w: window.outerWidth, outer_h: window.outerHeight,
+    inner_w: window.innerWidth, inner_h: window.innerHeight,
+    screen_w: screen.width, screen_h: screen.height,
+    player_w: r ? Math.round(r.width) : null,
+    player_h: r ? Math.round(r.height) : null,
+};
+"""
+
+_WANT_W, _WANT_H = 1920, 1080
+
+
+def ensure_window_size(
+    driver, app, want_w=_WANT_W, want_h=_WANT_H, attempts=5, settle_s=0.8
+):
+    """Set the window rect and confirm it actually took effect, retrying if not.
+
+    Setting it once is not enough. fluxbox manages the window asynchronously and
+    can re-apply its own geometry after `set_window_rect` has already returned,
+    silently reverting it. That race is invisible without a read-back, and when
+    it bites an adaptive player sizes its rendition to the small element - which
+    is how concurrent runs produced 480p on a 50 Mbps link with 48 Mbps spare.
+
+    Returns the measured geometry so the run records the viewport it really had.
+    """
+    geom = {}
+    for i in range(1, attempts + 1):
+        try:
+            driver.set_window_rect(x=0, y=0, width=want_w, height=want_h)
+        except Exception as exc:  # noqa: BLE001 - never fail a run over geometry
+            print(f"[{app}] warning: set_window_rect raised: {exc}")
+        time.sleep(settle_s)
+        try:
+            geom = driver.execute_script(GEOMETRY_JS) or {}
+        except Exception:  # noqa: BLE001 - page may not be ready to run JS yet
+            geom = {}
+        ow, oh = geom.get("outer_w") or 0, geom.get("outer_h") or 0
+        if ow >= want_w * 0.95 and oh >= want_h * 0.90:
+            geom.update(ok=True, attempts=i, wanted=f"{want_w}x{want_h}")
+            print(f"[{app}] window {ow}x{oh} confirmed after {i} attempt(s)")
+            return geom
+        print(
+            f"[{app}] window is {ow}x{oh}, want {want_w}x{want_h} - retrying ({i}/{attempts})"
+        )
+    geom.update(ok=False, attempts=attempts, wanted=f"{want_w}x{want_h}")
+    print(
+        f"[{app}] WARNING: window stuck at {geom.get('outer_w')}x{geom.get('outer_h')} "
+        f"after {attempts} attempts - rendition may be viewport-capped"
+    )
+    return geom
+
+
 MEDIA_STATE_JS = """
 const v = document.querySelector('video');
 if (!v) { return {ok: false, reason: 'no_video'}; }
@@ -698,10 +766,7 @@ def run_job(
         # *correct* ABR choice - so the rendition was capped by our viewport, not
         # by the shaped link. Setting the rect after launch makes the window the
         # size we actually asked for.
-        try:
-            driver.set_window_rect(x=0, y=0, width=1920, height=1080)
-        except Exception as exc:  # noqa: BLE001 - never fail a run over geometry
-            print(f"[{app}] warning: could not set window rect: {exc}")
+        window_geometry = ensure_window_size(driver, app)
 
     samples: list[dict] = []
     play_trigger_ts: float | None = None
@@ -777,6 +842,7 @@ def run_job(
                             force_quality_level if force_max_quality else None
                         ),
                         "force_quality_result": force_quality_result,
+                        "window_geometry": window_geometry,
                     }
                 )
                 + "\n"
