@@ -284,8 +284,10 @@ Your own runs land in the same tree and are gitignored.
 experiments/pramana/results/pramana_runs/<slug>_<id>/
 ├── record.json               config + player_qoe + per_app_stats + network stats
 ├── capture.pcap              raw capture at the bottleneck (always saved)
+├── capture_<app>.pcap        that app's own packets (concurrent runs only)
 ├── qoe/<app>_stats.jsonl     raw per-second player samples
-├── throughput_<app>.png      one per app (per direction for conferencing)
+├── throughput_download_all.png   one line per app, plain line graph, + cap
+├── throughput_upload_all.png     same for upload
 ├── qoe_summary_<app>.png     throughput + buffer + resolution panels
 └── collector.log             browser driver output
 ```

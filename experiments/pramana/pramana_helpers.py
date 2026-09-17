@@ -314,13 +314,17 @@ def app_domains(app: str) -> list[str]:
     return list(APP_REGISTRY.get(app, {}).get("domains") or [])
 
 
-def app_plot_directions(app: str) -> list[str]:
-    """Directions to plot for `app`.
+def app_verdict_directions(app: str) -> list[str]:
+    """Directions that DEFINE the app's served/starved verdict.
 
-    Video apps → ``["download"]`` only (upload is ACKs; summing the two inflates
-    a 10 Mbps stream to 11-12 Mbps). Conferencing apps → both, plotted apart.
+    Video apps → ``["download"]`` only. Upload for a video app is ACKs, which
+    never reach 30% of the cap, so letting it vote would mark every healthy
+    video run "starved". Conferencing apps → both, since a call is only as good
+    as its worse direction.
     """
-    dirs = APP_REGISTRY.get(app, {}).get("plot_directions")
+    dirs = APP_REGISTRY.get(app, {}).get("verdict_directions") or APP_REGISTRY.get(
+        app, {}
+    ).get("plot_directions")
     if dirs:
         return list(dirs)
     return (
@@ -328,6 +332,17 @@ def app_plot_directions(app: str) -> list[str]:
         if APP_REGISTRY.get(app, {}).get("type") == "call"
         else ["download"]
     )
+
+
+def app_plot_directions(app: str) -> list[str]:
+    """Directions to PLOT for `app` — always both, in separate files.
+
+    Download and upload are never drawn on one axis (summing them inflates a
+    10 Mbps stream to 11-12 Mbps) and never share a file with another app.
+    Plotting upload is presentational only: `app_verdict_directions` still
+    decides served/starved, so adding the upload plot cannot move a verdict.
+    """
+    return ["download", "upload"]
 
 
 def app_color(app: str) -> str:
@@ -882,6 +897,8 @@ def telemetry_get_results(**params: Any) -> list[dict[str, Any]]:
 # ═════════════════════════════════════════════════════════════════════════════
 import re
 import socket
+import shutil
+import subprocess
 import struct
 from collections import defaultdict, namedtuple
 
@@ -1294,6 +1311,11 @@ class CaptureAttribution:
     per_app: dict[str, dict[str, AppTraffic]] = field(default_factory=dict)
     host_bytes: dict[str, int] = field(default_factory=dict)
     bucket_mb: dict[str, float] = field(default_factory=dict)
+    # app -> the endpoint IPs whose packets belong to it. Disjoint across apps
+    # (every IP classifies into exactly one bucket), which is what lets the
+    # capture be split into per-app pcaps without double-counting a packet.
+    app_ips: dict[str, list[str]] = field(default_factory=dict)
+    ip_side: str = "remote"  # which end of the packet `app_ips` refers to
     attributed_fraction: float = 0.0  # share of bytes mapped to a named bucket
     total_mb: float = 0.0
 
@@ -1430,6 +1452,7 @@ def attribute_capture(
     bucket_hosts: dict[str, set[str]] = defaultdict(set)
     host_bytes: dict[str, int] = defaultdict(int)
     bucket_bytes: dict[str, int] = defaultdict(int)
+    bucket_ips: dict[str, set[str]] = defaultdict(set)
     total_bytes = 0
 
     for ts, ol, lt, data in iter_capture(str(pcap)):
@@ -1463,6 +1486,11 @@ def attribute_capture(
 
         bucket_bytes[bucket] += ol
         if bucket in apps:
+            # Remember which endpoint carried this app's bytes so the capture
+            # can later be split into one pcap per app.
+            bucket_ips[bucket].add(
+                localside if res.method == "local_alias_ip" else remote
+            )
             idx = min(int((ts - t0) / bin_s), res.nbins - 1) if ts else 0
             buckets[(bucket, direction)][idx] += ol
             pkt_counts[(bucket, direction)] += 1
@@ -1473,6 +1501,8 @@ def attribute_capture(
         for k, v in sorted(bucket_bytes.items(), key=lambda kv: -kv[1])
     }
     res.host_bytes = dict(sorted(host_bytes.items(), key=lambda kv: -kv[1])[:40])
+    res.ip_side = "local" if res.method == "local_alias_ip" else "remote"
+    res.app_ips = {a: sorted(bucket_ips.get(a, ())) for a in apps}
     named = sum(v for k, v in bucket_bytes.items() if k != "other")
     res.attributed_fraction = round(named / total_bytes, 4) if total_bytes else 0.0
 
@@ -1486,6 +1516,76 @@ def attribute_capture(
                 at, cap_mbps, buckets.get((app, direction), {}), res.nbins, bin_s
             )
     return res
+
+
+def split_capture_by_app(
+    pcap: Path,
+    attribution: "CaptureAttribution",
+    apps: list[str],
+    run_dir: Path,
+) -> dict[str, str]:
+    """Write one pcap per app, so a concurrent run ships two captures not one.
+
+    Jaber asked for "two PCAPs" rather than one shared capture plus after-the-
+    fact attribution. The split is done with tcpdump on the endpoint IPs that
+    attribution assigned to each app, which keeps the output a real pcap that
+    any tool can read.
+
+    On the substrate build deployed here every browser app shares `ns1` and one
+    source IP (`POST /shape/per_app_marks` is not implemented — it 404s), so the
+    apps cannot be told apart by *source* address while capturing. They are
+    separated by the *remote* endpoint instead, which is exact whenever the host
+    is known from DNS/SNI in the same capture. When a worker that does implement
+    per-app alias IPs is deployed, `attribution.method` becomes `local_alias_ip`
+    and the very same code splits on the local address with no change.
+
+    Solo runs are left alone: one app already means one capture, so the run's
+    `capture.pcap` is simply reported as that app's pcap.
+    """
+    out: dict[str, str] = {}
+    if not pcap.exists() or pcap.stat().st_size < 24:
+        return out
+    if len(apps) < 2:
+        return {apps[0]: str(pcap)} if apps else {}
+    if shutil.which("tcpdump") is None:
+        print("  ! tcpdump unavailable — cannot write per-app pcaps")
+        return out
+
+    # `host X` matches X as either source or destination, so one filter keeps
+    # both directions of that app's traffic. (`dst X` would silently drop the
+    # app's uploads, which the upload plot then reports as an empty series.)
+    side = "host"
+    for app in apps:
+        ips = attribution.app_ips.get(app) or []
+        if not ips:
+            print(f"    · {app}: no endpoints attributed — no pcap written")
+            continue
+        dest = run_dir / f"capture_{app}.pcap"
+        # A filter file avoids the argv length limit: a busy CDN app can be
+        # spread over hundreds of addresses.
+        expr = " or ".join(f"{side} {ip}" for ip in ips)
+        ffile = run_dir / f".filter_{app}.bpf"
+        ffile.write_text(expr)
+        try:
+            proc = subprocess.run(
+                ["tcpdump", "-r", str(pcap), "-w", str(dest), "-F", str(ffile)],
+                capture_output=True,
+                text=True,
+                timeout=600,
+            )
+            if proc.returncode != 0:
+                print(f"    · {app}: tcpdump failed — {proc.stderr.strip()[:120]}")
+                continue
+            out[app] = str(dest)
+            size_mb = dest.stat().st_size / 1e6
+            print(
+                f"    · {app}: capture_{app}.pcap  {size_mb:7.2f} MB  ({len(ips)} endpoints)"
+            )
+        except (subprocess.SubprocessError, OSError) as exc:
+            print(f"    · {app}: split failed — {type(exc).__name__}: {exc}")
+        finally:
+            ffile.unlink(missing_ok=True)
+    return out
 
 
 # ═════════════════════════════════════════════════════════════════════════════
@@ -1709,8 +1809,9 @@ def plot_app_throughput(
     cap = cfg.bandwidth_mbps or 0.0
     color = app_color(at.app)
     fig, ax = plt.subplots(figsize=(12, 4.2))
-    ax.plot(at.times, at.mbps, linewidth=1.0, color=color)
-    ax.fill_between(at.times, at.mbps, alpha=0.15, color=color)
+    # Plain line, no fill: overlapping traces stay readable when these plots
+    # are compared side by side (Jaber's request).
+    ax.plot(at.times, at.mbps, linewidth=1.2, color=color)
     ax.axhline(cap, color="green", linewidth=1.3, alpha=0.85, label=f"cap {cap:g} Mbps")
     if at.peak_throughput_mbps is not None:
         ax.axhline(
@@ -1817,6 +1918,82 @@ def _panel_verdict(at: AppTraffic, pq: dict[str, Any]) -> tuple[str, str, str]:
         "NOT evidence the app streamed",
         "#EF6C00",
     )
+
+
+def plot_apps_throughput(
+    attribution: "CaptureAttribution",
+    cfg: ExperimentConfig,
+    out: Path,
+    direction: str,
+) -> Optional[Path]:
+    """All apps of one run, one direction, on ONE chart — one line per app.
+
+    Nothing is summed: each app keeps its own real per-second series, its own
+    colour and its own annotated peak / average / total, so the lines can be
+    compared directly against the shared cap.
+    """
+    plt = _plt()
+    if plt is None:
+        return None
+    series = []
+    for app in cfg.apps:
+        at = attribution.traffic(app, direction)
+        if at is not None and at.times and at.avg_throughput_mbps is not None:
+            series.append(at)
+    if not series:
+        return None
+
+    cap = cfg.bandwidth_mbps or 0.0
+    peak = max((a.peak_throughput_mbps or 0.0) for a in series)
+    fig, ax = plt.subplots(figsize=(12, 4.6))
+    for at in series:
+        ax.plot(
+            at.times,
+            at.mbps,
+            linewidth=1.2,
+            color=app_color(at.app),
+            label=(
+                f"{display_name(at.app)} — avg {at.avg_throughput_mbps:.2f}, "
+                f"peak {at.peak_throughput_mbps:.2f} Mbps, {at.total_mb:.1f} MB"
+            ),
+        )
+
+    # The cap is the shared resource these lines compete for, so it belongs on
+    # both charts. Upload for video is ACKs — two orders of magnitude under the
+    # cap — and forcing the cap into view would flatten every line onto the
+    # axis, so there the cap is marked on the axis edge and named in the legend
+    # instead of dictating the scale.
+    cap_in_view = cap <= peak * 1.6 or peak >= cap * 0.25
+    if cap_in_view:
+        top = max(cap * 1.25, peak * 1.15, 0.1)
+        ax.axhline(
+            cap, color="green", linewidth=1.3, alpha=0.85, label=f"cap {cap:g} Mbps"
+        )
+    else:
+        top = max(peak * 1.30, 0.05)
+        ax.axhline(
+            top,
+            color="green",
+            linewidth=1.3,
+            alpha=0.55,
+            linestyle=":",
+            label=f"cap {cap:g} Mbps (above axis — peak is {100 * peak / cap:.1f}% of cap)",
+        )
+
+    ax.set_xlabel("Time (s)")
+    ax.set_ylabel(f"{direction.title()} throughput (Mbps)")
+    ax.set_title(
+        f"Throughput ({direction}) — {' vs '.join(display_name(a.app) for a in series)}"
+        f" — {_regime(cfg)}"
+    )
+    ax.set_xlim(0, max(max(a.times) for a in series))
+    ax.set_ylim(bottom=0, top=top)
+    ax.grid(True, alpha=0.3)
+    ax.legend(loc="upper right", fontsize=8)
+    fig.tight_layout()
+    fig.savefig(out, dpi=110)
+    plt.close(fig)
+    return out
 
 
 def plot_app_qoe_summary(
@@ -2079,47 +2256,46 @@ def generate_run_plots(
 ) -> dict[str, str]:
     """Every plot for one run — called automatically when a run finishes.
 
-    Per app: `throughput_<app>[_<direction>].png` and `qoe_summary_<app>...png`.
-    No combined-throughput plot is produced, by design.
+    Per run: `throughput_download_all.png` and `throughput_upload_all.png` —
+    plain line graphs carrying one line per app (never summed), each with its
+    own avg/peak/total. Per app: one `qoe_summary_<app>.png`.
     """
     plots: dict[str, str] = {}
     if _plt() is None:
         print("  ! matplotlib unavailable — skipping plots")
         return plots
 
+    # Throughput: ONE merged chart per direction for the whole run — every app's
+    # own line on one axis, nothing summed. Produced for solo runs too (a single
+    # app is simply a single line), so every run has the same two files and no
+    # per-app throughput variants exist.
+    for _d in app_plot_directions(cfg.apps[0] if cfg.apps else "youtube"):
+        ap = plot_apps_throughput(
+            attribution, cfg, run_dir / f"throughput_{_d}_all.png", _d
+        )
+        if ap:
+            plots[f"throughput_{_d}_all"] = str(ap)
+            print(f"    · {_d}: merged throughput chart saved")
+        else:
+            print(f"    · {_d}: no merged chart — no traffic attributed")
+
     for app in cfg.apps:
-        directions = app_plot_directions(app)
-        both = len(directions) > 1
-        for direction in directions:
-            at = attribution.traffic(app, direction)
-            if at is None or not at.times or at.avg_throughput_mbps is None:
-                pq = (player_qoe or {}).get(app) or {}
-                why = (
-                    pq.get("reason")
-                    or attribution.note
-                    or "no traffic attributed to this app"
-                )
-                print(f"    · {app} ({direction}): no plot — {why}")
-                continue
-            sfx = f"_{direction}" if both else ""
-            tp = plot_app_throughput(
-                at, cfg, run_dir / f"throughput_{app}{sfx}.png", both_directions=both
-            )
-            if tp:
-                plots[f"throughput_{app}{sfx}"] = str(tp)
+        # QoE summary is unchanged: one per app, built from the direction that
+        # defines the verdict (download for video). Adding upload plots above
+        # must not double or rename these.
+        qdir = app_verdict_directions(app)[0]
+        qat = attribution.traffic(app, qdir)
+        if qat is not None and qat.times and qat.avg_throughput_mbps is not None:
             qs = plot_app_qoe_summary(
-                at,
+                qat,
                 cfg,
-                run_dir / f"qoe_summary_{app}{sfx}.png",
+                run_dir / f"qoe_summary_{app}.png",
                 player_qoe=(player_qoe or {}).get(app),
                 bin_s=attribution.bin_s,
             )
             if qs:
-                plots[f"qoe_summary_{app}{sfx}"] = str(qs)
-            print(
-                f"    · {app} ({direction}): throughput + qoe_summary saved "
-                f"[{at.classification}, avg {at.avg_throughput_mbps:.2f} Mbps]"
-            )
+                plots[f"qoe_summary_{app}"] = str(qs)
+                print(f"    · {app}: qoe_summary saved")
     return plots
 
 
@@ -2187,9 +2363,10 @@ def replot_run(run_dir: Path | str, bin_s: float = 1.0) -> dict[str, str]:
                 for d in ("download", "upload")
             },
             "plotted_directions": app_plot_directions(a),
+            "verdict_directions": app_verdict_directions(a),
             "classification": app_verdict(
                 (
-                    at.traffic(a, app_plot_directions(a)[0])
+                    at.traffic(a, app_verdict_directions(a)[0])
                     or AppTraffic(a, "download")
                 ).classification,
                 pq_all.get(a),
@@ -2639,10 +2816,20 @@ def run_direct(cfg: ExperimentConfig) -> dict[str, Any]:
         for bucket, mb in list(attribution.bucket_mb.items())[:6]:
             print(f"      {bucket:16s} {mb:9.2f} MB")
 
+    # One pcap per app, so a concurrent run ships a capture per application
+    # rather than one shared file plus attribution metadata.
+    if concurrent:
+        print("  • writing one pcap per app ...")
+    pcap_per_app = (
+        split_capture_by_app(local_pcap, attribution, list(apps), run_dir)
+        if got
+        else {}
+    )
+
     per_app: dict[str, Any] = {}
     per_app_stats: dict[str, Any] = {}
     for a in apps:
-        dirs = app_plot_directions(a)
+        dirs = app_verdict_directions(a)
         stats = {
             d: (attribution.traffic(a, d) or AppTraffic(a, d)).as_record()
             for d in ("download", "upload")
@@ -2664,10 +2851,12 @@ def run_direct(cfg: ExperimentConfig) -> dict[str, Any]:
         # advanced is failed-to-deliver, however much traffic the link carried.
         pq_a = player_qoe.get(a) or {}
         verdict = app_verdict(verdict, pq_a)
-        stats["plotted_directions"] = dirs
+        stats["verdict_directions"] = dirs
+        stats["plotted_directions"] = app_plot_directions(a)
         stats["classification"] = verdict
         stats["player_qoe_status"] = pq_a.get("status")
         stats["attribution_method"] = attribution.method
+        stats["pcap"] = pcap_per_app.get(a, "")
         # Mirror the app's actual player payload. Hardcoding False here made
         # every record disagree with its own player_qoe block, so any consumer
         # reading this side concluded "no player data" for runs that had it.
@@ -2785,8 +2974,13 @@ def run_direct(cfg: ExperimentConfig) -> dict[str, Any]:
             if isinstance(r, dict)
         ),
         "artifacts": {
+            # `pcap` stays the combined capture (raw evidence, and the only
+            # file a solo run needs). `pcap_per_app` is the per-application
+            # split: for a concurrent run that is one capture per app.
             "pcap": str(local_pcap) if got else "",
             "pcap_saved": bool(got),
+            "pcap_per_app": pcap_per_app,
+            "pcap_split_method": attribution.method if concurrent else "solo",
             "plots": plots,
             "dir": str(run_dir),
         },
@@ -3264,6 +3458,9 @@ __all__ = [
     "DISPLAY_NAMES",
     "app_domains",
     "app_plot_directions",
+    "app_verdict_directions",
+    "plot_apps_throughput",
+    "split_capture_by_app",
     "app_color",
     "display_name",
     "ExperimentConfig",

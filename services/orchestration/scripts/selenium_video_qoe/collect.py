@@ -692,6 +692,16 @@ def run_job(
             f"[{app}] launching undetected-chromedriver Chrome (headed, DISPLAY=:{display_num})"
         )
         driver = build_driver(user_data_dir=user_data_dir)
+        # Chrome/SeleniumBase silently ignores --window-size under Xvfb+fluxbox:
+        # measured here, the window came up 945x1040 despite the flag asking for
+        # 1920x1080. That left YouTube a 922x519 player, for which 480p is the
+        # *correct* ABR choice - so the rendition was capped by our viewport, not
+        # by the shaped link. Setting the rect after launch makes the window the
+        # size we actually asked for.
+        try:
+            driver.set_window_rect(x=0, y=0, width=1920, height=1080)
+        except Exception as exc:  # noqa: BLE001 - never fail a run over geometry
+            print(f"[{app}] warning: could not set window rect: {exc}")
 
     samples: list[dict] = []
     play_trigger_ts: float | None = None
