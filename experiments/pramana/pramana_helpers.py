@@ -1544,9 +1544,16 @@ class CaptureAttribution:
     ip_side: str = "remote"  # which end of the packet `app_ips` refers to
     attributed_fraction: float = 0.0  # share of bytes mapped to a named bucket
     total_mb: float = 0.0
+    # Unnamed remote IPs adopted into an app bucket by connection affinity,
+    # as ip -> "app:reason". Kept so every adoption is auditable after the fact.
+    adopted_ips: dict[str, str] = field(default_factory=dict)
 
     def traffic(self, app: str, direction: str) -> Optional[AppTraffic]:
         return (self.per_app.get(app) or {}).get(direction)
+
+
+# Below ~6 KB/s a bin is carrying keepalives and ACKs, not content.
+_IDLE_MBPS = 0.05
 
 
 def _finalise(
@@ -1566,8 +1573,14 @@ def _finalise(
     srt = sorted(at.mbps)
     at.p95_throughput_mbps = round(srt[min(len(srt) - 1, int(0.95 * len(srt)))], 3)
 
-    # Stall = a bin where throughput fell below 5% of the cap (near-zero traffic).
-    stall_thresh = max(0.05 * cap_mbps, 0.01)
+    # Idle = a bin that carried essentially nothing. This is an absolute
+    # condition, not a fraction of the link: the old 5%-of-cap rule scored a
+    # low-bitrate app on a fast link as permanently stalled. Measured case -- a
+    # healthy Meet call runs a 0.505 Mbps median, and 5% of its 10 Mbps cap is
+    # 0.5 Mbps, so 27 of 56 live seconds were called stalls while the capture
+    # shows traffic in every one of them. Under-use of a fast link is real, but
+    # it is what mean_over_cap and `starved` already say; it is not idleness.
+    stall_thresh = _IDLE_MBPS
     at.stall_bins = [i for i, r in enumerate(at.mbps) if r < stall_thresh]
     at.stall_seconds = round(len(at.stall_bins) * bin_s, 2)
     # Delivered fraction = share of the run that actually had active traffic.
@@ -1583,6 +1596,108 @@ def _finalise(
     else:
         at.classification = "served"
     return at
+
+
+# ── unnamed-flow adoption ────────────────────────────────────────────────────
+#
+# Real-time media is routinely reached by IP with no DNS answer and no TLS SNI
+# anywhere in the capture, because the address arrives inside already-encrypted
+# signalling. Two measured examples from this repo's own runs:
+#
+#   * Google Meet's media relay 74.125.250.130 -- 7.31 MB, 34% of the capture,
+#     carrying the entire call. Verified against the page's own
+#     getStats(): pcap bytes from that peer track bytes_received to within
+#     normal header/RTCP overhead, second for second.
+#   * YouTube's QUIC media CDN 198.189.66.13 -- 18.68 MB, 72% of the capture.
+#
+# Dropping those into `other` does not merely mislabel bytes: it makes the app
+# look idle for most of the run, so stall_seconds and delivered_fraction come
+# out badly wrong on the plots. We therefore adopt an unnamed flow into an app
+# bucket when exactly one app can claim it, and leave it in `other` whenever the
+# evidence is ambiguous. Three signals, strongest first:
+#
+#   1. /24 shared with an IP already named for exactly one app. A CDN answers
+#      from a block; YouTube's unnamed 198.189.66.13 sits beside the named
+#      198.189.66.17 (r6---sn-...gvt1.com).
+#   2. /16, same idea, weaker.
+#   3. Timing: the flow runs concurrently with exactly one app's named traffic
+#      and is *sustained* rather than a burst. This is what catches Meet, whose
+#      relay shares no prefix with meet.google.com.
+#
+# Guards against swallowing Chrome's own background downloads (which can be tens
+# of MB): a floor on bytes, and for the timing rule a requirement that the flow
+# span a real fraction of the app's window -- a component update is a short
+# early burst, a call or a video stream is not.
+
+_ADOPT_MIN_BYTES = 262_144  # 256 KB: ignore stray probes and single exchanges
+_ADOPT_MIN_OVERLAP = 0.5  # of the unnamed flow's own span
+_ADOPT_MIN_SPAN_RATIO = 0.25  # of the app's named window: sustained, not a burst
+
+
+def _prefix(ip: str, bits: int) -> Optional[str]:
+    """Network prefix of an IPv4 address, or None for IPv6/unparseable."""
+    if ":" in ip:
+        return None
+    parts = ip.split(".")
+    if len(parts) != 4:
+        return None
+    return ".".join(parts[: bits // 8])
+
+
+def _sole(candidates: set) -> Optional[str]:
+    """The single element of `candidates`, or None if it is not a singleton."""
+    return next(iter(candidates)) if len(candidates) == 1 else None
+
+
+def adopt_unnamed_ips(
+    unnamed: dict[str, tuple[int, float, float]],
+    named_app_ips: dict[str, set[str]],
+    app_windows: dict[str, tuple[float, float]],
+) -> dict[str, str]:
+    """Map unnamed remote IP -> "app:reason" for flows attributable to one app.
+
+    `unnamed` is ip -> (bytes, first_ts, last_ts); `named_app_ips` is app -> the
+    IPs already attributed to it by DNS/SNI; `app_windows` is app -> (first,
+    last) timestamps of that named traffic. IPs that stay ambiguous are simply
+    absent from the result and remain in `other`.
+    """
+    by_pfx: dict[int, dict[str, set]] = {24: defaultdict(set), 16: defaultdict(set)}
+    for app, ips in named_app_ips.items():
+        for ip in ips:
+            for bits in (24, 16):
+                pfx = _prefix(ip, bits)
+                if pfx:
+                    by_pfx[bits][pfx].add(app)
+
+    adopted: dict[str, str] = {}
+    for ip, (nbytes, first, last) in unnamed.items():
+        if nbytes < _ADOPT_MIN_BYTES:
+            continue
+        claimed = None
+        for bits in (24, 16):
+            pfx = _prefix(ip, bits)
+            if pfx and (app := _sole(by_pfx[bits].get(pfx, set()))):
+                claimed = (app, f"prefix/{bits}")
+                break
+        if claimed is None:
+            span = max(last - first, 0.0)
+            cands = set()
+            for app, (a0, a1) in app_windows.items():
+                overlap = min(last, a1) - max(first, a0)
+                app_span = max(a1 - a0, 0.0)
+                if span <= 0 or app_span <= 0:
+                    continue
+                # Concurrent with this app, and sustained rather than a burst.
+                if (
+                    overlap / span >= _ADOPT_MIN_OVERLAP
+                    and span / app_span >= _ADOPT_MIN_SPAN_RATIO
+                ):
+                    cands.add(app)
+            if app := _sole(cands):
+                claimed = (app, "timing")
+        if claimed:
+            adopted[ip] = f"{claimed[0]}:{claimed[1]}"
+    return adopted
 
 
 def attribute_capture(
@@ -1609,6 +1724,11 @@ def attribute_capture(
 
     # ── pass 1: learn IP→hostname, local endpoints, and the time base ────────
     endpoint_pkts: dict[str, int] = defaultdict(int)
+    # Per-endpoint bytes and activity window, so unnamed flows can be judged
+    # once the local address is known (below). A remote IP only ever pairs with
+    # the local one, so summing packets it appears in gives its flow total.
+    endpoint_bytes: dict[str, int] = defaultdict(int)
+    endpoint_span: dict[str, list[float]] = {}
     t0 = None
     tmax = 0.0
     total_pkts = 0
@@ -1627,6 +1747,14 @@ def attribute_capture(
         total_pkts += 1
         endpoint_pkts[src] += 1
         endpoint_pkts[dst] += 1
+        for _ep in (src, dst):
+            endpoint_bytes[_ep] += _ol
+            if ts:
+                span = endpoint_span.get(_ep)
+                if span is None:
+                    endpoint_span[_ep] = [ts, ts]
+                else:
+                    span[1] = ts
         if proto == 17 and len(l4) >= 8:
             sport, _dport = struct.unpack_from(">HH", l4, 0)
             if sport == 53:
@@ -1670,6 +1798,42 @@ def attribute_capture(
         res.method = "remote_hostname"
     local = set(res.local_ips)
 
+    # ── pass 1b: adopt unnamed flows that only one app can plausibly own ─────
+    # Only meaningful for remote-hostname attribution; with per-app alias IPs
+    # every packet already carries its app identity and nothing is unnamed.
+    adopted: dict[str, str] = {}
+    if res.method == "remote_hostname":
+        named_app_ips: dict[str, set[str]] = defaultdict(set)
+        app_windows: dict[str, tuple[float, float]] = {}
+        for ip, host in ip_host.items():
+            if ip in local:
+                continue
+            bucket = classify_host(host, apps)
+            if bucket in apps:
+                named_app_ips[bucket].add(ip)
+                span = endpoint_span.get(ip)
+                if span:
+                    cur = app_windows.get(bucket)
+                    app_windows[bucket] = (
+                        (span[0], span[1])
+                        if cur is None
+                        else (min(cur[0], span[0]), max(cur[1], span[1]))
+                    )
+        unnamed = {
+            ip: (endpoint_bytes[ip], sp[0], sp[1])
+            for ip, sp in endpoint_span.items()
+            if ip not in local and ip not in ip_host
+        }
+        adopted = adopt_unnamed_ips(unnamed, named_app_ips, app_windows)
+        res.adopted_ips = dict(sorted(adopted.items()))
+        if adopted:
+            mb = sum(endpoint_bytes[ip] for ip in adopted) / 1e6
+            print(
+                f"  + adopted {len(adopted)} unnamed flow(s), {mb:.2f} MB, "
+                f"by connection affinity: "
+                + ", ".join(f"{ip}->{v}" for ip, v in sorted(adopted.items())[:4])
+            )
+
     # ── pass 2: bin bytes per (bucket, direction) ────────────────────────────
     buckets: dict[tuple[str, str], dict[int, int]] = defaultdict(
         lambda: defaultdict(int)
@@ -1704,11 +1868,15 @@ def attribute_capture(
             bucket = ip_from_alias.get(localside, "other")
         else:
             host = ip_host.get(remote, "")
-            bucket = classify_host(host, apps)
             if host:
+                bucket = classify_host(host, apps)
                 host_bytes[host] += ol
                 if bucket in apps:
                     bucket_hosts[bucket].add(host)
+            elif remote in adopted:
+                bucket = adopted[remote].split(":", 1)[0]
+            else:
+                bucket = classify_host(host, apps)
 
         bucket_bytes[bucket] += ol
         if bucket in apps:
@@ -3198,9 +3366,14 @@ def run_direct(cfg: ExperimentConfig) -> dict[str, Any]:
                 "local_alias_ip = exact split by each app's namespace IP; "
                 "remote_hostname = split by remote endpoint identified from "
                 "in-capture DNS answers + TLS SNI (the deployed worker runs all "
-                "browser apps in one namespace, so there is only one local IP)"
+                "browser apps in one namespace, so there is only one local IP). "
+                "Media endpoints reached by IP carry no DNS answer or SNI; such "
+                "flows are adopted into an app bucket only when one app can "
+                "claim them by shared prefix or concurrent timing, and are left "
+                "in `other` when ambiguous - see adopted_unnamed_ips"
             ),
             "attributed_byte_fraction": attribution.attributed_fraction,
+            "adopted_unnamed_ips": attribution.adopted_ips,
         },
         "network_stats": asdict(net),
         "per_app_stats": per_app_stats,
