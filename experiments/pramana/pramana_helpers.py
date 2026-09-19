@@ -373,7 +373,12 @@ class ExperimentConfig:
     # Conferencing apps only produce real QoE when a remote peer is publishing
     # video. Map app -> peer identifier/room; apps needing a peer without one
     # are SKIPPED rather than measured against their own local preview.
-    peers: Optional[dict[str, str]] = None
+    # {app: {"join_url":..., "y4m":..., "name":..., "join_deadline_s":...}}
+    # A bare string is still accepted and read as join_url.
+    peers: Optional[dict[str, Any]] = None
+    # How long to wait for a bot to confirm it is publishing. Admission is
+    # manual on some platforms, so this is generous by default.
+    peer_wait_s: int = 900
     # Opt-in: pin YouTube's rendition (setPlaybackQualityRange) instead of
     # leaving ABR on auto. Default False — every existing run is unaffected.
     # Forced runs get a `_forcedq` slug so they never mix with the auto runs.
@@ -680,7 +685,11 @@ def build_collector_jobs(
                 "out_path": f"/out/{app}_stats.jsonl",
                 "duration_seconds": cfg.duration_s,
                 "sample_interval_seconds": 1.0,
-                "join_timeout_seconds": 180,
+                # needs_peer apps may require a human to admit the guest,
+                # so they get the same generous budget as the bot peer.
+                "join_timeout_seconds": (
+                    int(cfg.peer_wait_s) if spec.needs_peer else 180
+                ),
                 "barrier_timeout_seconds": max(360, cfg.duration_s + 240),
                 # Collector applies this to YouTube only; harmless for other apps.
                 "force_max_quality": bool(cfg.force_max_quality),
@@ -691,7 +700,174 @@ def build_collector_jobs(
     return jobs, skipped
 
 
-def run_qoe_collectors(cfg: ExperimentConfig, run_dir: Path) -> dict[str, Any]:
+def _peer_spec(cfg: "ExperimentConfig", app: str) -> Optional[dict[str, Any]]:
+    """Normalise cfg.peers[app] into a dict, accepting the legacy string form."""
+    raw = (cfg.peers or {}).get(app)
+    if not raw:
+        return None
+    if isinstance(raw, str):  # older callers passed just a room URL
+        return {"join_url": raw}
+    return dict(raw)
+
+
+def start_bot_peers(
+    cfg: "ExperimentConfig", run_dir: Path
+) -> tuple[list[dict[str, Any]], dict[str, str]]:
+    """Launch a publishing bot for every needs_peer app that has a peer configured.
+
+    The bot runs on ordinary Docker networking, deliberately NOT inside ns1: its
+    uplink must not share the shaped bottleneck with the app under test, or the
+    run measures a two-endpoint call instead of one downlink.
+
+    Returns (running, failures). Waiting for the join is separate so the caller
+    can prompt an operator while it blocks.
+    """
+    reg, _ = _bind_shared()
+    running: list[dict[str, Any]] = []
+    failures: dict[str, str] = {}
+    bots_dir = run_dir / "bots"
+    bots_dir.mkdir(parents=True, exist_ok=True)
+    for app in cfg.apps:
+        spec = reg.get(app) if reg else None
+        if not spec or not spec.needs_peer:
+            continue
+        peer = _peer_spec(cfg, app)
+        if not peer:
+            continue
+        room = peer.get("join_url") or (reg.url_for(app, cfg.app_urls) if reg else "")
+        if not room:
+            failures[app] = "peer configured but no join_url and no app URL"
+            continue
+        bot_name = peer.get("name") or ("pramana-bot-" + app)
+        container = "pramana-bot-{}-{}".format(
+            app, cfg.experiment_id or uuid.uuid4().hex[:6]
+        )
+        status_path = bots_dir / (app + "_status.json")
+        args = [
+            DOCKER_BIN,
+            "run",
+            "-d",
+            "--rm",
+            "--name",
+            container,
+            "--privileged",
+            "--shm-size=2g",
+            "--dns",
+            "8.8.8.8",
+            "--env",
+            "BOT_ROOM_URL=" + room,
+            "--env",
+            "BOT_NAME=" + bot_name,
+            "--env",
+            "BOT_STATUS=/out/" + app + "_status.json",
+            "--env",
+            "BOT_HOLD_SECONDS=" + str(int(cfg.duration_s) + 600),
+            "--env",
+            "BOT_JOIN_DEADLINE=" + str(int(peer.get("join_deadline_s", 900))),
+            "--volume",
+            str(bots_dir) + ":/out",
+        ]
+        if peer.get("y4m"):
+            clip = Path(str(peer["y4m"])).expanduser().resolve()
+            args += [
+                "--volume",
+                str(clip) + ":/tmp/bot_clip.y4m:ro",
+                "--env",
+                "BOT_CLIP=/tmp/bot_clip.y4m",
+            ]
+        args += ["--entrypoint", "python3", COLLECTOR_IMAGE, "bot_peer.py"]
+        rc, out = _run_cmd(args, timeout=120)
+        if rc != 0:
+            failures[app] = "could not start bot container: " + out.strip()[:160]
+            print("    ! " + app + ": " + failures[app])
+            continue
+        running.append(
+            {"app": app, "container": container, "status": status_path, "room": room}
+        )
+        print("    - bot peer for '" + app + "' started (unshaped) -> " + container)
+    return running, failures
+
+
+def wait_for_bot_peers(
+    bots: list[dict[str, Any]], timeout_s: float = 900.0
+) -> dict[str, str]:
+    """Block until every bot reports it is publishing; return {app: reason} failures.
+
+    Admission can be manual, so this prints what the operator must do and keeps
+    waiting rather than failing fast.
+    """
+    if not bots:
+        return {}
+    pending = {b["app"]: b for b in bots}
+    failures: dict[str, str] = {}
+    deadline = time.time() + timeout_s
+    prompted = False
+    last = 0.0
+    while pending and time.time() < deadline:
+        for app, b in list(pending.items()):
+            state = "starting"
+            info: dict[str, Any] = {}
+            try:
+                info = json.loads(Path(b["status"]).read_text())
+                state = info.get("state", "starting")
+            except (OSError, ValueError):
+                pass
+            if state == "joined":
+                print(
+                    "    - bot peer '"
+                    + app
+                    + "' is publishing "
+                    + str(info.get("publishing"))
+                    + " - proceeding"
+                )
+                pending.pop(app)
+            elif state == "failed":
+                failures[app] = str(info.get("reason", "bot failed"))
+                print("    ! bot peer '" + app + "' failed: " + failures[app])
+                pending.pop(app)
+            elif state == "knocking" and not prompted:
+                prompted = True
+                print("")
+                print("=" * 66)
+                print("  ACTION NEEDED: the bot peer is waiting to be admitted.")
+                for x in pending.values():
+                    print("    admit '" + x["app"] + "' in: " + x["room"])
+                print("  The run continues automatically once it is let in.")
+                print("=" * 66)
+                print("")
+        if pending and time.time() - last > 30:
+            last = time.time()
+            print(
+                "    - still waiting for bot peer(s): "
+                + str(sorted(pending))
+                + " ("
+                + str(int(deadline - time.time()))
+                + "s left)"
+            )
+        if pending:
+            time.sleep(3)
+    for app in pending:
+        failures[app] = "bot peer never confirmed publishing within {:.0f}s".format(
+            timeout_s
+        )
+        print("    ! " + failures[app])
+    return failures
+
+
+def stop_bot_peers(bots: list[dict[str, Any]]) -> None:
+    """Always called, including on failure: never leave a bot sitting in a room."""
+    for b in bots:
+        rc, _ = _run_cmd([DOCKER_BIN, "stop", "-t", "5", b["container"]], timeout=60)
+        note = "" if rc == 0 else " (stop non-zero; may already be gone)"
+        print("    - bot peer '" + b["app"] + "' stopped" + note)
+
+
+def run_qoe_collectors(
+    cfg: ExperimentConfig,
+    run_dir: Path,
+    bots: Optional[list[dict[str, Any]]] = None,
+    bot_failures: Optional[dict[str, str]] = None,
+) -> dict[str, Any]:
     """Drive every browser app for real and return where each wrote its samples."""
     reg, _ = _bind_shared()
     if reg is None:
@@ -717,9 +893,37 @@ def run_qoe_collectors(cfg: ExperimentConfig, run_dir: Path) -> dict[str, Any]:
         print(f"    ! {result['error']}")
         return result
 
+    # ── bot peers ────────────────────────────────────────────────────────────
+    # needs_peer apps have no inbound media unless somebody publishes. Start the
+    # bot BEFORE the app under test so there is already a stream to receive, and
+    # outside ns1 so its uplink is not throttled by the cap being measured.
+    if bots is None:  # standalone call: prepare them here instead
+        bots, bot_failures = start_bot_peers(cfg, run_dir)
+        if bots:
+            bot_failures.update(
+                wait_for_bot_peers(bots, timeout_s=float(cfg.peer_wait_s or 900))
+            )
+    bot_failures = dict(bot_failures or {})
+    for app, why in bot_failures.items():
+        skipped[app] = "peer bot unavailable: " + why
+        jobs = [j for j in jobs if j["app"] != app]
+    result["jobs"] = jobs
+    result["bot_peers"] = [
+        {"app": b["app"], "container": b["container"], "room": b["room"]} for b in bots
+    ]
+    if not jobs:
+        stop_bot_peers(bots)
+        for app, why in skipped.items():
+            print("    - " + app + ": SKIPPED - " + why)
+        return result
+
     qoe_dir = run_dir / "qoe"
     qoe_dir.mkdir(parents=True, exist_ok=True)
-    budget = int(cfg.duration_s + 420)
+    # The container budget must cover the in-browser join wait as well, or a
+    # needs_peer app that is still waiting to be admitted gets SIGKILLed by
+    # the outer timeout and the run reports "no packets captured".
+    join_budget = int(cfg.peer_wait_s) if bots else 0
+    budget = int(cfg.duration_s + 420 + join_budget)
     args = [
         DOCKER_BIN,
         "run",
@@ -756,7 +960,12 @@ def run_qoe_collectors(cfg: ExperimentConfig, run_dir: Path) -> dict[str, Any]:
         f"    · driving {len(jobs)} browser app(s) in real Chrome inside ns1 "
         f"({', '.join(j['app'] for j in jobs)}) ..."
     )
-    rc, log = _run_cmd(args, timeout=budget)
+    try:
+        rc, log = _run_cmd(args, timeout=budget)
+    finally:
+        # Same cleanup path as the capture: a failed run must not leave a bot
+        # sitting in the room for the next one to trip over.
+        stop_bot_peers(bots)
     result["log"] = log
     result["returncode"] = rc
     (run_dir / "collector.log").write_text(log)
@@ -775,14 +984,18 @@ def run_qoe_collectors(cfg: ExperimentConfig, run_dir: Path) -> dict[str, Any]:
 
 
 def collect_player_qoe(
-    cfg: ExperimentConfig, run_dir: Path, transfers: Optional[dict[str, dict]] = None
+    cfg: ExperimentConfig,
+    run_dir: Path,
+    transfers: Optional[dict[str, dict]] = None,
+    bots: Optional[list[dict[str, Any]]] = None,
+    bot_failures: Optional[dict[str, str]] = None,
 ) -> dict[str, Any]:
     """Drive the apps, then reduce their samples with shared.qoe (the definitions)."""
     reg, qoelib = _bind_shared()
     if reg is None or qoelib is None:
         print(f"    ! {shared_repo_status()}")
         return {}
-    run = run_qoe_collectors(cfg, run_dir)
+    run = run_qoe_collectors(cfg, run_dir, bots=bots, bot_failures=bot_failures)
     per_app: dict[str, Any] = {}
     for app in cfg.apps:
         spec = reg.get(app)
@@ -2701,6 +2914,15 @@ def run_direct(cfg: ExperimentConfig) -> dict[str, Any]:
     if local_ip_map:
         print(f"  • per-app alias IPs: {local_ip_map}")
 
+    # Bots join before the capture opens. Admission can take minutes (and may be
+    # manual), and every second of it would otherwise be captured as idle link
+    # time, diluting the average throughput of the call we actually want.
+    prepared_bots, prepared_bot_failures = start_bot_peers(cfg, run_dir)
+    if prepared_bots:
+        prepared_bot_failures.update(
+            wait_for_bot_peers(prepared_bots, timeout_s=float(cfg.peer_wait_s or 900))
+        )
+
     cap_duration = cfg.duration_s + CAPTURE_OVERHEAD_S + 15 * (len(apps) - 1)
     print(f"  • capture on {DOWNSTREAM_IFACE} (auto-stop {cap_duration}s) ...")
     cap = substrate_capture_start(cfg.slug, duration_s=cap_duration)
@@ -2715,7 +2937,12 @@ def run_direct(cfg: ExperimentConfig) -> dict[str, Any]:
     # ── real player QoE: drive actual Chrome inside the shaped namespace ─────
     if COLLECT_ENABLED and browser_apps and reg is not None:
         print(f"  • real QoE collector for {browser_apps} ...")
-        player_qoe = collect_player_qoe(cfg, run_dir)
+        player_qoe = collect_player_qoe(
+            cfg,
+            run_dir,
+            bots=prepared_bots,
+            bot_failures=prepared_bot_failures,
+        )
         for a in browser_apps:
             q = player_qoe.get(a) or {}
             run_results[a] = {

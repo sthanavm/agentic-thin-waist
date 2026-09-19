@@ -450,16 +450,41 @@ def _summarize_webrtc(
                     break
         return out
 
-    inbound = col("inbound_bitrate_kbps", "bitrate_kbps", "inbound_bitrate")
-    if not any(v > 0 for v in inbound):
+    # Two naming conventions reach here and they differ by a factor of 1000.
+    # The collector in this repo emits `inbound_bitrate_mbps`; older or external feeds
+    # use kbps names. Normalise to Mbps ONCE, here, rather than dividing at
+    # every use site - reading the mbps field through the kbps path silently
+    # reported a real call as 1/1000th of its bitrate.
+    inbound_kbps = col("inbound_bitrate_kbps", "bitrate_kbps", "inbound_bitrate")
+    inbound = (
+        [v / 1000.0 for v in inbound_kbps]
+        if inbound_kbps
+        else col("inbound_bitrate_mbps")
+    )
+    # Bytes actually received is the ground truth for "a remote peer is
+    # publishing": a local preview produces no inbound-rtp at all. Keeping it as
+    # a second signal means a future rename of the bitrate field degrades the
+    # bitrate number instead of silently voiding the whole measurement.
+    received = col("bytes_received", "bytesReceived")
+    if not any(v > 0 for v in inbound) and not any(v > 0 for v in received):
         return _empty(spec, "no_remote_media (no peer publishing video)")
 
     frames_dropped = col("frames_dropped", "framesDropped")
     frames_decoded = col("frames_decoded", "framesDecoded")
-    loss = col("packet_loss_pct", "packets_lost_pct", "fraction_lost")
+    # `packet_loss_percent` is what this repo's collector emits (already a
+    # percentage); the other spellings are kept for external sample feeds.
+    loss = col(
+        "packet_loss_percent", "packet_loss_pct", "packets_lost_pct", "fraction_lost"
+    )
     freeze_count = col("freeze_count", "freezeCount")
-    freeze_dur = col("freeze_duration_secs", "total_freezes_duration")
-    jitter = col("jitter", "jitter_secs")
+    # Cumulative, not the per-interval delta: the summary reports total freeze
+    # time for the session.
+    freeze_dur = col(
+        "total_freezes_duration_seconds",
+        "freeze_duration_secs",
+        "total_freezes_duration",
+    )
+    jitter = col("jitter_seconds", "jitter", "jitter_secs")
     heights = [h for h in (_height_of(r) for r in rows) if h]
 
     drop_pct = None
@@ -474,9 +499,9 @@ def _summarize_webrtc(
         "player_qoe_available": True,
         "status": "ok",
         "video_startup_time_ms": None,
-        "mean_bitrate_mbps": round(_mean(inbound) / 1000.0, 4) if inbound else None,
-        "max_bitrate_mbps": round(max(inbound) / 1000.0, 4) if inbound else None,
-        "min_bitrate_mbps": round(min(inbound) / 1000.0, 4) if inbound else None,
+        "mean_bitrate_mbps": round(_mean(inbound), 4) if inbound else None,
+        "max_bitrate_mbps": round(max(inbound), 4) if inbound else None,
+        "min_bitrate_mbps": round(min(inbound), 4) if inbound else None,
         "mean_watched_bitrate_mbps": None,
         "bitrate_changes": None,
         "rebuffer_events": int(max(freeze_count)) if freeze_count else None,
@@ -496,7 +521,17 @@ def _summarize_webrtc(
         "resolutions_observed": sorted(set(heights)),
         "total_samples": len(rows),
         "is_live": True,
+        # Surfaced in the record itself so a future reader does not quote the
+        # peak as a network finding: the first interval after joining divides a
+        # large accumulated bytesReceived by a very short elapsed time, which
+        # produces a spike tens of times the sustained rate.
+        "max_bitrate_is_startup_artifact": True,
         "derivation": {
+            "bitrate_caveat": (
+                "max/min_bitrate_mbps come from per-interval deltas; the first "
+                "interval after join is inflated by accumulated bytes over a "
+                "short elapsed time. Use mean_bitrate_mbps for the real rate."
+            ),
             "source": "RTCPeerConnection.getStats() inbound-rtp (remote peer)",
             "rebuffer_rule": "WebRTC freeze count / freeze duration",
         },

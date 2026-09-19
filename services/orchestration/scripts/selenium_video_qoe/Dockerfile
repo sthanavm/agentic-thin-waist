@@ -33,5 +33,9 @@ RUN pip install -r requirements.txt \
   && seleniumbase get chromedriver --path
 
 COPY collect.py .
+# Bot peer for needs_peer apps (meet/zoom) plus its Y4M clip generator.
+# Same image as the collector so both share one build and one Chrome.
+COPY make_test_clip.py .
+COPY bot_peer.py .
 
 ENTRYPOINT ["python3", "collect.py"]
