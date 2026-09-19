@@ -36,6 +36,7 @@ notes           Operator-facing caveats.
 
 from __future__ import annotations
 
+import re
 from dataclasses import dataclass, field
 from typing import Iterable, Optional
 
@@ -56,6 +57,10 @@ class AppSpec:
     needs_peer: bool = False
     live: bool = False
     bitrate_source: str = "none"
+    # True when the media clock is useless for liveness. Zoom's web client
+    # renders into a MediaStream-backed <video>, where currentTime stays
+    # pinned at 0 forever - progress has to come from frame counters.
+    progress_from_frames: bool = False
     domains: tuple[str, ...] = ()
     plot_directions: tuple[str, ...] = ("download",)
     color: str = "#2196F3"
@@ -191,11 +196,17 @@ REGISTRY: dict[str, AppSpec] = {
     ),
     "zoom": AppSpec(
         name="zoom",
-        kind=WEBRTC,
+        # Measured as an HTML5 app, not WebRTC: the web client is a WASM stack
+        # (net.wasm + video.mtsimd.wasm) and never constructs an
+        # RTCPeerConnection, so there is no getStats() to read. It does decode
+        # into a plain <video> with a MediaStream, which getVideoPlaybackQuality()
+        # reads exactly like YouTube.
+        kind=HTML5_VIDEO,
         default_url="",  # supply a web-client join URL
         needs_peer=True,
         live=True,
-        bitrate_source="webrtc_stats",
+        progress_from_frames=True,
+        bitrate_source="none",
         domains=("zoom.us", "zoomgov.com", "zoom.com"),
         plot_directions=("download", "upload"),
         color="#2D8CFF",
@@ -233,10 +244,27 @@ def known_apps() -> list[str]:
     return sorted(REGISTRY)
 
 
+def normalize_join_url(app: str, url: str) -> str:
+    """Rewrite a Zoom /j/ invite into the web-client /wc/ form.
+
+    The /j/ landing page offers a "Join from browser" button whose click the page
+    silently swallows under automation (the button is topmost and unobstructed -
+    most likely a blocked popup), so a run pointed at an invite link just sits
+    there. The /wc/ form loads the web client directly.
+    """
+    if app != "zoom" or not url:
+        return url
+    m = re.match(r"^(https://[^/]+)/j/(\d+)(?:\?(.*))?$", url.strip())
+    if not m:
+        return url
+    host, mid, query = m.group(1), m.group(2), m.group(3) or ""
+    return f"{host}/wc/{mid}/join" + (f"?{query}" if query else "")
+
+
 def url_for(app: str, overrides: Optional[dict[str, str]] = None) -> str:
     """URL to open for `app`, honouring a caller-supplied override map."""
     if overrides and app in overrides and overrides[app]:
-        return overrides[app]
+        return normalize_join_url(app, overrides[app])
     return get(app).default_url
 
 

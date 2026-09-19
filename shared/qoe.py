@@ -200,13 +200,28 @@ def _summarize_html5(
     buf = [parse_buffer_ahead(x) for x in st]
     heights = [_height_of(x) for x in st]
 
-    # ── playback start: first interval where the media clock actually moves ──
+    # ── playback start: first interval where playback actually moves ────────
+    # Most players expose a media clock. Zoom's web client does not: it renders
+    # a MediaStream-backed <video> whose currentTime is pinned at 0 for the whole
+    # call, so the clock test would call a perfectly healthy meeting
+    # "no_playback". Those apps advertise `progress_from_frames` and are judged
+    # on decoded-frame counters instead. Scoped by the registry flag so every
+    # other app keeps the media-clock definition unchanged.
+    frame_driven = bool(getattr(spec, "progress_from_frames", False))
+    tfs = [_num(x.get("total_video_frames")) for x in st]
     first_advance_idx = None
-    for i in range(1, n):
-        a, b = cur[i - 1], cur[i]
-        if a is not None and b is not None and (b - a) > _ADVANCE_FLOOR_S:
-            first_advance_idx = i
-            break
+    if frame_driven:
+        for i in range(1, n):
+            a, b = tfs[i - 1], tfs[i]
+            if a is not None and b is not None and b > a:
+                first_advance_idx = i
+                break
+    else:
+        for i in range(1, n):
+            a, b = cur[i - 1], cur[i]
+            if a is not None and b is not None and (b - a) > _ADVANCE_FLOOR_S:
+                first_advance_idx = i
+                break
 
     startup_ms: Optional[float] = None
     startup_basis = "none"
@@ -233,19 +248,29 @@ def _summarize_html5(
         dt = ts[i] - ts[i - 1]
         if dt <= 0:
             continue
-        a, b = cur[i - 1], cur[i]
+        # On a frame-driven app the media clock never moves, so measuring the
+        # freeze against it would score the whole call as one continuous stall.
+        # The honest freeze signal there is the decoded-frame counter standing
+        # still: no new frame was painted during this wall-clock interval.
+        a, b = (tfs[i - 1], tfs[i]) if frame_driven else (cur[i - 1], cur[i])
         if a is None or b is None:
             continue
         progressed = b - a
         state = _num(st[i].get("player_state"))
         trying = not _is_paused(st[i]) and not _is_ended(st[i], duration)
-        stalled = progressed < max(_ADVANCE_FLOOR_S, _ADVANCE_RATIO * dt)
-        # Corroboration: an empty buffer or the vendor's own BUFFERING state.
-        corroborated = (
-            (buf[i] is not None and buf[i] <= _EMPTY_BUFFER_S)
-            or state == _YT_STATE_BUFFERING
-            or buf[i] is None  # no buffer signal: fall back to the clock alone
-        )
+        if frame_driven:
+            stalled = progressed <= 0
+            # These apps expose no buffered ranges and no vendor state, so the
+            # frame counter is the only witness and stands on its own.
+            corroborated = True
+        else:
+            stalled = progressed < max(_ADVANCE_FLOOR_S, _ADVANCE_RATIO * dt)
+            # Corroboration: an empty buffer or the vendor's own BUFFERING state.
+            corroborated = (
+                (buf[i] is not None and buf[i] <= _EMPTY_BUFFER_S)
+                or state == _YT_STATE_BUFFERING
+                or buf[i] is None  # no buffer signal: fall back to the clock alone
+            )
         if trying and stalled and corroborated:
             frozen_total += dt
             if span_start is None:
@@ -318,6 +343,18 @@ def _summarize_html5(
         counted = True
     if counted:
         watched_s = round(advanced, 2)
+    if frame_driven:
+        # Time during which decoded frames actually advanced. The media-clock
+        # sum above is structurally 0 here and would understate every call.
+        moved = 0.0
+        for i in range(max(1, first_advance_idx), n):
+            a, b = tfs[i - 1], tfs[i]
+            if a is None or b is None or b <= a:
+                continue
+            gap = ts[i] - ts[i - 1]
+            if gap > 0:
+                moved += gap
+        watched_s = round(moved, 2)
 
     out: dict[str, Any] = {
         "app": spec.name,
@@ -356,12 +393,22 @@ def _summarize_html5(
         "video_duration_secs": None if spec.live else duration,
         # ── provenance: how each soft number was obtained ────────────────────
         "derivation": {
+            "progress_basis": (
+                "total_video_frames (media clock unusable on this app)"
+                if frame_driven
+                else "current_time_secs"
+            ),
             "startup_basis": startup_basis,
             "bitrate_basis": bitrate_basis,
             "fps_basis": fps_basis,
             "rebuffer_rule": (
-                "current_time_secs not advancing while not paused and not ended, "
-                "corroborated by empty buffer or vendor BUFFERING state"
+                "total_video_frames not advancing while in the call "
+                "(media clock unusable on this app)"
+                if frame_driven
+                else (
+                    "current_time_secs not advancing while not paused and not ended, "
+                    "corroborated by empty buffer or vendor BUFFERING state"
+                )
             ),
         },
         # ── timelines for the plots ──────────────────────────────────────────

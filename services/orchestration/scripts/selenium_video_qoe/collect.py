@@ -60,7 +60,12 @@ const host = location.hostname || '';
 function youtubeStats() {
     const player = document.getElementById('movie_player')
         || document.querySelector('.html5-video-player');
-    const video = document.querySelector('video');
+    // Zoom's page carries 0x0 screen-share placeholders alongside the real
+    // remote tile, so "the first video" is the wrong one there. With a single
+    // video this is identical to querySelector('video').
+    const _vids = Array.from(document.querySelectorAll('video'));
+    const _live = _vids.filter(v => v.videoWidth > 0 && v.videoHeight > 0);
+    const video = (_live.length ? _live : _vids)[0] || null;
     if (!player && !video) { return {platform: 'youtube', error: 'no_player'}; }
 
     const out = {platform: 'youtube'};
@@ -324,6 +329,137 @@ for (const button of buttons) {
 }
 return {clicked: false};
 """
+
+
+ZOOM_JOIN_JS = r"""
+// Zoom's web client guest flow: type a display name, then press Join. Reached
+// via /wc/<id>/join?pwd=... - the /j/ invite page offers "Join from browser"
+// but silently swallows the click under automation, so runs must not use it.
+const guestName = arguments[0];
+const out = {typed: false, clicked: null, in_call: false, started_video: false};
+
+// Already inside? The meeting toolbar only exists in-call.
+out.in_call = !!document.querySelector(
+    '[aria-label*="Leave" i],[aria-label*="participant" i],[class*="footer-button"]'
+) && !/let them know you.?re here|waiting for the host/i.test(document.body.innerText || '');
+
+const inputs = Array.from(document.querySelectorAll('input'));
+const nameInput = inputs.find(i => {
+    const l = `${i.placeholder || ''} ${i.getAttribute('aria-label') || ''} ${i.id || ''}`
+        .toLowerCase();
+    return (l.includes('name') || l.includes('input-for-name')) && !l.includes('pass');
+});
+if (nameInput && guestName && nameInput.value !== guestName) {
+    const setter = Object.getOwnPropertyDescriptor(
+        window.HTMLInputElement.prototype, 'value'
+    ).set;
+    setter.call(nameInput, guestName);
+    nameInput.dispatchEvent(new Event('input', {bubbles: true}));
+    nameInput.dispatchEvent(new Event('change', {bubbles: true}));
+    out.typed = true;
+}
+for (const b of document.querySelectorAll('button,[role="button"]')) {
+    const l = (b.innerText || b.getAttribute('aria-label') || '').trim().toLowerCase();
+    if (l === 'join' || l === 'join meeting' || l === 'join audio by computer') {
+        b.click(); out.clicked = l; break;
+    }
+}
+
+// Publish video. Zoom can join with the camera off, and then the fake device
+// never reaches the other side - the peer sees an avatar tile, no <video> is
+// created, and downstream that reads as "nobody is publishing". The control is
+// a toggle: "start video" means the camera is currently OFF.
+for (const b of document.querySelectorAll('button,[role="button"]')) {
+    const l = (b.innerText || b.getAttribute('aria-label') || '').trim().toLowerCase();
+    if (l === 'start video' || l === 'start my video' || l.includes('start video')) {
+        b.click(); out.started_video = true; break;
+    }
+}
+return out;
+"""
+
+
+ZOOM_READY_JS = r"""
+// Remote camera video is a MediaStream-backed <video> with real intrinsic
+// dimensions. The sharer placeholders are 0x0, so size is what separates them.
+// The three not-ready cases are reported apart: a waiting room, being in the
+// call with nobody publishing, and not having joined are different problems,
+// and collapsing them into one reason made the previous run ambiguous.
+const _t = (document.body.innerText || '').replace(/\s+/g, ' ');
+const _waiting = /let them know you.?re here|waiting for the host/i.test(_t);
+const _inCall = !!document.querySelector(
+    '[aria-label*="Leave" i],[aria-label*="participant" i],[class*="footer-button"]'
+);
+const live = Array.from(document.querySelectorAll('video'))
+    .filter(v => v.videoWidth > 0 && v.videoHeight > 0);
+if (!live.length) {
+    return {ok: false, waiting: _waiting, in_call: _inCall && !_waiting,
+            reason: _waiting ? 'waiting_room'
+                  : (_inCall ? 'in_call_no_video' : 'not_joined')};
+}
+const v = live[0];
+let frames = null;
+if (typeof v.getVideoPlaybackQuality === 'function') {
+    frames = v.getVideoPlaybackQuality().totalVideoFrames;
+}
+return {ok: true, w: v.videoWidth, h: v.videoHeight, frames: frames,
+        paused: v.paused};
+"""
+
+
+def wait_for_zoom_join(driver, app, timeout_s=900.0, guest_name="pramana"):
+    """Click through Zoom's guest join, then wait for remote video to decode.
+
+    Admission may be manual, so this keeps trying rather than failing fast. The
+    ready signal is advancing decoded frames - Zoom's currentTime never moves,
+    so a clock test would wait forever on a healthy call.
+    """
+    deadline = time.time() + timeout_s
+    last_frames = None
+    last_note = 0.0
+    while time.time() < deadline:
+        try:
+            r = driver.execute_script(ZOOM_JOIN_JS, guest_name)
+            if r.get("clicked"):
+                print(
+                    f"[{app}] clicked Zoom join control: {r.get('clicked')}", flush=True
+                )
+            if r.get("started_video"):
+                # Worth logging: without this the browser sits in the call with
+                # its camera off and never publishes the fake device to the peer.
+                print(f"[{app}] turned the camera on (clicked Start Video)", flush=True)
+        except Exception as exc:  # noqa: BLE001 - control may not exist yet
+            print(
+                f"[{app}] zoom join control not ready: {type(exc).__name__}", flush=True
+            )
+        try:
+            st = driver.execute_script(ZOOM_READY_JS)
+        except Exception:  # noqa: BLE001
+            st = {"ok": False, "reason": "script_error"}
+        if st.get("ok"):
+            f = st.get("frames")
+            if last_frames is not None and f is not None and f > last_frames:
+                print(
+                    f"[{app}] remote video decoding: {st['w']}x{st['h']}, "
+                    f"frames {last_frames} -> {f}",
+                    flush=True,
+                )
+                return st
+            last_frames = f
+        elif time.time() - last_note > 20:
+            last_note = time.time()
+            why = {
+                "waiting_room": "in Zoom's waiting room - admit this participant",
+                "in_call_no_video": "in the call, but nobody is publishing video",
+                "not_joined": "not in the call yet (join control not taken)",
+            }.get(st.get("reason"), st.get("reason"))
+            print(f"[{app}] {why}", flush=True)
+        time.sleep(3)
+    print(
+        f"[{app}] WARNING: no advancing remote video within {timeout_s:.0f}s",
+        flush=True,
+    )
+    return {"ok": False, "reason": "timeout"}
 
 
 def start_display(dnum: str) -> None:
@@ -787,6 +923,15 @@ def run_job(
                 f"sampling the loaded page anyway: {type(exc).__name__}: {exc}"
             )
 
+        if job.get("join_flow") == "zoom":
+            print(f"[{app}] joining Zoom web client and waiting for remote video")
+            zoom_ready = wait_for_zoom_join(
+                driver,
+                app,
+                timeout_s=meet_join_timeout_seconds,
+                guest_name=guest_name,
+            )
+            print(f"[{app}] zoom join result: {zoom_ready}", flush=True)
         if is_webrtc:
             print(f"[{app}] joining room and waiting for remote inbound WebRTC video")
             meet_ready_stats = wait_for_google_meet_inbound(

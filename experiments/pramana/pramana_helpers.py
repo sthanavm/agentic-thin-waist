@@ -687,6 +687,10 @@ def build_collector_jobs(
                 "sample_interval_seconds": 1.0,
                 # needs_peer apps may require a human to admit the guest,
                 # so they get the same generous budget as the bot peer.
+                # Zoom is an HTML5-kind app that still needs a guest-join
+                # click-through, so the flow is named explicitly rather than
+                # inferred from `kind`.
+                "join_flow": "zoom" if app == "zoom" else None,
                 "join_timeout_seconds": (
                     int(cfg.peer_wait_s) if spec.needs_peer else 180
                 ),
@@ -734,7 +738,14 @@ def start_bot_peers(
         peer = _peer_spec(cfg, app)
         if not peer:
             continue
-        room = peer.get("join_url") or (reg.url_for(app, cfg.app_urls) if reg else "")
+        room = peer.get("join_url") or ""
+        # Same normalisation the app under test gets: a Zoom /j/ invite must
+        # become the /wc/ web-client form or the bot lands on the launcher page,
+        # whose "Join from browser" click is silently swallowed.
+        if room and reg is not None and hasattr(reg, "normalize_join_url"):
+            room = reg.normalize_join_url(app, room)
+        if not room and reg is not None:
+            room = reg.url_for(app, cfg.app_urls)
         if not room:
             failures[app] = "peer configured but no join_url and no app URL"
             continue
@@ -758,6 +769,8 @@ def start_bot_peers(
             "BOT_ROOM_URL=" + room,
             "--env",
             "BOT_NAME=" + bot_name,
+            "--env",
+            "BOT_APP=" + app,
             "--env",
             "BOT_STATUS=/out/" + app + "_status.json",
             "--env",

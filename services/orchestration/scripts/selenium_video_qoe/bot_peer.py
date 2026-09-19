@@ -28,6 +28,8 @@ sys.path.insert(0, "/app")
 
 from collect import (  # noqa: E402  - /app is only on the path at runtime
     GOOGLE_MEET_JOIN_JS,
+    ZOOM_JOIN_JS,
+    ZOOM_READY_JS,
     ensure_window_size,
     install_webrtc_hook,
     start_display,
@@ -38,6 +40,7 @@ ROOM = os.environ.get("BOT_ROOM_URL", "")
 NAME = os.environ.get("BOT_NAME", "pramana-bot")
 CLIP = os.environ.get("BOT_CLIP", "/tmp/bot_clip.y4m")
 STATUS = os.environ.get("BOT_STATUS", "/out/bot_status.json")
+APP = os.environ.get("BOT_APP", "meet")
 HOLD_S = float(os.environ.get("BOT_HOLD_SECONDS", "600"))
 JOIN_DEADLINE_S = float(os.environ.get("BOT_JOIN_DEADLINE", "900"))
 DISPLAY_NUM = os.environ.get("BOT_DISPLAY", "111")
@@ -52,6 +55,24 @@ def _sigterm(_sig, _frm):
 
 signal.signal(signal.SIGTERM, _sigterm)
 signal.signal(signal.SIGINT, _sigterm)
+
+
+ZOOM_IN_CALL_JS = r"""
+// In the meeting, not the launcher and not a waiting room. The toolbar only
+// exists in-call; a <video> with real dimensions means media is decoding.
+const t = (document.body.innerText || '').replace(/\s+/g, ' ');
+const waiting = /let them know you.?re here|waiting for the host/i.test(t);
+const toolbar = !!document.querySelector(
+    '[aria-label*="Leave" i],[aria-label*="participant" i],[class*="footer-button"]'
+);
+const live = Array.from(document.querySelectorAll('video'))
+    .filter(v => v.videoWidth > 0 && v.videoHeight > 0);
+return {
+  in_call: toolbar && !waiting,
+  waiting: waiting,
+  size: live.length ? (live[0].videoWidth + 'x' + live[0].videoHeight) : null,
+};
+"""
 
 
 def status(state: str, **extra) -> None:
@@ -157,7 +178,11 @@ def main() -> int:
         last_note = 0.0
         while time.time() < deadline and not _stop:
             try:
-                driver.execute_script(GOOGLE_MEET_JOIN_JS, NAME)
+                # Each platform has its own guest-join DOM; the publishing
+                # check below is identical for both.
+                driver.execute_script(
+                    ZOOM_JOIN_JS if APP == "zoom" else GOOGLE_MEET_JOIN_JS, NAME
+                )
             except Exception:  # noqa: BLE001 - the control may not exist yet
                 pass
             try:
@@ -168,8 +193,22 @@ def main() -> int:
             if st.get("denied"):
                 status("failed", reason="admission denied", snippet=st.get("snippet"))
                 return 3
-            # Publishing is the only trustworthy "I am really in" signal: the
-            # waiting room carries the same leave/chat chrome as the call.
+            # Zoom exposes no RTCPeerConnection, so outbound-RTP can never
+            # confirm anything there; fall back to the in-call DOM plus a
+            # decoding <video>. Meet keeps the stronger outbound-bytes proof.
+            if APP == "zoom":
+                try:
+                    zin = driver.execute_script(ZOOM_IN_CALL_JS)
+                except Exception:  # noqa: BLE001
+                    zin = {}
+                if zin.get("in_call"):
+                    joined = True
+                    status(
+                        "joined",
+                        publishing=zin.get("size"),
+                        basis="zoom in-call DOM + live video element",
+                    )
+                    break
             if ob.get("streams") and ob.get("bytes_sent", 0) > 0:
                 joined = True
                 status(
@@ -195,13 +234,25 @@ def main() -> int:
         while time.time() < hold_until and not _stop:
             time.sleep(5)
             try:
-                ob = driver.execute_async_script(OUTBOUND_JS)
-                status(
-                    "publishing",
-                    bytes_sent=ob.get("bytes_sent"),
-                    frames_sent=ob.get("frames_sent"),
-                    size=f"{ob.get('width')}x{ob.get('height')}",
-                )
+                if APP == "zoom":
+                    # Zoom has no RTCPeerConnection, so outbound-RTP counters are
+                    # structurally zero here. Reporting them printed a misleading
+                    # "publishing 0x0, bytes_sent 0" every few seconds.
+                    zin = driver.execute_script(ZOOM_IN_CALL_JS)
+                    status(
+                        "publishing",
+                        in_call=bool(zin.get("in_call")),
+                        local_video=zin.get("size"),
+                        basis="zoom in-call DOM (no WebRTC counters exist)",
+                    )
+                else:
+                    ob = driver.execute_async_script(OUTBOUND_JS)
+                    status(
+                        "publishing",
+                        bytes_sent=ob.get("bytes_sent"),
+                        frames_sent=ob.get("frames_sent"),
+                        size=f"{ob.get('width')}x{ob.get('height')}",
+                    )
             except Exception:  # noqa: BLE001 - keep holding even if a poll fails
                 pass
         status("stopped")
