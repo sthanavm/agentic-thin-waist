@@ -389,6 +389,10 @@ def _summarize_html5(
         "watched_seconds": watched_s,
         "session_seconds": round(rel[-1], 2),
         "total_samples": n,
+        # Epoch of the first sample. The QoE series below are relative to it,
+        # while capture-derived series are relative to the first packet; a plot
+        # that shares an x-axis between them needs both origins to line up.
+        "session_start_epoch": round(t0, 3),
         "is_live": bool(spec.live or _truthy(st, "is_live")),
         "video_duration_secs": None if spec.live else duration,
         # ── provenance: how each soft number was obtained ────────────────────
@@ -540,15 +544,52 @@ def _summarize_webrtc(
         if dec > 0:
             drop_pct = round(100.0 * drp / dec, 3)
 
+    # A WebRTC call has no media clock at all - there is no seekable timeline,
+    # so currentTime is meaningless. Progress is the decoded-frame counter,
+    # exactly as for the frame-driven HTML5 apps. Leaving these None made the
+    # run look like it never played: the panel verdict gates on
+    # watched_seconds, so a healthy call with 1373 decoded frames was being
+    # labelled "the app did not play".
+    session_s = round(ts[-1] - ts[0], 2) if len(ts) > 1 else None
+    watched_s = None
+    first_frame_idx = None
+    if frames_decoded and len(frames_decoded) == len(ts):
+        moved = 0.0
+        for i in range(1, len(ts)):
+            if frames_decoded[i] > frames_decoded[i - 1]:
+                gap = ts[i] - ts[i - 1]
+                if gap > 0:
+                    moved += gap
+                if first_frame_idx is None:
+                    first_frame_idx = i
+        watched_s = round(moved, 2)
+    fps = None
+    if watched_s and frames_decoded and len(frames_decoded) > 1:
+        grew = max(frames_decoded) - min(frames_decoded)
+        if grew > 0 and watched_s > 0:
+            fps = round(grew / watched_s, 2)
+    # Startup here is "time to the first decoded frame", measured from the first
+    # sample. There is no play() trigger on a call, so the basis is named.
+    startup_ms = None
+    if first_frame_idx is not None:
+        startup_ms = round(max(0.0, ts[first_frame_idx] - ts[0]) * 1000.0, 1)
+
+    # The first interval after joining divides accumulated bytes by a very short
+    # elapsed time, so it reports tens of times the sustained rate - 38.7 Mbps
+    # on a 10 Mbps link in one measured run. That is not a rate, it is an
+    # artifact of where sampling started, so it is dropped rather than shipped
+    # with a caveat that a reader may not follow.
+    sustained = inbound[1:] if len(inbound) > 2 else inbound
+
     return {
         "app": spec.name,
         "kind": spec.kind,
         "player_qoe_available": True,
         "status": "ok",
-        "video_startup_time_ms": None,
+        "video_startup_time_ms": startup_ms,
         "mean_bitrate_mbps": round(_mean(inbound), 4) if inbound else None,
-        "max_bitrate_mbps": round(max(inbound), 4) if inbound else None,
-        "min_bitrate_mbps": round(min(inbound), 4) if inbound else None,
+        "max_bitrate_mbps": round(max(sustained), 4) if sustained else None,
+        "min_bitrate_mbps": round(min(sustained), 4) if sustained else None,
         "mean_watched_bitrate_mbps": None,
         "bitrate_changes": None,
         "rebuffer_events": int(max(freeze_count)) if freeze_count else None,
@@ -561,26 +602,38 @@ def _summarize_webrtc(
         "video_resolution_p": (
             Counter(heights).most_common(1)[0][0] if heights else None
         ),
-        "frame_rate_fps": None,
+        "frame_rate_fps": fps,
+        "watched_seconds": watched_s,
+        "session_seconds": session_s,
+        "total_video_frames": int(max(frames_decoded)) if frames_decoded else None,
+        "dropped_video_frames": int(max(frames_dropped)) if frames_dropped else None,
         "packet_loss_pct": _mean(loss),
         "dropped_frame_pct": drop_pct,
         "mean_jitter_secs": _mean(jitter),
         "resolutions_observed": sorted(set(heights)),
         "total_samples": len(rows),
+        "session_start_epoch": round(ts[0], 3),
         "is_live": True,
         # Surfaced in the record itself so a future reader does not quote the
         # peak as a network finding: the first interval after joining divides a
         # large accumulated bytesReceived by a very short elapsed time, which
         # produces a spike tens of times the sustained rate.
-        "max_bitrate_is_startup_artifact": True,
+        "max_bitrate_is_startup_artifact": False,
         "derivation": {
             "bitrate_caveat": (
-                "max/min_bitrate_mbps come from per-interval deltas; the first "
-                "interval after join is inflated by accumulated bytes over a "
-                "short elapsed time. Use mean_bitrate_mbps for the real rate."
+                "max/min_bitrate_mbps exclude the first post-join interval, "
+                "which divides accumulated bytes by a very short elapsed time "
+                "and reports many times the sustained rate. mean_bitrate_mbps "
+                "remains the figure to quote."
             ),
             "source": "RTCPeerConnection.getStats() inbound-rtp (remote peer)",
             "rebuffer_rule": "WebRTC freeze count / freeze duration",
+            "progress_basis": "frames_decoded (a call has no media clock)",
+            "startup_basis": (
+                "first decoded frame, measured from the first sample "
+                "(a call has no play() trigger)"
+            ),
+            "fps_basis": "frames_decoded_delta / watched_seconds",
         },
         "series": {
             "inbound_bitrate_kbps": [

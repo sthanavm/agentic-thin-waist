@@ -1544,6 +1544,10 @@ class CaptureAttribution:
     ip_side: str = "remote"  # which end of the packet `app_ips` refers to
     attributed_fraction: float = 0.0  # share of bytes mapped to a named bucket
     total_mb: float = 0.0
+    # Epoch of the first captured packet. Capture-derived series are relative
+    # to this; player series are relative to their own first sample, so the two
+    # only line up on a shared x-axis once this origin is known.
+    t0_epoch: Optional[float] = None
     # Unnamed remote IPs adopted into an app bucket by connection affinity,
     # as ip -> "app:reason". Kept so every adoption is auditable after the fact.
     adopted_ips: dict[str, str] = field(default_factory=dict)
@@ -1779,6 +1783,7 @@ def attribute_capture(
         return res
 
     res.duration_s = round(max(tmax - t0, 0.0), 2)
+    res.t0_epoch = round(t0, 3)
     res.nbins = max(int(math.ceil(res.duration_s / bin_s)), 1)
 
     # Local endpoints: private IPs that appear on a large share of packets. With
@@ -2263,27 +2268,36 @@ def _panel_verdict(at: AppTraffic, pq: dict[str, Any]) -> tuple[str, str, str]:
     reason = str(pq.get("reason") or "")
 
     if real:
-        # Real player metrics: the media clock is the arbiter.
+        # Real player metrics: measured progress is the arbiter. Name the signal
+        # that actually produced it -- a conferencing app and a MediaStream
+        # <video> have no media clock at all, so claiming "the clock advanced"
+        # states the opposite of what these runs established.
         watched = pq.get("watched_seconds") or 0
+        basis = str((pq.get("derivation") or {}).get("progress_basis") or "")
+        moved = (
+            "decoded frames advanced"
+            if basis.startswith(("total_video_frames", "frames_decoded"))
+            else "player clock advanced"
+        )
         if pq.get("video_resolution_p") and watched > 0:
             rebuffers = pq.get("rebuffer_events") or 0
             frozen_ms = pq.get("rebuffer_duration_ms") or 0
             if rebuffers or frozen_ms:
                 return (
                     "degraded",
-                    f"player clock advanced but rebuffered {rebuffers}× "
+                    f"{moved} but rebuffered {rebuffers}× "
                     f"({frozen_ms:.0f} ms frozen): playback was impaired",
                     "#EF6C00",
                 )
             return (
                 "served",
-                f"player clock advanced {watched:.0f}s with no rebuffering: "
+                f"{moved} {watched:.0f}s with no rebuffering: "
                 "the app really streamed",
                 "#2E7D32",
             )
         return (
             "no_playback",
-            "player exposed no advancing media clock: the app did not play",
+            "player reported no advancing playback: the app did not play",
             "#C62828",
         )
 
@@ -2418,9 +2432,28 @@ def plot_app_qoe_summary(
     pq = player_qoe or {}
     real = bool(pq.get("player_qoe_available"))
     series = pq.get("series") or {}
-    buf_series = series.get("buffer_ahead_secs") or []
-    res_series = series.get("resolution_p") or []
-    rebuffer_spans = pq.get("rebuffer_spans") or []
+
+    # These panels share one x-axis, but the two families of series are measured
+    # from different origins: throughput from the first captured packet, player
+    # series from the first sample -- which is taken only after the browser has
+    # launched, navigated and joined. Measured gaps: 29.4s on a YouTube run,
+    # 36.4s on a Zoom one. Plotted raw, a rebuffer lands half a minute away from
+    # the throughput dip that caused it. Shift the player series onto capture
+    # time so the panels can be read against each other.
+    _cap_t0 = getattr(at, "t0_epoch", None)
+    _sess_t0 = pq.get("session_start_epoch")
+    x_shift = 0.0
+    if _cap_t0 is not None and _sess_t0 is not None:
+        x_shift = max(0.0, float(_sess_t0) - float(_cap_t0))
+
+    def _shift(pts):
+        return [{"t": d["t"] + x_shift, "v": d["v"]} for d in pts]
+
+    buf_series = _shift(series.get("buffer_ahead_secs") or [])
+    res_series = _shift(series.get("resolution_p") or [])
+    rebuffer_spans = [
+        (a + x_shift, b + x_shift) for a, b in (pq.get("rebuffer_spans") or [])
+    ]
 
     panels = (
         1 + (1 if (real and buf_series) else 0) + (1 if (real and res_series) else 0)
