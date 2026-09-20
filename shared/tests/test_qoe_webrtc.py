@@ -70,8 +70,11 @@ def test_the_post_join_bitrate_spike_is_excluded():
         _call(list(range(0, 300, 25)), bitrates=[38.663] + [1.1] * 11), "meet"
     )
     assert out["max_bitrate_mbps"] == 1.1  # not the 38.663 spike
+    assert out["mean_bitrate_mbps"] == 1.1  # the mean must drop it too
+    # max below mean is not a possible pair of numbers.
+    assert out["max_bitrate_mbps"] >= out["mean_bitrate_mbps"]
     assert out["max_bitrate_is_startup_artifact"] is False
-    assert "exclude the first post-join interval" in out["derivation"]["bitrate_caveat"]
+    assert "exclude the first post-join" in out["derivation"]["bitrate_caveat"]
 
 
 def test_a_call_with_no_advancing_frames_is_not_playback():

@@ -587,7 +587,11 @@ def _summarize_webrtc(
         "player_qoe_available": True,
         "status": "ok",
         "video_startup_time_ms": startup_ms,
-        "mean_bitrate_mbps": round(_mean(inbound), 4) if inbound else None,
+        # All three exclude the first post-join interval. Leaving it in the mean
+        # while dropping it from the max produced max < mean, which is not a
+        # possible pair of numbers; it also reported 1.11 Mbps for a call whose
+        # bytes_received says 0.339 Mbps, a 3.3x overstatement.
+        "mean_bitrate_mbps": round(_mean(sustained), 4) if sustained else None,
         "max_bitrate_mbps": round(max(sustained), 4) if sustained else None,
         "min_bitrate_mbps": round(min(sustained), 4) if sustained else None,
         "mean_watched_bitrate_mbps": None,
@@ -621,10 +625,10 @@ def _summarize_webrtc(
         "max_bitrate_is_startup_artifact": False,
         "derivation": {
             "bitrate_caveat": (
-                "max/min_bitrate_mbps exclude the first post-join interval, "
-                "which divides accumulated bytes by a very short elapsed time "
-                "and reports many times the sustained rate. mean_bitrate_mbps "
-                "remains the figure to quote."
+                "mean/max/min_bitrate_mbps all exclude the first post-join "
+                "interval, which divides accumulated bytes by a very short "
+                "elapsed time and reports many times the sustained rate. "
+                "mean_bitrate_mbps is the figure to quote."
             ),
             "source": "RTCPeerConnection.getStats() inbound-rtp (remote peer)",
             "rebuffer_rule": "WebRTC freeze count / freeze duration",

@@ -100,3 +100,19 @@ def test_alignment_degrades_to_no_shift_on_older_records():
     cap_t0, sess_t0 = 1_000_000.0, None
     shift = 0.0 if (cap_t0 is None or sess_t0 is None) else sess_t0 - cap_t0
     assert shift == 0.0
+
+
+def test_apptraffic_carries_the_capture_origin():
+    """The plot is handed an AppTraffic, not the CaptureAttribution.
+
+    Putting the origin only on the attribution made the shift silently resolve
+    to 0 - the charts came out identical while the caller reported a +28s
+    offset, so the wiring needs its own guard.
+    """
+    from pramana_helpers import AppTraffic
+
+    at = AppTraffic(app="youtube", direction="download")
+    assert hasattr(at, "capture_t0_epoch")
+    at.capture_t0_epoch = 1_000_000.0
+    shift = max(0.0, 1_000_028.0 - at.capture_t0_epoch)
+    assert shift == 28.0

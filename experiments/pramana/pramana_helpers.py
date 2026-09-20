@@ -1514,6 +1514,11 @@ class AppTraffic:
     mean_over_cap: Optional[float] = None  # avg ÷ cap
     classification: str = "no_traffic"  # served | starved | no_traffic
     hosts: list[str] = field(default_factory=list)
+    # Epoch of the first captured packet. `times` is relative to it, while a
+    # player series is relative to its own first sample; the QoE summary needs
+    # both origins to put them on one x-axis, and it is handed this object
+    # rather than the whole CaptureAttribution.
+    capture_t0_epoch: Optional[float] = None
 
     def as_record(self) -> dict[str, Any]:
         """Record-safe dict (drops the full series to keep record.json small)."""
@@ -1909,6 +1914,7 @@ def attribute_capture(
         res.per_app[app] = {}
         for direction in ("download", "upload"):
             at = AppTraffic(app=app, direction=direction)
+            at.capture_t0_epoch = res.t0_epoch
             at.packets = pkt_counts.get((app, direction), 0)
             at.hosts = sorted(bucket_hosts.get(app, ()))[:12]
             res.per_app[app][direction] = _finalise(
@@ -2440,7 +2446,7 @@ def plot_app_qoe_summary(
     # 36.4s on a Zoom one. Plotted raw, a rebuffer lands half a minute away from
     # the throughput dip that caused it. Shift the player series onto capture
     # time so the panels can be read against each other.
-    _cap_t0 = getattr(at, "t0_epoch", None)
+    _cap_t0 = getattr(at, "capture_t0_epoch", None)
     _sess_t0 = pq.get("session_start_epoch")
     x_shift = 0.0
     if _cap_t0 is not None and _sess_t0 is not None:
