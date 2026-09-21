@@ -1,0 +1,18 @@
+{
+  "experiment_id": "google-meet-vimeo-6mbps-100ms-pfifo",
+  "applications": [
+    "vimeo",
+    "google_meet"
+  ],
+  "execution_mode": "concurrent",
+  "capacity_mbps": 6,
+  "upload_mbps": 6,
+  "latency_ms": 100,
+  "latency_location": "upstream",
+  "aqm_policy": "pfifo",
+  "buffer_packets": 50,
+  "cc_algorithm": "cubic",
+  "duration_seconds": 60,
+  "browser_resolution": "1920x1080",
+  "google_meet_url": "https://meet.google.com/ncd-xfix-ncq"
+}
