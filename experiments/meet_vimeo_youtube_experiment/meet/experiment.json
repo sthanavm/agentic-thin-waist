@@ -1,0 +1,17 @@
+{
+  "experiment_id": "google-meet-only-10mbps-10ms-pfifo",
+  "applications": [
+    "google_meet"
+  ],
+  "execution_mode": "concurrent",
+  "capacity_mbps": 10,
+  "upload_mbps": 10,
+  "latency_ms": 10,
+  "latency_location": "upstream",
+  "aqm_policy": "pfifo",
+  "buffer_packets": 50,
+  "cc_algorithm": "cubic",
+  "duration_seconds": 60,
+  "browser_resolution": "1920x1080",
+  "google_meet_url": "https://meet.google.com/jrs-qsud-huo"
+}
