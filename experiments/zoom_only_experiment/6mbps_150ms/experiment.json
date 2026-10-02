@@ -1,0 +1,17 @@
+{
+  "experiment_id": "zoom-only-6mbps-150ms-pfifo",
+  "applications": [
+    "zoom"
+  ],
+  "execution_mode": "concurrent",
+  "capacity_mbps": 6,
+  "upload_mbps": 6,
+  "latency_ms": 150,
+  "latency_location": "upstream",
+  "aqm_policy": "pfifo",
+  "buffer_packets": 50,
+  "cc_algorithm": "cubic",
+  "duration_seconds": 60,
+  "browser_resolution": "1920x1080",
+  "zoom_join_url": "https://us05web.zoom.us/wc/5166389201/join?pwd=NlTbSADKXtbqgGX3ud0I1JabpnuTCe.1"
+}
