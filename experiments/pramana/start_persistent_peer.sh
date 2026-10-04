@@ -35,9 +35,21 @@ PYNORM
 )"
 mkdir -p "$OUT"
 
+# Dev override, mirroring PRAMANA_COLLECTOR_SRC: run a host copy of bot_peer.py
+# inside the published image, so a peer-side fix can be exercised without
+# rebuilding a ~2GB image on a host with no room for two copies of it.
+PEER_SRC_ARGS=()
+if [ -n "${PRAMANA_PEER_SRC:-}" ]; then
+  PEER_SRC_ABS="$(cd "$(dirname "$PRAMANA_PEER_SRC")" && pwd)/$(basename "$PRAMANA_PEER_SRC")"
+  [ -s "$PEER_SRC_ABS" ] || { echo "peer source not found: $PRAMANA_PEER_SRC" >&2; exit 1; }
+  PEER_SRC_ARGS=(--volume "$PEER_SRC_ABS:/app/bot_peer.py:ro")
+  echo "  peer source overridden from $PEER_SRC_ABS"
+fi
+
 docker rm -f "$NAME" >/dev/null 2>&1 || true
 docker run -d --name "$NAME" --restart unless-stopped \
   --shm-size=2g \
+  "${PEER_SRC_ARGS[@]+"${PEER_SRC_ARGS[@]}"}" \
   -v "$CLIP:/clip.y4m:ro" \
   -v "$OUT:/out" \
   --env "BOT_ROOM_URL=$ROOM" \
