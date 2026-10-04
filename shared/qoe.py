@@ -258,6 +258,20 @@ def _summarize_html5(
         progressed = b - a
         state = _num(st[i].get("player_state"))
         trying = not _is_paused(st[i]) and not _is_ended(st[i], duration)
+        if frame_driven and progressed < 0:
+            # The counter went BACKWARDS. getVideoPlaybackQuality() counts are
+            # per-element, so a decrease means the measurement moved to another
+            # <video> - during a Zoom join the preview, a 0x0 placeholder and
+            # the real tile each own a counter - and the delta across that seam
+            # describes nothing about playback. Scoring it as a freeze invented
+            # a rebuffer on an otherwise clean 3Mbps/50ms run (two seams inside
+            # the first 8s, each with rebuffering:false). Re-baseline instead:
+            # close any open span and let the next interval measure the new
+            # element. A real freeze is progressed == 0, not < 0.
+            if span_start is not None:
+                rebuffer_spans.append((round(span_start, 2), round(rel[i - 1], 2)))
+                span_start = None
+            continue
         if frame_driven:
             stalled = progressed <= 0
             # These apps expose no buffered ranges and no vendor state, so the

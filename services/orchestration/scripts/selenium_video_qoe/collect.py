@@ -102,15 +102,40 @@ function pickVideo() {
     //   2. When choosing afresh, take the LARGEST live video rather than the
     //      first in DOM order - the main speaker tile is the big one, and DOM
     //      order is not stable across re-renders.
+    //   3. Require the element to be LAID OUT, not merely to carry a decoded
+    //      frame size. A <video> can report videoWidth/videoHeight 1280x720
+    //      while occupying a 0x0 box, and Chrome never composites such an
+    //      element: getVideoPlaybackQuality().droppedVideoFrames then counts
+    //      every frame as dropped. Two concurrent Zoom runs reported 99.971%
+    //      dropped with player_elem_w/h 0x0 for 150/152 and 121/121 samples,
+    //      while the run that happened to land on a laid-out element reported a
+    //      plausible 10.7% - same network, same meeting. So a zero-size element
+    //      is a measurement trap, never a pin target, and the layout box is the
+    //      tie-breaker before intrinsic size.
     const vids = Array.from(document.querySelectorAll('video'));
-    const live = vids.filter(v => v.videoWidth > 0 && v.videoHeight > 0);
+    const decoded = vids.filter(v => v.videoWidth > 0 && v.videoHeight > 0);
+    const boxOf = (v) => {
+        try {
+            const r = v.getBoundingClientRect();
+            return Math.max(0, r.width) * Math.max(0, r.height);
+        } catch (e) { return 0; }
+    };
+    // Composited elements are preferred; the decoded-but-unrendered ones stay as
+    // a fallback so a page that lays out late still reports something.
+    const rendered = decoded.filter(v => boxOf(v) > 0);
+    const live = rendered.length ? rendered : decoded;
     const pinned = window.__netgentPinnedVideo;
+    // Drop the pin if it stopped being composited - keeping it would hold the
+    // measurement on an element whose dropped-frame count is meaningless.
     if (pinned && live.indexOf(pinned) !== -1) { return pinned; }
     if (!live.length) { return vids[0] || null; }
     const best = live.reduce(
         (a, b) => (b.videoWidth * b.videoHeight > a.videoWidth * a.videoHeight ? b : a)
     );
-    try { window.__netgentPinnedVideo = best; } catch (e) { /* pin is advisory */ }
+    // Only a composited choice is worth pinning.
+    if (boxOf(best) > 0) {
+        try { window.__netgentPinnedVideo = best; } catch (e) { /* pin is advisory */ }
+    }
     return best;
 }
 
@@ -180,6 +205,36 @@ function genericVideoStats(video) {
         out.player_elem_w = Math.round(r.width);
         out.player_elem_h = Math.round(r.height);
     } catch (e) { /* geometry is observability only - never fail a sample */ }
+    // Census of every <video> on the page, not just the measured one. On a
+    // conferencing page the tile count is the only evidence of how many remote
+    // participants are publishing: with one bot peer and the host's camera off
+    // there is exactly one decoded remote tile, and a second one would mean
+    // somebody's camera came on mid-run and the measured tile may have moved.
+    // Without this, "camera was off" is an assumption rather than a reading.
+    try {
+        const all = Array.from(document.querySelectorAll('video'));
+        const box = (v) => {
+            try {
+                const b = v.getBoundingClientRect();
+                return Math.max(0, b.width) * Math.max(0, b.height);
+            } catch (e) { return 0; }
+        };
+        const dec = all.filter(v => v.videoWidth > 0 && v.videoHeight > 0);
+        out.video_element_count = all.length;
+        out.video_decoded_count = dec.length;
+        out.video_rendered_count = dec.filter(v => box(v) > 0).length;
+        // Compact per-element "<decoded>@<laid-out>" so a tile that decodes but
+        // is never composited stays visible in the record (that pairing is what
+        // the 99.971%-dropped bug looked like from the outside).
+        out.video_elements = all.slice(0, 8).map(v => {
+            let w = 0, h = 0;
+            try {
+                const b = v.getBoundingClientRect();
+                w = Math.round(b.width); h = Math.round(b.height);
+            } catch (e) { /* element census is observability only */ }
+            return v.videoWidth + 'x' + v.videoHeight + '@' + w + 'x' + h;
+        });
+    } catch (e) { /* census is observability only - never fail a sample */ }
     return out;
 }
 
@@ -706,6 +761,73 @@ def install_webrtc_hook(driver: Any) -> None:
     )
 
 
+# Makes a codec family look unsupported so an adaptive player never selects it.
+# Needed because a player's ladder is bounded by what it believes it can decode,
+# not by the element it draws into: with a 945x709 element and 10Mbps spare,
+# Vimeo still chose 1440x1080 AV1 (83/117 samples) and then could not decode it
+# in real time on a 2-vCPU host, collapsing to 320x240. Vimeo's own
+# `quality=720p` parameter is not an answer either - it FORCES one rendition and
+# switches ABR off (960x720 for 116/116 samples, zero switches), deleting the
+# adaptive behaviour under test. Removing the undecodable codec family instead
+# leaves ABR free and resolution network-responsive. All three decision points a
+# player may consult are covered.
+CODEC_BLOCK_JS_TMPL = r"""
+(() => {
+    const PATTERNS = __PATTERNS__;
+    const blocked = (s) => {
+        try {
+            const t = String(s || '').toLowerCase();
+            return PATTERNS.some(p => t.indexOf(p) !== -1);
+        } catch (e) { return false; }
+    };
+    try {
+        const MS = window.MediaSource || window.WebKitMediaSource;
+        if (MS && MS.isTypeSupported) {
+            const nativeIs = MS.isTypeSupported.bind(MS);
+            MS.isTypeSupported = (t) => (blocked(t) ? false : nativeIs(t));
+        }
+    } catch (e) { /* leave support reporting alone if it cannot be wrapped */ }
+    try {
+        const proto = window.HTMLMediaElement && window.HTMLMediaElement.prototype;
+        if (proto && proto.canPlayType) {
+            const nativeCan = proto.canPlayType;
+            proto.canPlayType = function (t) {
+                return blocked(t) ? '' : nativeCan.call(this, t);
+            };
+        }
+    } catch (e) { /* ditto */ }
+    try {
+        const mc = navigator.mediaCapabilities;
+        if (mc && mc.decodingInfo) {
+            const nativeInfo = mc.decodingInfo.bind(mc);
+            mc.decodingInfo = (cfg) => {
+                try {
+                    if (cfg && cfg.video && blocked(cfg.video.contentType)) {
+                        return Promise.resolve({
+                            supported: false, smooth: false, powerEfficient: false
+                        });
+                    }
+                } catch (e) { /* fall through to native */ }
+                return nativeInfo(cfg);
+            };
+        }
+    } catch (e) { /* ditto */ }
+})();
+"""
+
+
+def install_codec_block(driver: Any, patterns: list[str]) -> None:
+    """Hide `patterns` codecs from the page, before any page script runs."""
+    if not patterns:
+        return
+    src = CODEC_BLOCK_JS_TMPL.replace("__PATTERNS__", json.dumps(patterns))
+    try:
+        driver.execute_cdp_cmd("Page.addScriptToEvaluateOnNewDocument", {"source": src})
+        print(f"[collector] codecs hidden from page: {patterns}", flush=True)
+    except Exception as exc:  # noqa: BLE001 - never fail a run over this
+        print(f"[collector] codec block unavailable: {type(exc).__name__}", flush=True)
+
+
 def install_media_hook(driver: Any) -> None:
     """Record source-buffer mime types so the generic path can name the codec.
 
@@ -1086,7 +1208,21 @@ def run_job(
         # by the shaped link. Setting the rect after launch makes the window the
         # size we actually asked for.
         install_media_hook(driver)
-        window_geometry = ensure_window_size(driver, app)
+        install_codec_block(driver, list(job.get("block_codecs") or []))
+        # A per-app viewport cap bounds the top of an adaptive ladder: the
+        # player sizes its rendition to the element, so a smaller window keeps
+        # it off renditions this host cannot decode in real time, without
+        # disabling ABR the way a forced-quality parameter would.
+        want_w, want_h = _WANT_W, _WANT_H
+        _ws = job.get("window_size")
+        if _ws:
+            try:
+                _w, _h = str(_ws).lower().split("x")
+                want_w, want_h = int(_w), int(_h)
+                print(f"[{app}] viewport capped to {want_w}x{want_h}")
+            except Exception:  # noqa: BLE001 - a bad cap must not fail a run
+                print(f"[{app}] warning: bad window_size {_ws!r}, using default")
+        window_geometry = ensure_window_size(driver, app, want_w=want_w, want_h=want_h)
 
     samples: list[dict] = []
     play_trigger_ts: float | None = None

@@ -432,6 +432,21 @@ class ExperimentConfig:
     # Forced runs get a `_forcedq` slug so they never mix with the auto runs.
     force_max_quality: bool = False
     force_quality_level: str = "hd2160"
+    # Opt-in per-app viewport cap, as {app: "WxH"}. An adaptive player picks
+    # its rendition to fit the element it draws into, so a smaller viewport
+    # bounds the TOP of the ladder while leaving ABR free to adapt below it.
+    # This is the honest way to keep a player off a rendition the host cannot
+    # decode: Vimeo's `quality=720p` parameter FORCES one rendition and turns
+    # ABR off entirely (measured: 960x720 for 116/116 samples, zero switches),
+    # which would delete the adaptive behaviour the experiment exists to
+    # measure. Capped runs get their own slug so they never mix with uncapped.
+    app_window: Optional[dict[str, str]] = None
+    # Opt-in per-app codec block, as {app: ["av01", ...]}. Hides a codec family
+    # from the page so an adaptive player never selects it. This is the only
+    # lever measured to bound a Vimeo ladder without disabling ABR: the
+    # `quality` parameter forces one rendition (ABR off) and a smaller viewport
+    # does not constrain Vimeo's choice at all. Blocked runs get their own slug.
+    app_block_codecs: Optional[dict[str, list[str]]] = None
 
     experiment_id: str = ""
     slug: str = ""
@@ -466,6 +481,21 @@ class ExperimentConfig:
             # Keeps forced-quality runs from ever being grouped with, or
             # compared against, the auto-ABR runs of the same regime.
             slug += "_forcedq"
+        if self.app_window:
+            # Same reasoning as _forcedq: a viewport-capped ladder is not
+            # comparable with a free one, so the slug says so out loud.
+            caps = "-".join(f"{a}{self.app_window[a]}" for a in sorted(self.app_window))
+            slug += f"_vcap{caps}"
+        if self.app_block_codecs:
+            # A ladder measured without a codec family is not comparable with
+            # one measured with it, so the slug carries the difference.
+            marks = "-".join(
+                f"{a}{'+'.join(sorted(self.app_block_codecs[a]))}"
+                for a in sorted(self.app_block_codecs)
+                if self.app_block_codecs[a]
+            )
+            if marks:
+                slug += f"_noc{marks}"
         return slug.replace("/", "-")
 
 
@@ -748,6 +778,10 @@ def build_collector_jobs(
                 # Collector applies this to YouTube only; harmless for other apps.
                 "force_max_quality": bool(cfg.force_max_quality),
                 "force_quality_level": cfg.force_quality_level,
+                # Viewport cap for this app, if one was configured.
+                "window_size": (cfg.app_window or {}).get(app),
+                # Codec families to hide from this app's page, if any.
+                "block_codecs": list((cfg.app_block_codecs or {}).get(app) or []),
             }
         )
         display += 1
@@ -2937,6 +2971,21 @@ def generate_run_plots(
         else:
             print(f"    · {_d}: no merged chart — no traffic attributed")
 
+    # Per-app throughput, one chart per app per direction, alongside the merged
+    # view above. A concurrent run needs both: the merged chart shows how the
+    # apps share the link, the per-app charts let each be read on its own.
+    for app in cfg.apps:
+        for _d in app_plot_directions(app):
+            at_app = attribution.traffic(app, _d)
+            if at_app is None or not at_app.times:
+                continue
+            ap1 = plot_app_throughput(
+                at_app, cfg, run_dir / f"throughput_{_d}_{app}.png"
+            )
+            if ap1:
+                plots[f"throughput_{_d}_{app}"] = str(ap1)
+                print(f"    · {app} {_d}: per-app throughput chart saved")
+
     for app in cfg.apps:
         # QoE summary is unchanged: one per app, built from the direction that
         # defines the verdict (download for video). Adding upload plots above
@@ -3632,6 +3681,21 @@ def run_direct(cfg: ExperimentConfig) -> dict[str, Any]:
         # Self-identifying: whether YouTube's rendition was pinned for this run
         # or left to ABR. Forced and auto runs must never be pooled.
         "force_max_quality": bool(cfg.force_max_quality),
+        # Per-app viewport caps in force for this run, as {app: "WxH"}. A cap
+        # bounds the TOP of that app's ABR ladder (the player sizes its
+        # rendition to the element it draws into), so a capped run must never be
+        # pooled with or compared against an uncapped one. Empty means every
+        # app ran at the default viewport with a free ladder. The run slug
+        # carries a matching `_vcap...` marker.
+        "app_window_caps": dict(cfg.app_window or {}),
+        "app_ladder_pinned": sorted((cfg.app_window or {}).keys()),
+        # Codec families hidden per app for this run. A run with a codec family
+        # removed must never be pooled with one that had it available: the
+        # bitrate-per-resolution differs, so both the ladder and the offered
+        # load differ. The run slug carries a matching `_noc...` marker.
+        "app_blocked_codecs": {
+            a: sorted(v) for a, v in (cfg.app_block_codecs or {}).items() if v
+        },
         # Real, player-side QoE per app (shared/qoe.py against the QoEMetrics
         # definition in shared/models/README.md). Null fields are signals the
         # player genuinely does not expose — never placeholders.

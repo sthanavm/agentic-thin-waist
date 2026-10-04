@@ -71,6 +71,31 @@ def test_a_real_freeze_is_still_caught():
     assert out["watched_seconds"] < out["session_seconds"]
 
 
+def test_a_counter_reset_is_not_a_freeze():
+    """A BACKWARDS frame counter means the measured element changed, not a stall.
+
+    ``getVideoPlaybackQuality()`` counts are per-element. During a Zoom join the
+    preview, a 0x0 placeholder and the real tile each own a counter, so the
+    measurement crossing between them shows up as a decrease. Scoring that seam
+    as a freeze invented one rebuffer on an otherwise clean 3Mbps/50ms run
+    (two seams inside the first 8s, both with rebuffering false).
+    """
+    # Climbs, re-baselines twice (element swaps), then climbs again throughout.
+    frames = [100, 0, 20, 40, 1, 25, 50, 75, 100, 125, 150]
+    out = qoe.summarize(_samples(frames), "zoom")
+    assert out["rebuffer_events"] == 0
+    assert out["rebuffer_duration_ms"] == 0.0
+    assert out["status"] == "ok"
+
+
+def test_a_real_freeze_after_a_counter_reset_is_still_caught():
+    """Re-baselining must not swallow a genuine stall on the new element."""
+    frames = [100, 0, 20, 40, 40, 40, 40, 60, 80, 100]
+    out = qoe.summarize(_samples(frames), "zoom")
+    assert out["rebuffer_events"] == 1
+    assert out["rebuffer_duration_ms"] == 3000.0
+
+
 def test_frames_never_advancing_is_not_playback():
     out = qoe.summarize(_samples([10] * 8), "zoom")
     assert out["status"] != "ok"
