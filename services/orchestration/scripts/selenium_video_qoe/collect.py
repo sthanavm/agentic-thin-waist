@@ -124,14 +124,40 @@ function pickVideo() {
     // a fallback so a page that lays out late still reports something.
     const rendered = decoded.filter(v => boxOf(v) > 0);
     const live = rendered.length ? rendered : decoded;
+    //   4. Rank by RENDERED BOX, not by intrinsic resolution. Zoom renders the
+    //      same streams into several elements at once, and the local self-view
+    //      carries the fake camera at full 1280x720 inside a 207x117 thumbnail
+    //      while the remote speaker occupies the 1458x820 main view at whatever
+    //      resolution Zoom chose to send. Ranking by intrinsic size therefore
+    //      picked the SELF-PREVIEW - the one thing a conferencing measurement
+    //      must never report - and every sample of one run read 1280x720@207x117,
+    //      the collector's own camera, which no network condition can affect.
+    //      The box is what the viewer actually sees, so it is the honest rank,
+    //      and it picks the main view under either layout.
+    const better = (a, b) => {
+        const ba = boxOf(a), bb = boxOf(b);
+        if (bb !== ba) { return bb > ba; }
+        // Equal boxes: fall back to intrinsic size so a real stream still beats
+        // a placeholder of the same footprint.
+        return b.videoWidth * b.videoHeight > a.videoWidth * a.videoHeight;
+    };
     const pinned = window.__netgentPinnedVideo;
-    // Drop the pin if it stopped being composited - keeping it would hold the
-    // measurement on an element whose dropped-frame count is meaningless.
-    if (pinned && live.indexOf(pinned) !== -1) { return pinned; }
+    // The pin stops a tile re-render from moving the measurement, but it must
+    // not outlive its own correctness: if a clearly larger view appears (twice
+    // the area), the layout changed and the pin is now on the wrong element.
+    if (pinned && live.indexOf(pinned) !== -1) {
+        let upgrade = null;
+        for (const v of live) {
+            if (v !== pinned && boxOf(v) > boxOf(pinned) * 2) {
+                if (!upgrade || better(upgrade, v)) { upgrade = v; }
+            }
+        }
+        if (!upgrade) { return pinned; }
+        try { window.__netgentPinnedVideo = upgrade; } catch (e) { /* advisory */ }
+        return upgrade;
+    }
     if (!live.length) { return vids[0] || null; }
-    const best = live.reduce(
-        (a, b) => (b.videoWidth * b.videoHeight > a.videoWidth * a.videoHeight ? b : a)
-    );
+    const best = live.reduce((a, b) => (better(a, b) ? b : a));
     // Only a composited choice is worth pinning.
     if (boxOf(best) > 0) {
         try { window.__netgentPinnedVideo = best; } catch (e) { /* pin is advisory */ }
@@ -822,7 +848,9 @@ def install_codec_block(driver: Any, patterns: list[str]) -> None:
         return
     src = CODEC_BLOCK_JS_TMPL.replace("__PATTERNS__", json.dumps(patterns))
     try:
-        driver.execute_cdp_cmd("Page.addScriptToEvaluateOnNewDocument", {"source": src})
+        driver.execute_cdp_cmd(
+            "Page.addScriptToEvaluateOnNewDocument", {"source": src}
+        )
         print(f"[collector] codecs hidden from page: {patterns}", flush=True)
     except Exception as exc:  # noqa: BLE001 - never fail a run over this
         print(f"[collector] codec block unavailable: {type(exc).__name__}", flush=True)
