@@ -155,6 +155,31 @@ def build_bot_driver(clip: str, audio: str):
     )
 
 
+def _own_tx_bytes() -> "int | None":
+    """Total transmitted bytes on this container's real interfaces.
+
+    Read from /proc/net/dev, which inside a bridge-networked container is the
+    peer's own network namespace, so no privileged helper is needed. Loopback is
+    excluded because Chrome's internal traffic would otherwise mask a dead call.
+    Returns None when the file cannot be read, so a caller can tell "no signal"
+    apart from "no bytes".
+    """
+    try:
+        total = 0
+        with open("/proc/net/dev") as fh:
+            for line in fh.read().splitlines()[2:]:
+                name, _, rest = line.partition(":")
+                name = name.strip()
+                if not name or name == "lo":
+                    continue
+                cols = rest.split()
+                if len(cols) >= 9:
+                    total += int(cols[8])
+        return total
+    except Exception:  # noqa: BLE001 - liveness is observability, never fatal
+        return None
+
+
 def main() -> int:
     if not ROOM:
         status("failed", reason="BOT_ROOM_URL not set")
@@ -248,6 +273,7 @@ def main() -> int:
         _last_sent = 0
         _stall_polls = 0
         _STALL_LIMIT = 6
+        _MIN_TX_DELTA = 20_000
         while time.time() < hold_until and not _stop:
             time.sleep(5)
             try:
@@ -255,13 +281,45 @@ def main() -> int:
                     # Zoom has no RTCPeerConnection, so outbound-RTP counters are
                     # structurally zero here. Reporting them printed a misleading
                     # "publishing 0x0, bytes_sent 0" every few seconds.
+                    #
+                    # The DOM alone cannot tell a live call from an ended one:
+                    # ZOOM_IN_CALL_JS reports the bot's OWN local preview, which
+                    # keeps rendering 1280x720 after the meeting is over. A peer
+                    # trusted on that basis reported "publishing" through an
+                    # entire dead 40-minute window, and a sweep then recorded a
+                    # cell against a meeting nobody was in. The interface
+                    # counters are the honest witness, and inside this container
+                    # /proc/net/dev IS the peer's own namespace.
                     zin = driver.execute_script(ZOOM_IN_CALL_JS)
-                    status(
-                        "publishing",
-                        in_call=bool(zin.get("in_call")),
-                        local_video=zin.get("size"),
-                        basis="zoom in-call DOM (no WebRTC counters exist)",
-                    )
+                    sent = _own_tx_bytes()
+                    if sent is None:
+                        # No counter to read: fall back to the DOM rather than
+                        # calling a live call dead.
+                        status(
+                            "publishing",
+                            in_call=bool(zin.get("in_call")),
+                            local_video=zin.get("size"),
+                            basis="zoom in-call DOM (tx counter unavailable)",
+                        )
+                    else:
+                        # A threshold, not "any increase": an ended call still
+                        # trickles a few hundred bytes of keepalive and DNS, which
+                        # would reset the stall counter forever. Publishing 720p
+                        # moves ~600kB per 5s poll, so 20kB separates the two by a
+                        # wide margin.
+                        if sent - _last_sent >= _MIN_TX_DELTA:
+                            _stall_polls = 0
+                        else:
+                            _stall_polls += 1
+                        _last_sent = max(_last_sent, sent)
+                        status(
+                            "publishing" if _stall_polls < _STALL_LIMIT else "stalled",
+                            in_call=bool(zin.get("in_call")),
+                            local_video=zin.get("size"),
+                            tx_bytes=sent,
+                            stalled_polls=_stall_polls,
+                            basis="zoom in-call DOM + own interface tx bytes",
+                        )
                 else:
                     ob = driver.execute_async_script(OUTBOUND_JS)
                     sent = ob.get("bytes_sent") or 0
