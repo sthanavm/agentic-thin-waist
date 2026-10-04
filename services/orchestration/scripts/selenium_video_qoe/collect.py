@@ -848,9 +848,7 @@ def install_codec_block(driver: Any, patterns: list[str]) -> None:
         return
     src = CODEC_BLOCK_JS_TMPL.replace("__PATTERNS__", json.dumps(patterns))
     try:
-        driver.execute_cdp_cmd(
-            "Page.addScriptToEvaluateOnNewDocument", {"source": src}
-        )
+        driver.execute_cdp_cmd("Page.addScriptToEvaluateOnNewDocument", {"source": src})
         print(f"[collector] codecs hidden from page: {patterns}", flush=True)
     except Exception as exc:  # noqa: BLE001 - never fail a run over this
         print(f"[collector] codec block unavailable: {type(exc).__name__}", flush=True)
