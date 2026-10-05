@@ -92,11 +92,19 @@ MEDIA_HOOK_JS = r"""
     Object.defineProperty(window, key, {
         value: [], configurable: false, enumerable: false, writable: false
     });
+    Object.defineProperty(window, '__netgentLocalTrackLabels', {
+        value: [], configurable: false, enumerable: false, writable: false
+    });
     const remember = (stream) => {
         try {
             stream.getTracks().forEach((t) => {
                 if (t && t.id && window[key].indexOf(t.id) === -1) {
                     window[key].push(t.id);
+                }
+                // The label survives a clone or canvas re-wrap; the id does not.
+                const lab = (t.label || '').trim();
+                if (lab && window.__netgentLocalTrackLabels.indexOf(lab) === -1) {
+                    window.__netgentLocalTrackLabels.push(lab);
                 }
             });
         } catch (e) { /* never break capture to observe it */ }
@@ -212,10 +220,19 @@ function videoOrigin(v) {
         out.track_ids = tracks.map((t) => (t && t.id) || '');
         out.labels = tracks.map((t) => (t && t.label) || '');
         const localIds = window.__netgentLocalTrackIds || [];
-        // A stream carrying any locally-captured track is a self-view. The hook
-        // ran before page scripts, so an empty local set means the page never
-        // asked for a camera, not that the hook missed it.
-        out.local = out.track_ids.some((id) => id && localIds.indexOf(id) !== -1);
+        const localLabels = window.__netgentLocalTrackLabels || [];
+        // A stream carrying a locally-captured track is a self-view. Match on id
+        // OR label: the id is exact but is lost when the page re-wraps the track,
+        // and the label survives that. Measured on this host - Zoom's self-view
+        // renders a track labelled 'fake_device_0' whose id is absent from the
+        // captured set, so id-only matching called the collector's own camera a
+        // remote stream in 24 samples of one 12-cell sweep.
+        const byId = out.track_ids.some((id) => id && localIds.indexOf(id) !== -1);
+        const byLabel = out.labels.some(
+            (l) => l && (localLabels.indexOf(l) !== -1 || /fake_device/i.test(l))
+        );
+        out.local = byId || byLabel;
+        out.matched_on = byId ? 'track_id' : (byLabel ? 'track_label' : null);
         out.kind = out.local ? 'local-capture' : 'remote-stream';
     } catch (e) { /* classification is observability only */ }
     return out;

@@ -1227,6 +1227,18 @@ def collect_player_qoe(
     return per_app
 
 
+# Track-label markers for a LOCAL capture device. Chrome's synthetic camera
+# reports "fake_device_N". The label is the only local marker that survives the
+# page cloning the track. A plain substring test rather than a regex, because
+# `re` is imported further down this module than this constant.
+_LOCAL_LABEL_HINTS = ("fake_device",)
+
+
+def _label_is_local(label: str) -> bool:
+    low = (label or "").lower()
+    return any(h in low for h in _LOCAL_LABEL_HINTS)
+
+
 def _measured_element_summary(samples: list[dict[str, Any]]) -> dict[str, Any]:
     """Reduce the per-sample element census to one auditable block."""
     seen: dict[str, int] = {}
@@ -1234,6 +1246,7 @@ def _measured_element_summary(samples: list[dict[str, Any]]) -> dict[str, Any]:
     areas: list[int] = []
     local_samples = 0
     counted = 0
+    labels: dict[str, int] = {}
     for s in samples:
         st = s.get("stats") if isinstance(s, dict) else None
         if not isinstance(st, dict):
@@ -1249,7 +1262,16 @@ def _measured_element_summary(samples: list[dict[str, Any]]) -> dict[str, Any]:
         origins[str(me.get("origin"))] = origins.get(str(me.get("origin")), 0) + 1
         if isinstance(me.get("box_area"), (int, float)):
             areas.append(int(me["box_area"]))
-        if st.get("measured_is_local") is True:
+        lab = str(me.get("label") or "")
+        if lab:
+            labels[lab] = labels.get(lab, 0) + 1
+        # Count a sample as local on the track label as well as the id flag.
+        # Zoom re-wraps the local camera before rendering its self-view, so the
+        # clone's id is absent from the captured set and `measured_is_local`
+        # reads False for what is demonstrably the collector's own camera - it
+        # carries the fake device's label. Without the label test this reported
+        # "zero local samples" for a sweep that measured the self-view in 24.
+        if st.get("measured_is_local") is True or _label_is_local(lab):
             local_samples += 1
     if not counted:
         # Pre-census runs: say so rather than implying the element is unknown
@@ -1267,6 +1289,7 @@ def _measured_element_summary(samples: list[dict[str, Any]]) -> dict[str, Any]:
         "box_area_min": min(areas) if areas else None,
         "box_area_max": max(areas) if areas else None,
         "distinct_elements": seen,
+        "track_labels": labels,
     }
 
 

@@ -46,7 +46,7 @@ def container_names() -> dict[str, str]:
 
 
 def read_proc(pid: str):
-    """(comm, utime+stime ticks, cgroup text, environ text) or None."""
+    """(comm, ticks, cgroup, environ, ppid) or None."""
     base = pathlib.Path("/proc") / pid
     try:
         stat = (base / "stat").read_text()
@@ -55,6 +55,7 @@ def read_proc(pid: str):
         comm = stat[stat.index("(") + 1 : close]
         fields = stat[close + 2 :].split()
         ticks = int(fields[11]) + int(fields[12])  # utime, stime
+        ppid = fields[1]  # field 4 of /proc/pid/stat, 0-based here
     except Exception:
         return None
     try:
@@ -66,10 +67,10 @@ def read_proc(pid: str):
         env = (base / "environ").read_bytes().decode("utf8", "replace")
     except Exception:
         pass
-    return comm, ticks, cg, env
+    return comm, ticks, cg, env, ppid
 
 
-def bucket(comm: str, cg: str, env: str, names: dict[str, str], dmap: dict) -> str:
+def bucket(comm: str, cg: str, disp: str, names: dict[str, str], dmap: dict) -> str:
     """Which measured component owns this process.
 
     DISPLAY is checked FIRST and the container map second. The map is rebuilt
@@ -83,11 +84,6 @@ def bucket(comm: str, cg: str, env: str, names: dict[str, str], dmap: dict) -> s
     Browserless also runs ~180 `chrome-headless` processes on this host with no
     DISPLAY, belonging to no measured component; they must not be counted.
     """
-    disp = ""
-    for part in env.split("\x00"):
-        if part.startswith("DISPLAY="):
-            disp = part.split("=", 1)[1].lstrip(":")
-            break
     cname = ""
     for cid, nm in names.items():
         if cid in cg:
@@ -110,15 +106,45 @@ def bucket(comm: str, cg: str, env: str, names: dict[str, str], dmap: dict) -> s
 
 
 def snapshot(names, dmap):
-    acc, counts = {}, {}
+    """Per-bucket CPU ticks, with Chrome's children attributed to their parent.
+
+    Chrome forks renderer and GPU processes that do the actual decoding, and
+    those children do NOT carry DISPLAY in their environ - only the browser
+    process launched under Xvfb does. Attributing on each process's own environ
+    therefore credited ~1.6% of a core to a collector while 146.6% sat in an
+    "unknown" bucket, which made the per-app split useless precisely where it
+    mattered. Walking the ppid chain to the nearest ancestor that does have
+    DISPLAY puts the children where they belong.
+    """
+    procs = {}
     for pid in os.listdir("/proc"):
         if not pid.isdigit():
             continue
         got = read_proc(pid)
-        if not got:
-            continue
-        comm, ticks, cg, env = got
-        b = bucket(comm, cg, env, names, dmap)
+        if got:
+            procs[pid] = got
+
+    disp_cache: dict[str, str] = {}
+
+    def display_of(pid, depth=0):
+        if pid in disp_cache:
+            return disp_cache[pid]
+        if depth > 12 or pid not in procs:
+            return ""
+        comm, ticks, cg, env, ppid = procs[pid]
+        own = ""
+        for part in env.split("\x00"):
+            if part.startswith("DISPLAY="):
+                own = part.split("=", 1)[1].lstrip(":")
+                break
+        if not own and ppid and ppid != "0" and ppid != pid:
+            own = display_of(ppid, depth + 1)
+        disp_cache[pid] = own
+        return own
+
+    acc, counts = {}, {}
+    for pid, (comm, ticks, cg, env, ppid) in procs.items():
+        b = bucket(comm, cg, display_of(pid), names, dmap)
         if not b:
             continue
         acc[b] = acc.get(b, 0) + ticks
