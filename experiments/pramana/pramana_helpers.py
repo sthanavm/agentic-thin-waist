@@ -146,6 +146,11 @@ STRICT_SHAPING = True  # raise on shaping-verification failure
 # expired 5.4s before the collector's last sample, losing the tail of the call.
 # Conferencing joins can need manual admission, so this is overridable per run.
 CAPTURE_OVERHEAD_S = int(os.environ.get("PRAMANA_CAPTURE_OVERHEAD_S", "45"))
+# Skip the per-app capture split and plot rendering during the run, leaving them
+# to `replot_run(run_dir)` afterwards. Measured at 465-574s per cell on a 2-vCPU
+# host, that work is the dominant cost of a cell and needs no live meeting, so
+# deferring it is what makes a 6-cell sweep fit one 40-minute window.
+DEFER_ANALYSIS = os.environ.get("PRAMANA_DEFER_ANALYSIS") == "1"
 
 
 # Throughput charts share ONE y-axis ceiling across every run, instead of each
@@ -780,6 +785,12 @@ def build_collector_jobs(
                 "force_quality_level": cfg.force_quality_level,
                 # Viewport cap for this app, if one was configured.
                 "window_size": (cfg.app_window or {}).get(app),
+                # Conferencing apps must be measuring the REMOTE peer's main
+                # tile, never the collector's own self-view, and the collector
+                # cannot tell the difference from size alone. Gate it early so a
+                # misaimed cell dies in seconds instead of consuming 180s of a
+                # 40-minute meeting window.
+                "require_remote_tile": bool(spec.needs_peer),
                 # Codec families to hide from this app's page, if any.
                 "block_codecs": list((cfg.app_block_codecs or {}).get(app) or []),
             }
@@ -1200,7 +1211,58 @@ def collect_player_qoe(
         per_app[app] = qoelib.summarize(
             run["stats"].get(app, []), app, skipped_reason=reason
         )
+        # Provenance of the measurement itself: which <video> was sampled, how
+        # big it was rendered, and whether it was the remote peer or this
+        # browser's own camera. Without it, "the peer was measured" is an
+        # assumption - and it was the wrong assumption for a whole sweep, where
+        # every sample read a 207x117 local self-view.
+        per_app[app]["measured_element"] = _measured_element_summary(
+            run["stats"].get(app, [])
+        )
     return per_app
+
+
+def _measured_element_summary(samples: list[dict[str, Any]]) -> dict[str, Any]:
+    """Reduce the per-sample element census to one auditable block."""
+    seen: dict[str, int] = {}
+    origins: dict[str, int] = {}
+    areas: list[int] = []
+    local_samples = 0
+    counted = 0
+    for s in samples:
+        st = s.get("stats") if isinstance(s, dict) else None
+        if not isinstance(st, dict):
+            st = s if isinstance(s, dict) else None
+        if not isinstance(st, dict):
+            continue
+        me = st.get("measured_element")
+        if not isinstance(me, dict):
+            continue
+        counted += 1
+        key = f"{me.get('stream')}@{me.get('box')}"
+        seen[key] = seen.get(key, 0) + 1
+        origins[str(me.get("origin"))] = origins.get(str(me.get("origin")), 0) + 1
+        if isinstance(me.get("box_area"), (int, float)):
+            areas.append(int(me["box_area"]))
+        if st.get("measured_is_local") is True:
+            local_samples += 1
+    if not counted:
+        # Pre-census runs: say so rather than implying the element is unknown
+        # because nothing was measured.
+        return {"available": False, "reason": "collector predates element census"}
+    dominant = max(seen.items(), key=lambda kv: kv[1])
+    return {
+        "available": True,
+        "samples_with_census": counted,
+        "dominant": dominant[0],
+        "dominant_sample_share": round(dominant[1] / counted, 4),
+        "origins": origins,
+        "local_samples": local_samples,
+        "measured_local_any": local_samples > 0,
+        "box_area_min": min(areas) if areas else None,
+        "box_area_max": max(areas) if areas else None,
+        "distinct_elements": seen,
+    }
 
 
 # ═════════════════════════════════════════════════════════════════════════════
@@ -3060,6 +3122,11 @@ def replot_run(run_dir: Path | str, bin_s: float = 1.0) -> dict[str, str]:
         at, cfg, run_dir, player_qoe=(rec.get("player_qoe") or {})
     )
     rec.setdefault("artifacts", {})["plots"] = plots
+    # This IS the deferred work, so the run is no longer deferred. Leaving the
+    # flag set would report a finished run as missing its analysis.
+    if rec.get("analysis_deferred"):
+        rec["analysis_deferred"] = False
+        rec["analysis_finalized_at"] = time.time()
     # Preserve the player-aware verdict: recomputing from the pcap alone would
     # silently downgrade a `failed_to_deliver` app back to the network's "served".
     pq_all = rec.get("player_qoe") or {}
@@ -3554,14 +3621,27 @@ def run_direct(cfg: ExperimentConfig) -> dict[str, Any]:
         print("  • shaping check: no packets captured")
 
     # ── per-app split (never a combined view) ────────────────────────────────
-    print("  • splitting capture per app ...")
-    attribution = attribute_capture(
-        local_pcap,
-        apps,
-        cfg.bandwidth_mbps,
-        local_ip_map=local_ip_map,
-        app_endpoint_ips=app_endpoint_ips_from_urls(cfg),
-    )
+    # Splitting the capture and rendering the plots takes ~9 minutes on a 2-vCPU
+    # host (measured: 465-574s across three cells), and run_direct does it
+    # serially between cells. Inside a 40-minute free Zoom meeting that is most
+    # of the window spent on work that needs no meeting at all - it capped a
+    # sweep at 4 cells. Deferring it leaves setup + call (~4.7 min) as the only
+    # meeting-time cost, and `replot_run(run_dir)` does the identical work
+    # afterwards: it re-reads record.json and capture.pcap and rebuilds both the
+    # plots and per_app_stats, so nothing is lost by postponing it.
+    if DEFER_ANALYSIS:
+        print("  • per-app split + plots DEFERRED (PRAMANA_DEFER_ANALYSIS=1)")
+        print("    finish with: replot_run(run_dir)")
+        attribution = CaptureAttribution(note="deferred: run replot_run(run_dir)")
+    else:
+        print("  • splitting capture per app ...")
+        attribution = attribute_capture(
+            local_pcap,
+            apps,
+            cfg.bandwidth_mbps,
+            local_ip_map=local_ip_map,
+            app_endpoint_ips=app_endpoint_ips_from_urls(cfg),
+        )
     if attribution.method != "none":
         print(
             f"    method={attribution.method}  local={attribution.local_ips}  "
@@ -3636,16 +3716,19 @@ def run_direct(cfg: ExperimentConfig) -> dict[str, Any]:
         )
 
     # ── plots, automatically, for every run ──────────────────────────────────
-    print("  • generating per-app plots ...")
-    try:
-        plots = generate_run_plots(attribution, cfg, run_dir, player_qoe=player_qoe)
-    except Exception as exc:  # a plotting bug must never lose the run's evidence
+    if DEFER_ANALYSIS:
         plots = {}
-        print(
-            f"    ! plot generation failed ({type(exc).__name__}: {exc}); "
-            f"the pcap, per-app stats and record are still saved — "
-            f"re-render later with replot_run('{run_dir}')"
-        )
+    else:
+        print("  • generating per-app plots ...")
+        try:
+            plots = generate_run_plots(attribution, cfg, run_dir, player_qoe=player_qoe)
+        except Exception as exc:  # a plotting bug must never lose the evidence
+            plots = {}
+            print(
+                f"    ! plot generation failed ({type(exc).__name__}: {exc}); "
+                f"the pcap, per-app stats and record are still saved — "
+                f"re-render later with replot_run('{run_dir}')"
+            )
 
     overall_ok = net.shaping_verified or net.avg_throughput_mbps is None
     for a in apps:
@@ -3738,6 +3821,11 @@ def run_direct(cfg: ExperimentConfig) -> dict[str, Any]:
         },
         "network_stats": asdict(net),
         "per_app_stats": per_app_stats,
+        # True when the capture split and plots were postponed to keep a live
+        # meeting window free. per_app_stats and the plots are EMPTY in that
+        # case and must not be read as "no traffic" - run replot_run(run_dir) to
+        # fill them from the capture that is already on disk.
+        "analysis_deferred": bool(DEFER_ANALYSIS),
         "capture_buckets_mb": attribution.bucket_mb,
         "capture_top_hosts_bytes": attribution.host_bytes,
         "shaping_applied": shape.get("bottleneck_state", shape),

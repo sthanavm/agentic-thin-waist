@@ -76,6 +76,50 @@ MEDIA_HOOK_JS = r"""
     };
     MS.prototype.__netgentWrapped = true;
 })();
+
+// Which MediaStreamTracks came from the LOCAL camera. This is the only
+// deterministic way to tell a conferencing self-view from a remote participant:
+// both are MediaStream-backed <video> elements with real intrinsic sizes, and
+// size alone is actively misleading - Zoom renders the local fake device at a
+// full 1280x720 inside a 207x117 thumbnail while the remote speaker occupies the
+// main view at whatever resolution Zoom chose to send. Ranking by size therefore
+// reported the collector's own camera as the call's video quality.
+// getUserMedia is the single place a page can acquire local capture, so wrapping
+// it before any page script runs yields an exact set of local track ids.
+(() => {
+    const key = '__netgentLocalTrackIds';
+    if (window[key]) return;
+    Object.defineProperty(window, key, {
+        value: [], configurable: false, enumerable: false, writable: false
+    });
+    const remember = (stream) => {
+        try {
+            stream.getTracks().forEach((t) => {
+                if (t && t.id && window[key].indexOf(t.id) === -1) {
+                    window[key].push(t.id);
+                }
+            });
+        } catch (e) { /* never break capture to observe it */ }
+        return stream;
+    };
+    const md = navigator.mediaDevices;
+    if (md && typeof md.getUserMedia === 'function') {
+        const native = md.getUserMedia.bind(md);
+        md.getUserMedia = function (c) {
+            return native(c).then(remember);
+        };
+    }
+    // Legacy entry point, still used by some builds.
+    const legacy = navigator.getUserMedia || navigator.webkitGetUserMedia;
+    if (typeof legacy === 'function') {
+        const nativeLegacy = legacy.bind(navigator);
+        const wrapped = function (c, ok, err) {
+            return nativeLegacy(c, (s) => ok(remember(s)), err);
+        };
+        try { navigator.getUserMedia = wrapped; } catch (e) { /* read-only */ }
+        try { navigator.webkitGetUserMedia = wrapped; } catch (e) { /* ditto */ }
+    }
+})();
 """
 
 
@@ -89,65 +133,55 @@ STATS_JS = r"""
 const host = location.hostname || '';
 
 function pickVideo() {
-    // Conferencing pages carry 0x0 placeholders (screen-share tiles, local
-    // previews) alongside the real one, so "the first video" is wrong there.
-    // With a single video this is identical to querySelector('video').
+    // Conferencing pages carry several <video> elements for the same streams:
+    // 0x0 placeholders, filmstrip thumbnails, the local self-view and the main
+    // speaker view. Picking among them has broken this measurement three times,
+    // so the rules are stated in priority order and each one names its evidence.
     //
-    // Two rules beyond that, both learned from Zoom runs where the measurement
-    // silently moved to a different element mid-call and the decoded-frame
-    // counter reset (three of six runs in one sweep, at samples 8, 20 and 47):
-    //
-    //   1. STICK to whatever was chosen last time while it is still live, so a
-    //      re-render of the tile grid cannot swap the element being measured.
-    //   2. When choosing afresh, take the LARGEST live video rather than the
-    //      first in DOM order - the main speaker tile is the big one, and DOM
-    //      order is not stable across re-renders.
-    //   3. Require the element to be LAID OUT, not merely to carry a decoded
-    //      frame size. A <video> can report videoWidth/videoHeight 1280x720
-    //      while occupying a 0x0 box, and Chrome never composites such an
-    //      element: getVideoPlaybackQuality().droppedVideoFrames then counts
-    //      every frame as dropped. Two concurrent Zoom runs reported 99.971%
-    //      dropped with player_elem_w/h 0x0 for 150/152 and 121/121 samples,
-    //      while the run that happened to land on a laid-out element reported a
-    //      plausible 10.7% - same network, same meeting. So a zero-size element
-    //      is a measurement trap, never a pin target, and the layout box is the
-    //      tie-breaker before intrinsic size.
+    //   1. NEVER measure a local self-view. videoOrigin() classifies by
+    //      getUserMedia track identity, not by size: Zoom renders the local fake
+    //      device at a full 1280x720 inside a 207x117 thumbnail, so any
+    //      size-based rule picks the collector's own camera. One sweep reported
+    //      1280x720@207x117 - its own fake camera - in all 168 samples of a
+    //      cell, with 0.0% dropped frames because nothing was crossing a
+    //      network at all.
+    //   2. Prefer the LARGEST RENDERED BOX among remote streams. The box is
+    //      what a viewer actually sees; intrinsic size is not, because Zoom
+    //      downscales a remote tile while leaving its element large.
+    //   3. STICK to that choice while it stays valid, so a tile re-render
+    //      cannot move the measurement mid-call and reset the frame counter
+    //      (it did, in three of six runs of one earlier sweep).
+    //   4. Require the element to be laid out at all: a <video> can report
+    //      1280x720 while occupying a 0x0 box, and Chrome never composites
+    //      such an element, so getVideoPlaybackQuality() counts every frame as
+    //      dropped. That produced 99.971% dropped on two otherwise clean runs.
     const vids = Array.from(document.querySelectorAll('video'));
-    const decoded = vids.filter(v => v.videoWidth > 0 && v.videoHeight > 0);
     const boxOf = (v) => {
         try {
             const r = v.getBoundingClientRect();
             return Math.max(0, r.width) * Math.max(0, r.height);
         } catch (e) { return 0; }
     };
-    // Composited elements are preferred; the decoded-but-unrendered ones stay as
-    // a fallback so a page that lays out late still reports something.
+    const decoded = vids.filter(v => v.videoWidth > 0 && v.videoHeight > 0);
     const rendered = decoded.filter(v => boxOf(v) > 0);
-    const live = rendered.length ? rendered : decoded;
-    //   4. Rank by RENDERED BOX, not by intrinsic resolution. Zoom renders the
-    //      same streams into several elements at once, and the local self-view
-    //      carries the fake camera at full 1280x720 inside a 207x117 thumbnail
-    //      while the remote speaker occupies the 1458x820 main view at whatever
-    //      resolution Zoom chose to send. Ranking by intrinsic size therefore
-    //      picked the SELF-PREVIEW - the one thing a conferencing measurement
-    //      must never report - and every sample of one run read 1280x720@207x117,
-    //      the collector's own camera, which no network condition can affect.
-    //      The box is what the viewer actually sees, so it is the honest rank,
-    //      and it picks the main view under either layout.
+    // Remote-only candidates, best first. `local === null` means the element has
+    // no MediaStream (a file/MSE player such as Vimeo), which is not a self-view
+    // and must stay eligible - otherwise this change would break every
+    // non-conferencing app.
+    const remote = rendered.filter(v => videoOrigin(v).local !== true);
+    const pool = remote.length ? remote : (rendered.length ? rendered : decoded);
     const better = (a, b) => {
         const ba = boxOf(a), bb = boxOf(b);
         if (bb !== ba) { return bb > ba; }
-        // Equal boxes: fall back to intrinsic size so a real stream still beats
-        // a placeholder of the same footprint.
         return b.videoWidth * b.videoHeight > a.videoWidth * a.videoHeight;
     };
     const pinned = window.__netgentPinnedVideo;
-    // The pin stops a tile re-render from moving the measurement, but it must
-    // not outlive its own correctness: if a clearly larger view appears (twice
-    // the area), the layout changed and the pin is now on the wrong element.
-    if (pinned && live.indexOf(pinned) !== -1) {
+    // The pin must not outlive its own correctness. Drop it if it became a
+    // self-view or stopped being composited, and upgrade it if a clearly larger
+    // remote view appears (twice the area), which means the layout changed.
+    if (pinned && pool.indexOf(pinned) !== -1) {
         let upgrade = null;
-        for (const v of live) {
+        for (const v of pool) {
             if (v !== pinned && boxOf(v) > boxOf(pinned) * 2) {
                 if (!upgrade || better(upgrade, v)) { upgrade = v; }
             }
@@ -156,13 +190,35 @@ function pickVideo() {
         try { window.__netgentPinnedVideo = upgrade; } catch (e) { /* advisory */ }
         return upgrade;
     }
-    if (!live.length) { return vids[0] || null; }
-    const best = live.reduce((a, b) => (better(a, b) ? b : a));
-    // Only a composited choice is worth pinning.
+    if (!pool.length) { return vids[0] || null; }
+    const best = pool.reduce((a, b) => (better(a, b) ? b : a));
     if (boxOf(best) > 0) {
         try { window.__netgentPinnedVideo = best; } catch (e) { /* pin is advisory */ }
     }
     return best;
+}
+
+// Where a <video>'s pixels come from: the local camera, a remote peer, or an
+// element with no MediaStream at all (a file/MSE player).
+function videoOrigin(v) {
+    const out = { local: null, labels: [], track_ids: [], kind: 'unknown' };
+    try {
+        const so = v && v.srcObject;
+        if (!so || typeof so.getTracks !== 'function') {
+            out.kind = 'no-stream';
+            return out;
+        }
+        const tracks = so.getTracks() || [];
+        out.track_ids = tracks.map((t) => (t && t.id) || '');
+        out.labels = tracks.map((t) => (t && t.label) || '');
+        const localIds = window.__netgentLocalTrackIds || [];
+        // A stream carrying any locally-captured track is a self-view. The hook
+        // ran before page scripts, so an empty local set means the page never
+        // asked for a camera, not that the hook missed it.
+        out.local = out.track_ids.some((id) => id && localIds.indexOf(id) !== -1);
+        out.kind = out.local ? 'local-capture' : 'remote-stream';
+    } catch (e) { /* classification is observability only */ }
+    return out;
 }
 
 function detectCodec(video) {
@@ -231,35 +287,56 @@ function genericVideoStats(video) {
         out.player_elem_w = Math.round(r.width);
         out.player_elem_h = Math.round(r.height);
     } catch (e) { /* geometry is observability only - never fail a sample */ }
-    // Census of every <video> on the page, not just the measured one. On a
-    // conferencing page the tile count is the only evidence of how many remote
-    // participants are publishing: with one bot peer and the host's camera off
-    // there is exactly one decoded remote tile, and a second one would mean
-    // somebody's camera came on mid-run and the measured tile may have moved.
-    // Without this, "camera was off" is an assumption rather than a reading.
+    // Census of every <video> on the page, not just the measured one, with each
+    // element's ORIGIN. Size alone cannot distinguish a self-view from a remote
+    // tile, so without the origin "we measured the peer" is an assumption; with
+    // it the record proves which element was measured and why.
     try {
         const all = Array.from(document.querySelectorAll('video'));
         const box = (v) => {
             try {
                 const b = v.getBoundingClientRect();
-                return Math.max(0, b.width) * Math.max(0, b.height);
-            } catch (e) { return 0; }
+                return {
+                    w: Math.round(Math.max(0, b.width)),
+                    h: Math.round(Math.max(0, b.height))
+                };
+            } catch (e) { return { w: 0, h: 0 }; }
         };
         const dec = all.filter(v => v.videoWidth > 0 && v.videoHeight > 0);
         out.video_element_count = all.length;
         out.video_decoded_count = dec.length;
-        out.video_rendered_count = dec.filter(v => box(v) > 0).length;
-        // Compact per-element "<decoded>@<laid-out>" so a tile that decodes but
-        // is never composited stays visible in the record (that pairing is what
-        // the 99.971%-dropped bug looked like from the outside).
-        out.video_elements = all.slice(0, 8).map(v => {
-            let w = 0, h = 0;
-            try {
-                const b = v.getBoundingClientRect();
-                w = Math.round(b.width); h = Math.round(b.height);
-            } catch (e) { /* element census is observability only */ }
-            return v.videoWidth + 'x' + v.videoHeight + '@' + w + 'x' + h;
+        out.video_rendered_count = dec.filter(v => box(v).w * box(v).h > 0).length;
+        out.video_remote_decoded_count =
+            dec.filter(v => videoOrigin(v).local !== true).length;
+        out.video_local_decoded_count =
+            dec.filter(v => videoOrigin(v).local === true).length;
+        out.video_elements = all.slice(0, 10).map((v) => {
+            const b = box(v);
+            const o = videoOrigin(v);
+            return {
+                stream: v.videoWidth + 'x' + v.videoHeight,
+                box: b.w + 'x' + b.h,
+                origin: o.kind,
+                local: o.local,
+                label: (o.labels[0] || '').slice(0, 40),
+                measured: v === video
+            };
         });
+        // The measured element, called out explicitly so a reader never has to
+        // infer it from the census.
+        const mo = videoOrigin(video);
+        const mb = box(video);
+        out.measured_element = {
+            stream: video.videoWidth + 'x' + video.videoHeight,
+            box: mb.w + 'x' + mb.h,
+            box_area: mb.w * mb.h,
+            origin: mo.kind,
+            is_local: mo.local,
+            label: (mo.labels[0] || '').slice(0, 40)
+        };
+        out.measured_is_local = mo.local;
+        out.measured_origin = mo.kind;
+        out.measured_box_area = mb.w * mb.h;
     } catch (e) { /* census is observability only - never fail a sample */ }
     return out;
 }
@@ -1174,6 +1251,66 @@ def start_playback(driver, app, attempts=4, settle_s=1.0):
     return last
 
 
+# Floor for "this is the remote peer's main tile", derived from the runs that
+# demonstrably measured the peer: a 1756x988 main view, 1,734,928 px^2. The same
+# view in a different Zoom layout measured 1458x820 (1,195,560), while the local
+# self-view thumbnail that silently replaced it was 207x117 (24,219). A 35% floor
+# therefore accepts both real layouts and rejects the thumbnail by nearly two
+# orders of magnitude.
+REMOTE_TILE_REFERENCE_AREA = 1756 * 988
+REMOTE_TILE_MIN_AREA = int(
+    os.environ.get(
+        "PRAMANA_REMOTE_TILE_MIN_AREA", REMOTE_TILE_REFERENCE_AREA * 35 // 100
+    )
+)
+# How long the page gets to lay the tile out before the gate bites. Joining,
+# the gallery settling and the first remote frame all happen inside this.
+REMOTE_TILE_GRACE_S = float(os.environ.get("PRAMANA_REMOTE_TILE_GRACE_S", "20"))
+
+
+class RemoteTileMissing(RuntimeError):
+    """The measured element is not the remote peer's main tile."""
+
+
+def _assert_remote_tile(
+    app: str, job: dict[str, Any], samples: list[dict], started_at: float
+) -> None:
+    """Fail a conferencing cell early when it is measuring the wrong element.
+
+    Replaces an earlier check that required exactly one <video> on the page.
+    That was never satisfiable: Zoom always exposes several elements for the same
+    streams, so the check could only ever have failed. What actually matters is
+    narrower and checkable - the element being measured must be a REMOTE stream
+    (never the collector's own self-view) and must be laid out at main-view size.
+
+    Raised rather than logged: a cell that is measuring the local camera cannot
+    be salvaged afterwards, and a 180s run plus teardown is most of a free
+    meeting's remaining window.
+    """
+    if not job.get("require_remote_tile"):
+        return
+    if time.time() - started_at < REMOTE_TILE_GRACE_S:
+        return
+    stats = next((s["stats"] for s in reversed(samples) if s.get("stats")), None)
+    if not stats:
+        raise RemoteTileMissing(f"{app}: no player samples within grace period")
+    me = stats.get("measured_element") or {}
+    if stats.get("measured_is_local") is True:
+        raise RemoteTileMissing(
+            f"{app}: measuring the LOCAL self-view "
+            f"({me.get('stream')}@{me.get('box')}, label={me.get('label')!r}); "
+            "the remote peer's tile is not being measured"
+        )
+    area = stats.get("measured_box_area") or 0
+    if area < REMOTE_TILE_MIN_AREA:
+        raise RemoteTileMissing(
+            f"{app}: measured tile too small to be the main view "
+            f"({me.get('stream')}@{me.get('box')}, area {area} < "
+            f"{REMOTE_TILE_MIN_AREA}); remote tiles decoded="
+            f"{stats.get('video_remote_decoded_count')}"
+        )
+
+
 def run_job(
     job: dict[str, Any],
     launch_lock: threading.Lock,
@@ -1297,6 +1434,9 @@ def run_job(
         print(f"[{app}] ready; waiting for all applications before sampling")
         sampling_barrier.wait(timeout=barrier_timeout_seconds)
         print(f"[{app}] all applications ready; starting synchronized sampling")
+        # Clock for the remote-tile gate: the page gets REMOTE_TILE_GRACE_S from
+        # here to lay out the peer's main view before a cell is refused.
+        sampling_started_at = time.time()
         if not is_webrtc:
             try:
                 # Wait for the element to actually hold data before asking it to
@@ -1373,6 +1513,7 @@ def run_job(
 
                 f.write(json.dumps(sample) + "\n")
                 samples.append(sample)
+                _assert_remote_tile(app, job, samples, sampling_started_at)
                 time.sleep(sample_interval_seconds)
     finally:
         try:
