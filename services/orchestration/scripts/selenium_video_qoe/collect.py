@@ -338,6 +338,26 @@ function genericVideoStats(video) {
         out.measured_origin = mo.kind;
         out.measured_box_area = mb.w * mb.h;
     } catch (e) { /* census is observability only - never fail a sample */ }
+    // Any countdown the conferencing UI shows about the meeting ending. A free
+    // Zoom meeting dies at 40 minutes, and a wall-clock timer for that can only
+    // ever be an estimate because the meeting starts before anything here can
+    // observe it. If the page states the remaining time, that is ground truth
+    // and worth capturing; it is NOT assumed to exist, so the field is simply
+    // absent when no such text is present.
+    try {
+        const re = /(\d+)\s*minutes?\s*(left|remaining)|meeting\s+will\s+end|will\s+end\s+in|time\s+is\s+almost\s+up|ending\s+soon/i;
+        const hits = [];
+        const walk = document.body ? document.body.querySelectorAll('*') : [];
+        for (const el of walk) {
+            if (el.children && el.children.length) { continue; }  // leaf text only
+            const t = (el.innerText || el.textContent || '').trim();
+            if (t && t.length < 200 && re.test(t)) {
+                if (hits.indexOf(t) === -1) { hits.push(t); }
+                if (hits.length >= 3) { break; }
+            }
+        }
+        if (hits.length) { out.meeting_notice = hits; }
+    } catch (e) { /* notice scan is observability only */ }
     return out;
 }
 

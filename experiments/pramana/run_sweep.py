@@ -173,7 +173,7 @@ def cpu_digest(path: pathlib.Path) -> dict:
 
 
 def run_cell(apps, bw, lat, dur, room, ckpt_path, state):
-    tag = f"{bw}M_{lat}ms"
+    tag = f"{'+'.join(apps)}_{bw}M_{lat}ms"
     kw = {}
     if "zoom" in apps:
         kw["app_urls"] = {"zoom": room}
@@ -300,14 +300,18 @@ def main() -> int:
             state["done"] = prev.get("done", [])
             state["incomplete"] = prev.get("incomplete", [])
             done_tags = {d["cell"] for d in state["done"]}
-            cells = [c for c in cells if f"{c[1]}M_{c[2]}ms" not in done_tags]
+            cells = [
+                c
+                for c in cells
+                if f"{'+'.join(c[0])}_{c[1]}M_{c[2]}ms" not in done_tags
+            ]
             if done_tags:
                 say(f"resuming; already done: {sorted(done_tags)}")
         except Exception:
             pass
 
     for idx, (apps, bw, lat) in enumerate(cells):
-        tag = f"{bw}M_{lat}ms"
+        tag = f"{'+'.join(apps)}_{bw}M_{lat}ms"
         elapsed = time.time() - start_epoch
         remaining = MEETING_LIMIT_S - elapsed
         need = dur + SETUP_ALLOWANCE_S + TEARDOWN_ALLOWANCE_S + RESERVE_S
@@ -334,7 +338,7 @@ def main() -> int:
     say(
         f"CHECKPOINT done={[d['cell'] for d in state['done']]} "
         f"incomplete={[i['cell'] for i in state['incomplete']]} "
-        f"remaining={[f'{c[1]}M_{c[2]}ms' for c in state.get('remaining', [])]}"
+        f"remaining={[f'{chr(43).join(c[0])}_{c[1]}M_{c[2]}ms' for c in state.get('remaining', [])]}"
     )
     say("SWEEP_DONE")
     return 0

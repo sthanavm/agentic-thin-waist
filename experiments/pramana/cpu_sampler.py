@@ -70,24 +70,43 @@ def read_proc(pid: str):
 
 
 def bucket(comm: str, cg: str, env: str, names: dict[str, str], dmap: dict) -> str:
-    cname = ""
-    for cid, nm in names.items():
-        if cid in cg:
-            cname = nm
-            break
-    if "peer" in cname:
-        return "peer_chrome" if "chrome" in comm.lower() else "peer_other"
+    """Which measured component owns this process.
+
+    DISPLAY is checked FIRST and the container map second. The map is rebuilt
+    every snapshot, but the collector container is created after the sampler
+    starts, so an early-bound map misses it entirely - which is exactly why the
+    first sweep reported peer CPU and nothing for either collector. DISPLAY is
+    set per job (:99 for the first app, :100 for the second) and inherited by
+    Chrome, so it identifies a collector browser without the container needing
+    to be known yet.
+
+    Browserless also runs ~180 `chrome-headless` processes on this host with no
+    DISPLAY, belonging to no measured component; they must not be counted.
+    """
     disp = ""
     for part in env.split("\x00"):
         if part.startswith("DISPLAY="):
             disp = part.split("=", 1)[1].lstrip(":")
             break
+    cname = ""
+    for cid, nm in names.items():
+        if cid in cg:
+            cname = nm
+            break
+    low = comm.lower()
+    chrome = "chrome" in low or "chromium" in low
+    # The peer is identified by its container: it drives its own display and
+    # must never be confused with a collector browser.
+    if "peer" in cname:
+        return "peer_chrome" if chrome else "peer_other"
     app = dmap.get(disp)
-    if cname and "chrome" in comm.lower():
-        return f"collector_chrome_{app}" if app else "collector_chrome_unknown"
-    if cname:
-        return f"collector_other_{app}" if app else f"collector_other({cname})"
-    return ""  # host process, not ours
+    if app:
+        return f"collector_chrome_{app}" if chrome else f"collector_other_{app}"
+    if chrome and "headless" in low:
+        return ""  # browserless pool, not part of this measurement
+    if cname and chrome:
+        return "collector_chrome_unknown"
+    return ""
 
 
 def snapshot(names, dmap):
@@ -133,6 +152,7 @@ def main() -> int:
         )
         while time.time() < end:
             time.sleep(interval)
+            names = container_names()  # the collector container appears late
             cur, counts = snapshot(names, dmap)
             now = time.time()
             dt = now - prev_t

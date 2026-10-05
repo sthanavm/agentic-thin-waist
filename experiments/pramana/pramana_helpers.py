@@ -1216,8 +1216,13 @@ def collect_player_qoe(
         # browser's own camera. Without it, "the peer was measured" is an
         # assumption - and it was the wrong assumption for a whole sweep, where
         # every sample read a 207x117 local self-view.
+        # run["stats"][app] may be a JSONL PATH rather than a list - summarize()
+        # accepts either, so load_samples() is what normalises it. Passing the
+        # raw value straight in made the reducer iterate a string's characters,
+        # find no dicts, and report "collector predates element census" for runs
+        # whose samples all carried the census.
         per_app[app]["measured_element"] = _measured_element_summary(
-            run["stats"].get(app, [])
+            qoelib.load_samples(run["stats"].get(app, []))
         )
     return per_app
 
