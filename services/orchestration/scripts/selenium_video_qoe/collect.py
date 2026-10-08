@@ -131,6 +131,192 @@ MEDIA_HOOK_JS = r"""
 """
 
 
+# Uniform streaming-QoE probe. One mechanism for every site, no per-site APIs.
+# Installed on the same pre-document channel as the codec hook, so it observes a
+# player's very first append and very first presented frame.
+#
+# Each piece exists because a target metric cannot be measured without it:
+#   * appended bytes PER SourceBuffer, keyed by mime - the only uniform source of
+#     delivered bitrate. Measured on this host: YouTube's audio buffer carried
+#     26% of all appended bytes, so a single total would overstate video bitrate
+#     by about a third. appendBuffer's argument size is observable, and audio and
+#     video are always separate SourceBuffers.
+#   * requestVideoFrameCallback - presentedFrames counts frames actually
+#     submitted for composition, which is the rendering rate being asked for;
+#     getVideoPlaybackQuality().totalVideoFrames counts DECODED frames, a
+#     different quantity. Its first callback also timestamps the first frame a
+#     viewer could see, which is the honest end of startup delay.
+#   * the media event log - `waiting` is spec-defined as "playback has stopped
+#     because of a temporary lack of data", i.e. a rebuffer, closed by `playing`.
+#     Inferring stalls from a progress counter cannot distinguish that from a
+#     paused tab or a counter reset.
+#   * changeType/addSourceBuffer mime history - a codec or rendition switch
+#     without creating a new SourceBuffer shows up nowhere else.
+#   * worker detection - a player may run MediaSource inside a Worker and hand
+#     the element a MediaSourceHandle via srcObject. Measured: Twitch does
+#     exactly this (0 main-world MediaSource constructions, 2 Workers,
+#     video.srcObject set), so these hooks are structurally blind there and the
+#     record must say so instead of reporting a silent zero.
+STREAM_PROBE_JS = r"""
+(() => {
+    const K = '__netgentProbe';
+    if (window[K]) return;
+    Object.defineProperty(window, K, {
+        value: {
+            buffers: [], appends: 0, bytes_total: 0,
+            ms_constructions: 0, workers: [],
+            events: {}, event_log: [], waiting_spans: [], _waiting_at: null,
+            rvfc: {presented: 0, first_presentation_ms: null, first_media_time: null,
+                   last_media_time: null, width: 0, height: 0, installed: false,
+                   processing_total: 0, processing_n: 0},
+            t0: (performance && performance.now) ? performance.now() : 0
+        },
+        configurable: false, enumerable: false, writable: false
+    });
+    const S = window[K];
+    const now = () => ((performance && performance.now) ? performance.now() : 0);
+
+    // ---- MSE: bytes per SourceBuffer, keyed by the mime it was created with --
+    const MS = window.MediaSource || window.WebKitMediaSource;
+    const findRec = (sb) => {
+        for (const r of S.buffers) { if (r.sb === sb) { return r; } }
+        return null;
+    };
+    if (MS && MS.prototype && !MS.prototype.__netgentProbeWrapped) {
+        const nativeAdd = MS.prototype.addSourceBuffer;
+        MS.prototype.addSourceBuffer = function (mime) {
+            const sb = nativeAdd.apply(this, arguments);
+            try {
+                S.buffers.push({
+                    sb: sb, mime: String(mime || ''), bytes: 0, appends: 0,
+                    mime_history: [{t: now() - S.t0, mime: String(mime || '')}]
+                });
+            } catch (e) { /* observation must never break playback */ }
+            return sb;
+        };
+        MS.prototype.__netgentProbeWrapped = true;
+    }
+    const SBp = window.SourceBuffer && window.SourceBuffer.prototype;
+    if (SBp && SBp.appendBuffer && !SBp.__netgentProbeWrapped) {
+        const nativeAppend = SBp.appendBuffer;
+        SBp.appendBuffer = function (data) {
+            try {
+                const n = (data && (data.byteLength !== undefined
+                    ? data.byteLength : (data.length || 0))) || 0;
+                const r = findRec(this);
+                if (r) { r.bytes += n; r.appends += 1; }
+                S.appends += 1; S.bytes_total += n;
+            } catch (e) { /* ditto */ }
+            return nativeAppend.apply(this, arguments);
+        };
+        if (SBp.changeType) {
+            const nativeChange = SBp.changeType;
+            SBp.changeType = function (mime) {
+                try {
+                    const r = findRec(this);
+                    if (r) {
+                        r.mime = String(mime || '');
+                        r.mime_history.push({t: now() - S.t0, mime: String(mime || '')});
+                    }
+                } catch (e) { /* ditto */ }
+                return nativeChange.apply(this, arguments);
+            };
+        }
+        SBp.__netgentProbeWrapped = true;
+    }
+    // Count main-world MediaSource constructions, to tell "no MSE" apart from
+    // "MSE, but inside a Worker where this hook cannot reach".
+    if (MS) {
+        try {
+            const P = new Proxy(MS, {
+                construct(t, a) { S.ms_constructions += 1; return new t(...a); }
+            });
+            window.MediaSource = P;
+        } catch (e) { /* a non-configurable global is fine; count stays 0 */ }
+    }
+    if (window.Worker) {
+        try {
+            const NW = window.Worker;
+            const W = function (url, opts) {
+                try { S.workers.push(String(url).slice(0, 120)); } catch (e) {}
+                return new NW(url, opts);
+            };
+            W.prototype = NW.prototype;
+            window.Worker = W;
+        } catch (e) { /* ditto */ }
+    }
+
+    // ---- media events + rVFC, attached to each <video> as it appears ---------
+    const EV = ['waiting', 'playing', 'stalled', 'seeking', 'seeked', 'ratechange',
+                'loadeddata', 'canplay', 'play', 'pause', 'suspend', 'emptied',
+                'error', 'ended', 'loadedmetadata'];
+    const attach = (v) => {
+        if (!v || v.__netgentProbeAttached) { return; }
+        v.__netgentProbeAttached = true;
+        for (const name of EV) {
+            v.addEventListener(name, () => {
+                try {
+                    S.events[name] = (S.events[name] || 0) + 1;
+                    const t = now() - S.t0;
+                    if (S.event_log.length < 400) {
+                        S.event_log.push({t: Math.round(t), e: name,
+                                          ct: v.currentTime});
+                    }
+                    // A rebuffer is the span from `waiting` to the next
+                    // `playing`, which is what the spec defines those events to
+                    // mean. Seeking also fires `waiting`, so the span records
+                    // whether a seek was in flight and the reducer can exclude it.
+                    if (name === 'waiting') {
+                        S._waiting_at = {t: t, ct: v.currentTime, seeking: !!v.seeking};
+                    } else if (name === 'playing' && S._waiting_at) {
+                        S.waiting_spans.push({
+                            start: Math.round(S._waiting_at.t),
+                            end: Math.round(t),
+                            dur_ms: Math.round(t - S._waiting_at.t),
+                            ct: S._waiting_at.ct,
+                            during_seek: S._waiting_at.seeking
+                        });
+                        S._waiting_at = null;
+                    }
+                } catch (e) { /* never throw from a listener */ }
+            }, {passive: true});
+        }
+        if (typeof v.requestVideoFrameCallback === 'function' && !S.rvfc.installed) {
+            S.rvfc.installed = true;
+            const step = (nowTs, md) => {
+                try {
+                    S.rvfc.presented = md.presentedFrames || (S.rvfc.presented + 1);
+                    if (S.rvfc.first_presentation_ms === null) {
+                        S.rvfc.first_presentation_ms = Math.round(
+                            (md.presentationTime || nowTs) - S.t0);
+                        S.rvfc.first_media_time = md.mediaTime;
+                    }
+                    S.rvfc.last_media_time = md.mediaTime;
+                    S.rvfc.width = md.width || S.rvfc.width;
+                    S.rvfc.height = md.height || S.rvfc.height;
+                    if (typeof md.processingDuration === 'number') {
+                        S.rvfc.processing_total += md.processingDuration;
+                        S.rvfc.processing_n += 1;
+                    }
+                } catch (e) { /* ditto */ }
+                try { v.requestVideoFrameCallback(step); } catch (e) {}
+            };
+            try { v.requestVideoFrameCallback(step); } catch (e) {}
+        }
+    };
+    const scan = () => {
+        try { document.querySelectorAll('video').forEach(attach); } catch (e) {}
+    };
+    scan();
+    try {
+        new MutationObserver(scan).observe(document.documentElement || document,
+            {childList: true, subtree: true});
+    } catch (e) { /* fall back to the periodic scan */ }
+    setInterval(scan, 1000);
+})();
+"""
+
+
 # Runs in the page, once per sample. ONE generic path does the real work on any
 # <video> element - no app detection, no per-app branches. YouTube's
 # getStatsForNerds() is layered on top as a bonus when it happens to exist;
@@ -355,6 +541,93 @@ function genericVideoStats(video) {
         out.measured_origin = mo.kind;
         out.measured_box_area = mb.w * mb.h;
     } catch (e) { /* census is observability only - never fail a sample */ }
+    // ---- uniform streaming-QoE probe readout --------------------------------
+    // Flat keys only, so every existing consumer and the ~400 stored runs keep
+    // working. Null means "not measurable here", never zero.
+    try {
+        const S = window.__netgentProbe;
+        if (S) {
+            let vb = 0, ab = 0, va = 0, aa = 0, vmime = null, amime = null;
+            let switches = [];
+            for (const r of S.buffers) {
+                const m = String(r.mime || '');
+                if (m.indexOf('video/') === 0) {
+                    vb += r.bytes; va += r.appends; vmime = vmime || m;
+                } else if (m.indexOf('audio/') === 0) {
+                    ab += r.bytes; aa += r.appends; amime = amime || m;
+                }
+                if (r.mime_history && r.mime_history.length > 1) {
+                    switches = switches.concat(r.mime_history.slice(1));
+                }
+            }
+            // Audio and video are separate SourceBuffers; a combined total
+            // overstates video bitrate (measured: 26% audio on YouTube).
+            out.mse_video_bytes = vb;
+            out.mse_audio_bytes = ab;
+            out.mse_video_appends = va;
+            out.mse_audio_appends = aa;
+            out.mse_video_mime = vmime;
+            out.mse_audio_mime = amime;
+            out.mse_sourcebuffers = S.buffers.length;
+            out.mse_mime_switches = switches.length;
+            out.mse_mime_switch_log = switches.slice(0, 12);
+            out.mse_appends_total = S.appends;
+
+            // presentedFrames is frames submitted for composition - the
+            // rendering rate. totalVideoFrames above counts DECODED frames.
+            out.presented_frames = S.rvfc.installed ? S.rvfc.presented : null;
+            out.rvfc_supported = !!S.rvfc.installed;
+            out.first_presentation_ms = S.rvfc.first_presentation_ms;
+            out.first_presented_media_time = S.rvfc.first_media_time;
+            out.rvfc_frame_w = S.rvfc.width || null;
+            out.rvfc_frame_h = S.rvfc.height || null;
+            out.mean_processing_duration_ms = S.rvfc.processing_n
+                ? (1000.0 * S.rvfc.processing_total / S.rvfc.processing_n) : null;
+
+            // `waiting` -> `playing` spans are the spec's own definition of a
+            // stall, independent of any progress-counter heuristic.
+            out.media_event_counts = S.events;
+            out.waiting_events = S.events['waiting'] || 0;
+            out.waiting_spans = S.waiting_spans.slice(0, 40);
+            out.waiting_total_ms = S.waiting_spans.reduce(
+                (a, w) => a + (w.during_seek ? 0 : w.dur_ms), 0);
+            out.seeking_events = S.events['seeking'] || 0;
+            out.ratechange_events = S.events['ratechange'] || 0;
+            out.stalled_events = S.events['stalled'] || 0;
+
+            // Why a byte channel may be structurally unavailable here.
+            out.main_world_mediasource_constructions = S.ms_constructions;
+            out.worker_count = S.workers.length;
+            out.uses_worker_media = !!(video && video.srcObject
+                && S.ms_constructions === 0 && S.workers.length > 0);
+        }
+    } catch (e) { /* probe readout is observability only - never fail a sample */ }
+
+    // ---- Resource Timing: an independent delivered-bytes channel -------------
+    // Spec-zeroed for CORS-cross-origin responses, so eligibility is a property
+    // of each CDN's headers. nextHopProtocol is empty exactly when the
+    // timing-allow check fails, which makes it a free per-host eligibility read.
+    try {
+        let list = [];
+        try { list = performance.getEntriesByType('resource') || []; } catch (e) { list = []; }
+        let n = 0, bytes = 0, tao = 0, zero = 0;
+        for (const e of list) {
+            const it = e.initiatorType || '';
+            if (!(it === 'xmlhttprequest' || it === 'fetch' || it === 'video'
+                  || it === 'audio')) { continue; }
+            const enc = e.encodedBodySize || 0;
+            if (enc < 20000 && (e.transferSize || 0) < 20000) { continue; }
+            n += 1; bytes += enc;
+            if (e.nextHopProtocol) { tao += 1; }
+            if (enc === 0) { zero += 1; }
+        }
+        out.rt_media_entries = n;
+        out.rt_media_bytes = bytes;
+        out.rt_tao_entries = tao;
+        out.rt_size_zeroed_entries = zero;
+        out.rt_sizes_usable = n > 0 && bytes > 0;
+    } catch (e) { /* ditto */ }
+
     // Any countdown the conferencing UI shows about the meeting ending. A free
     // Zoom meeting dies at 40 minutes, and a wall-clock timer for that can only
     // ever be an estimate because the meeting starts before anything here can
@@ -384,30 +657,45 @@ function addYouTubeBonus(out) {
     const player = document.getElementById('movie_player')
         || document.querySelector('.html5-video-player');
     if (!player) { return; }
+    // stats-for-nerds is YouTube's own instrumentation and is the GROUND TRUTH
+    // this tool is validated against. It must therefore never flow into the
+    // generic channel, or the validation would be comparing a measurement with
+    // itself. Every key is namespaced `sfn_` and the un-namespaced merge is
+    // opt-in via window.__netgentMergeVendorStats (off by default), where it
+    // previously dropped all 33 keys straight into the flat namespace.
     try {
         if (typeof player.getStatsForNerds === 'function') {
             const nerds = player.getStatsForNerds();
+            const merge = !!window.__netgentMergeVendorStats;
             for (const k in nerds) {
-                // Never let the bonus overwrite a generic measurement.
-                if (!(k in out)) { out[k] = nerds[k]; }
+                out['sfn_' + k] = nerds[k];
+                if (merge && !(k in out)) { out[k] = nerds[k]; }
             }
+            out.sfn_available = true;
+            out.sfn_merged_into_generic = merge;
         }
     } catch (e) { out.stats_for_nerds_error = String(e); }
     try {
         if (typeof player.getVideoData === 'function') {
             const vd = player.getVideoData();
-            out.video_id = vd && vd.video_id;
-            out.title = vd && vd.title;
+            out.sfn_video_id = vd && vd.video_id;
+            out.sfn_title = vd && vd.title;
         }
         if (typeof player.getDuration === 'function') {
             const dur = player.getDuration();
-            if (dur > 0) { out.duration_secs = dur; }
+            // Kept out of duration_secs: the element's own duration is the
+            // generic signal, and a vendor override would make YouTube's
+            // generic channel differ in kind from every other app's.
+            if (dur > 0) { out.sfn_duration_secs = dur; }
         }
         if (typeof player.getVideoLoadedFraction === 'function') {
-            out.loaded_fraction = player.getVideoLoadedFraction();
+            out.sfn_loaded_fraction = player.getVideoLoadedFraction();
         }
         if (typeof player.getPlayerState === 'function') {
-            out.player_state = player.getPlayerState();
+            // IFrame-API state codes: 3 == BUFFERING, 1 == PLAYING. An
+            // independent reference for rebuffering, and the only one available
+            // for metrics stats-for-nerds does not cover.
+            out.sfn_player_state = player.getPlayerState();
         }
     } catch (e) { out.player_data_error = String(e); }
 }
@@ -968,6 +1256,20 @@ def install_codec_block(driver: Any, patterns: list[str]) -> None:
         print(f"[collector] codec block unavailable: {type(exc).__name__}", flush=True)
 
 
+def install_vendor_merge_flag(driver: Any, merge: bool) -> None:
+    """Opt in to merging a vendor's own stats into the generic namespace.
+
+    Off for validation runs: stats-for-nerds is the reference the generic channel
+    is measured against, so letting it flow into the generic fields would make
+    the comparison circular.
+    """
+    src = "window.__netgentMergeVendorStats = %s;" % ("true" if merge else "false")
+    try:
+        driver.execute_cdp_cmd("Page.addScriptToEvaluateOnNewDocument", {"source": src})
+    except Exception as exc:  # noqa: BLE001 - never fail a run over a flag
+        print(f"[collector] vendor-merge flag unavailable: {type(exc).__name__}")
+
+
 def install_media_hook(driver: Any) -> None:
     """Record source-buffer mime types so the generic path can name the codec.
 
@@ -979,6 +1281,10 @@ def install_media_hook(driver: Any) -> None:
         driver.execute_cdp_cmd(
             "Page.addScriptToEvaluateOnNewDocument",
             {"source": MEDIA_HOOK_JS},
+        )
+        driver.execute_cdp_cmd(
+            "Page.addScriptToEvaluateOnNewDocument",
+            {"source": STREAM_PROBE_JS},
         )
     except Exception as exc:  # noqa: BLE001 - codec is a bonus, never a gate
         print(f"[collector] codec hook unavailable: {type(exc).__name__}", flush=True)
@@ -1408,6 +1714,7 @@ def run_job(
         # by the shaped link. Setting the rect after launch makes the window the
         # size we actually asked for.
         install_media_hook(driver)
+        install_vendor_merge_flag(driver, bool(job.get("merge_vendor_stats", False)))
         install_codec_block(driver, list(job.get("block_codecs") or []))
         # A per-app viewport cap bounds the top of an adaptive ladder: the
         # player sizes its rendition to the element, so a smaller window keeps
@@ -1544,6 +1851,14 @@ def run_job(
                         previous_meet_timestamp = sample["timestamp"]
                     else:
                         sample["stats"] = driver.execute_script(STATS_JS)
+                        # Recorded per sample, not just per run: a buffer series
+                        # is uninterpretable without knowing how often it was
+                        # read, and the interval is what makes two apps'
+                        # series comparable.
+                        if isinstance(sample["stats"], dict):
+                            sample["stats"][
+                                "sampling_interval_s"
+                            ] = sample_interval_seconds
                 except Exception as exc:  # noqa: BLE001
                     sample["stats"] = None
                     sample["sample_error"] = str(exc)

@@ -452,6 +452,11 @@ class ExperimentConfig:
     # `quality` parameter forces one rendition (ABR off) and a smaller viewport
     # does not constrain Vimeo's choice at all. Blocked runs get their own slug.
     app_block_codecs: Optional[dict[str, list[str]]] = None
+    # Let a vendor's own instrumentation (YouTube stats-for-nerds) flow into the
+    # generic sample keys. Default False so the generic channel stays
+    # independent of the reference it is validated against; the vendor values
+    # are always recorded under `sfn_*` regardless.
+    merge_vendor_stats: bool = False
 
     experiment_id: str = ""
     slug: str = ""
@@ -793,6 +798,10 @@ def build_collector_jobs(
                 "require_remote_tile": bool(spec.needs_peer),
                 # Codec families to hide from this app's page, if any.
                 "block_codecs": list((cfg.app_block_codecs or {}).get(app) or []),
+                # Off for validation runs: a vendor's own stats are the reference
+                # the generic channel is compared against, so merging them into
+                # the generic fields would make that comparison circular.
+                "merge_vendor_stats": bool(cfg.merge_vendor_stats),
             }
         )
         display += 1
@@ -3800,6 +3809,10 @@ def run_direct(cfg: ExperimentConfig) -> dict[str, Any]:
         # carries a matching `_vcap...` marker.
         "app_window_caps": dict(cfg.app_window or {}),
         "app_ladder_pinned": sorted((cfg.app_window or {}).keys()),
+        # The rate every player signal was read at. A buffer or bitrate series
+        # cannot be compared across apps or runs without it.
+        "sampling_interval_s": 1.0,
+        "merge_vendor_stats": bool(cfg.merge_vendor_stats),
         # Codec families hidden per app for this run. A run with a codec family
         # removed must never be pooled with one that had it available: the
         # bitrate-per-resolution differs, so both the ladder and the offered

@@ -167,6 +167,154 @@ def _is_ended(stats: dict[str, Any], duration: Optional[float]) -> bool:
 # ═══════════════════════════════════════════════════════════════════════════
 #  html5_video
 # ═══════════════════════════════════════════════════════════════════════════
+
+# ── uniform streaming-QoE derivations ────────────────────────────────────────
+# These read only the probe's flat keys, so they behave identically on any site
+# and return None (never 0) when a signal is structurally unavailable.
+
+
+def _last(st: list[dict[str, Any]], key: str) -> Any:
+    for x in reversed(st):
+        v = x.get(key)
+        if v is not None:
+            return v
+    return None
+
+
+def delivered_bitrate(
+    st: list[dict[str, Any]], ts: list[float], start: int
+) -> tuple[Optional[float], Optional[float], str]:
+    """(video Mbps, audio Mbps, basis) from bytes appended through MSE.
+
+    This is the one uniform source of delivered bitrate: `appendBuffer`'s
+    argument size, accumulated per SourceBuffer and keyed by the mime the buffer
+    was created with. Audio and video are always separate SourceBuffers, and
+    mixing them overstates video bitrate - measured on this host, YouTube's
+    audio buffer carried 26% of all appended bytes.
+
+    The counter is strictly cumulative, which is what `_derive_bitrate` requires
+    and what YouTube's `network_activity_bytes` gauge was rejected for.
+    """
+    vb = [(ts[i], _num(st[i].get("mse_video_bytes"))) for i in range(start, len(st))]
+    vb = [(t, b) for t, b in vb if b is not None]
+    if len(vb) < 2:
+        if _last(st, "uses_worker_media"):
+            return (
+                None,
+                None,
+                (
+                    "unavailable (player appends media inside a Worker; a main-world "
+                    "hook cannot observe it)"
+                ),
+            )
+        return None, None, "unavailable (no MSE appends observed)"
+    (t0, b0), (t1, b1) = vb[0], vb[-1]
+    if t1 <= t0 or b1 < b0:
+        return None, None, "unavailable (counter did not advance)"
+    if b1 - b0 <= 0:
+        # Zero appended bytes is not a zero bitrate - it means this hook never
+        # saw the appends. Measured on Twitch, which plays normally while
+        # appending inside a Worker: the probe emits 0 for an empty buffer list,
+        # and reporting that as 0.0 Mbps would be a fabricated measurement.
+        if _last(st, "uses_worker_media"):
+            return (
+                None,
+                None,
+                (
+                    "unavailable (player appends media inside a Worker; a main-world "
+                    "hook cannot observe it)"
+                ),
+            )
+        return None, None, "unavailable (no bytes appended through MSE)"
+    v_mbps = round((b1 - b0) * 8 / (t1 - t0) / 1e6, 4)
+    ab = [(ts[i], _num(st[i].get("mse_audio_bytes"))) for i in range(start, len(st))]
+    ab = [(t, b) for t, b in ab if b is not None]
+    a_mbps = None
+    if len(ab) >= 2 and ab[-1][0] > ab[0][0] and ab[-1][1] >= ab[0][1]:
+        a_mbps = round((ab[-1][1] - ab[0][1]) * 8 / (ab[-1][0] - ab[0][0]) / 1e6, 4)
+    return v_mbps, a_mbps, "mse_appended_bytes(video sourcebuffer)"
+
+
+def event_rebuffers(
+    st: list[dict[str, Any]],
+) -> tuple[Optional[int], Optional[float], list[dict], str]:
+    """Rebuffers from the media events, not from a progress heuristic.
+
+    `waiting` is spec-defined as "playback has stopped because of a temporary
+    lack of data" and `playing` ends it, so the span between them IS a rebuffer.
+    Spans flagged as occurring during a seek are excluded: seeking also fires
+    `waiting`, and a seek is not a stall.
+    """
+    spans = _last(st, "waiting_spans")
+    if spans is None:
+        return None, None, [], "unavailable (no media-event probe in these samples)"
+    real = [w for w in spans if isinstance(w, dict) and not w.get("during_seek")]
+    total = sum(float(w.get("dur_ms") or 0) for w in real)
+    return len(real), round(total, 1), real, "media events (waiting -> playing)"
+
+
+def presented_frame_rate(
+    st: list[dict[str, Any]], ts: list[float], start: int
+) -> tuple[Optional[float], str]:
+    """Rendering rate from presentedFrames: frames submitted for composition.
+
+    Distinct from totalVideoFrames, which counts DECODED frames. A host that
+    decodes but cannot composite in time shows the difference, and the metric
+    being asked for is the rendered one.
+    """
+    pf = [(ts[i], _num(st[i].get("presented_frames"))) for i in range(start, len(st))]
+    pf = [(t, v) for t, v in pf if v is not None]
+    if len(pf) < 2:
+        return None, "unavailable (requestVideoFrameCallback not supported here)"
+    (t0, f0), (t1, f1) = pf[0], pf[-1]
+    if t1 <= t0 or f1 < f0:
+        return None, "unavailable (presented-frame counter did not advance)"
+    return round((f1 - f0) / (t1 - t0), 2), "requestVideoFrameCallback.presentedFrames"
+
+
+def switch_events(
+    st: list[dict[str, Any]], ts: list[float], start: int
+) -> tuple[list[dict], str]:
+    """Timestamped rendition switches WITH direction.
+
+    Two independent witnesses, both uniform: the decoded frame height changing
+    (the rendition the player is rendering) and a SourceBuffer's mime changing
+    via changeType (a codec switch, which no resolution series would show).
+    Direction is recorded because "switched" alone cannot distinguish recovery
+    from degradation.
+    """
+    out: list[dict] = []
+    prev_h = None
+    t_base = ts[start] if start < len(ts) else (ts[0] if ts else 0.0)
+    for i in range(start, len(st)):
+        h = _height_of(st[i])
+        if h and h != prev_h:
+            if prev_h is not None:
+                out.append(
+                    {
+                        "t": round(ts[i] - t_base, 2),
+                        "from_p": prev_h,
+                        "to_p": h,
+                        "direction": "up" if h > prev_h else "down",
+                        "signal": "decoded_height",
+                    }
+                )
+            prev_h = h
+    log = _last(st, "mse_mime_switch_log") or []
+    for ev in log:
+        if isinstance(ev, dict) and ev.get("mime"):
+            out.append(
+                {
+                    "t": round(float(ev.get("t") or 0) / 1000.0, 2),
+                    "to_mime": ev.get("mime"),
+                    "direction": "codec_change",
+                    "signal": "sourcebuffer_changeType",
+                }
+            )
+    out.sort(key=lambda e: e.get("t") or 0)
+    return out, "decoded_height + sourcebuffer mime history"
+
+
 def _summarize_html5(
     samples: list[dict[str, Any]],
     spec: "_apps.AppSpec",
@@ -327,6 +475,20 @@ def _summarize_html5(
 
     # ── bitrate: real or null, never a stand-in ──────────────────────────────
     bitrate, bitrate_basis = _derive_bitrate(st, ts, first_advance_idx, spec)
+    # ── uniform channel: same signals and same code on every site ────────────
+    u_vbr, u_abr, u_br_basis = delivered_bitrate(st, ts, first_advance_idx)
+    u_reb_n, u_reb_ms, u_reb_spans, u_reb_basis = event_rebuffers(st)
+    u_fps, u_fps_basis = presented_frame_rate(st, ts, first_advance_idx)
+    u_switches, u_sw_basis = switch_events(st, ts, first_advance_idx)
+    # Startup ends at the first frame a viewer could actually see. rVFC's first
+    # presentationTime is that instant; the frame-counter fallback can only
+    # resolve it to the sampling interval.
+    u_startup_ms = _num(_last(st, "first_presentation_ms"))
+    u_startup_basis = (
+        "requestVideoFrameCallback first presentationTime"
+        if u_startup_ms is not None
+        else "unavailable (requestVideoFrameCallback not supported here)"
+    )
 
     conn = [parse_connection_speed_mbps(x) for x in st]
     conn_vals = [c for c in conn if c is not None]
@@ -378,6 +540,52 @@ def _summarize_html5(
         # ── QoEMetrics fields ────────────────────────────────────────────────
         "video_startup_time_ms": startup_ms,
         "mean_bitrate_mbps": bitrate,
+        # ── the five target metrics, one method for every app ────────────────
+        # Additive and independent of the legacy keys above, which are retained
+        # unchanged so existing consumers and ~400 stored runs keep working.
+        "uniform": {
+            "schema": "uniform_qoe/1",
+            "sampling_interval_s": _num(_last(st, "sampling_interval_s")),
+            "startup_delay_ms": u_startup_ms,
+            "startup_basis": u_startup_basis,
+            "buffer_level_secs": {
+                "mean": _mean([b for b in buf[first_advance_idx:] if b is not None]),
+                "min": min(
+                    [b for b in buf[first_advance_idx:] if b is not None], default=None
+                ),
+                "max": max(
+                    [b for b in buf[first_advance_idx:] if b is not None], default=None
+                ),
+                "basis": "video.buffered end - currentTime, sampled once per interval",
+            },
+            "rebuffer_events": u_reb_n,
+            "rebuffer_duration_ms": u_reb_ms,
+            "rebuffer_spans": u_reb_spans,
+            "rebuffer_basis": u_reb_basis,
+            "delivered_video_bitrate_mbps": u_vbr,
+            "delivered_audio_bitrate_mbps": u_abr,
+            "bitrate_basis": u_br_basis,
+            "switch_events": u_switches,
+            "switch_count": len(u_switches),
+            "switch_basis": u_sw_basis,
+            "rendered_fps": u_fps,
+            "rendered_fps_basis": u_fps_basis,
+            # Raw-only, per the brief: dropped frames matter little for
+            # streaming and throughput is not QoE.
+            "raw_decoded_frames": _num(_last(st, "total_video_frames")),
+            "raw_dropped_frames": _num(_last(st, "dropped_video_frames")),
+            "raw_presented_frames": _num(_last(st, "presented_frames")),
+            "mse_video_bytes": _num(_last(st, "mse_video_bytes")),
+            "mse_audio_bytes": _num(_last(st, "mse_audio_bytes")),
+            "mse_video_mime": _last(st, "mse_video_mime"),
+            "mse_audio_mime": _last(st, "mse_audio_mime"),
+            "rt_media_bytes": _num(_last(st, "rt_media_bytes")),
+            "rt_sizes_usable": _last(st, "rt_sizes_usable"),
+            "uses_worker_media": _last(st, "uses_worker_media"),
+            "mean_processing_duration_ms": _num(
+                _last(st, "mean_processing_duration_ms")
+            ),
+        },
         "max_bitrate_mbps": None,
         "min_bitrate_mbps": None,
         "mean_watched_bitrate_mbps": None,
