@@ -87,7 +87,17 @@ def main(jsonl, pcap):
     if fp_ms is None:
         print("no first_presentation_ms; cannot cross-check")
         return
-    frame_wall = nav_wall + fp_ms / 1000.0
+    # first_presentation_ms is presentationTime - S.t0, and S.t0 is
+    # performance.now() at PROBE INSTALL, not navigationStart. The probe runs
+    # at document-start but that is still some milliseconds in (697 ms on the
+    # run this was built against), so the offset has to be added back before
+    # the figure can be placed on the page timeline. Omitting it understates
+    # every startup figure by probe_t0_page_ms. It cancels in the DIFFERENCE
+    # between two startup definitions, which is why an internal-consistency
+    # check does not catch it.
+    probe_t0 = st_last.get("probe_t0_page_ms") or 0
+    fp_from_nav_ms = fp_ms + probe_t0
+    frame_wall = nav_wall + fp_from_nav_ms / 1000.0
 
     # ---- find the media peer and its first packet after navigationStart ----
     peer_bytes = collections.Counter()
@@ -121,10 +131,15 @@ def main(jsonl, pcap):
     first_media_wall = after[0][0]
 
     print()
-    print("STARTUP, three definitions, one clock")
+    print("STARTUP, four definitions, one clock")
     print(
-        "  navigationStart            -> first presented frame : %8.0f ms  (= startup_delay_ms)"
+        "  probe install (document-start) -> first frame        : %8.0f ms  (= startup_delay_ms as stored)"
         % fp_ms
+    )
+    print("     probe installed at page t = %+.0f ms" % probe_t0)
+    print(
+        "  navigationStart            -> first presented frame : %8.0f ms"
+        % fp_from_nav_ms
     )
     print(
         "  first media-peer packet    -> first presented frame : %8.0f ms  (pcap cross-check)"
@@ -134,21 +149,27 @@ def main(jsonl, pcap):
         "     first media packet at page t = %+.0f ms"
         % ((first_media_wall - nav_wall) * 1000.0)
     )
-    ib = st_last.get("initial_buffering_ms")
-    print("  player initial buffer fill (initial_buffering_ms)   : %8s ms" % ib)
-    print(
-        "  legacy startup_ms (counter-advance artifact)        : %8s ms"
-        % (
-            json.loads(
-                pathlib.Path(jsonl)
-                .with_name(pathlib.Path(jsonl).name.replace(".jsonl", "_record.json"))
-                .read_text()
-            )
-            .get("player_qoe", {})
-            .get("youtube", {})
-            .get("startup_ms")
-        )
+    # initial_buffering_ms is derived, not a per-sample field: sum the waiting
+    # spans that occurred before any media time had elapsed.
+    spans = st_last.get("waiting_spans") or []
+    ib = sum(
+        float(w.get("dur_ms") or 0)
+        for w in spans
+        if isinstance(w, dict) and float(w.get("ct") or 0) <= 0
     )
+    print("  player initial buffer fill (initial_buffering_ms)   : %8.0f ms" % ib)
+    rec = pathlib.Path(jsonl).with_name(
+        pathlib.Path(jsonl).name.replace(".jsonl", "_record.json")
+    )
+    if rec.exists():
+        pq = json.loads(rec.read_text()).get("player_qoe") or {}
+        for app_name, q in pq.items():
+            if isinstance(q, dict) and q.get("startup_ms") is not None:
+                print(
+                    "  legacy startup_ms (counter-advance artifact)        : %8s ms"
+                    " <- floored at one sampling interval by construction"
+                    % q.get("startup_ms")
+                )
     dcl = st_last.get("dom_content_loaded_ms")
     print("  (context) DOMContentLoaded at page t                : %8s ms" % dcl)
 

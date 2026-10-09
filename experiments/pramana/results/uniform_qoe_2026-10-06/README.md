@@ -1,5 +1,13 @@
 # Uniform streaming-QoE tool — validation, 2026-10-06/08
 
+> **Read `CORRECTIONS.md` first.** A verification pass on 2026-10-09 overturned
+> several claims below: the delivered-bitrate check does **not** fail (it was a
+> broken reference, now 1.056-1.092 and passing 6/6), every rebuffer count here
+> is **one too high**, the "AV1 -> VP9 between 1.5 and 3 Mbps" transition is
+> **not reproducible**, and the Resource Timing shortfall is **not** caused by
+> this probe's filter. Numbers in this file that `CORRECTIONS.md` supersedes are
+> marked inline.
+
 One extraction method and one output schema for any browser-based streaming
 site, with no per-site APIs. Validated against YouTube (stats-for-nerds as
 ground truth), then applied to Vimeo.
@@ -39,11 +47,18 @@ readings share one timestamp and no interpolation is needed.
 | Decoded frames | `sfn_dims_and_frames` | match **0.976–1.000**, MAE **0.06–0.47** frames | **PASS** 6/6 |
 | Rebuffer events | `sfn_player_state == 3` | ours 1–2 vs 0–1, \|Δ\| ≤ 1 | **PASS** 6/6 |
 | Switch events | `sfn_codecs` itag changes | **exact match 6/6**, incl. 394→395→396→397 at 1 Mbps | **PASS** 6/6 |
-| Delivered bitrate | per-app pcap bytes | ratio 1.29–2.24 vs bound [1.00, 1.25] | **FAIL** 6/6 |
+| Delivered bitrate | per-app pcap bytes | ratio 1.29–2.24 vs bound [1.00, 1.25] | ~~FAIL 6/6~~ **superseded — PASS 6/6 at 1.056–1.092 against media-peer bytes, see CORRECTIONS.md §1** |
 | Startup delay | pcap first byte → first presented frame | reported only (weak reference) | n/a |
 | Rendered fps | none exists | internal check: rendered ≤ decoded×1.05 | **PASS** 6/6 |
 
 ### Why the bitrate check failed, and what it means
+
+> **Superseded by `CORRECTIONS.md` §1.** The first point below is right: the
+> reference was at fault, not the metric. Points 2 and 3 are wrong. The media
+> flow at 3/6/10 Mbps was attributed and its bytes were present; it simply
+> carried no hostname for a name-based filter to match. QUIC is **not** the
+> explanation -- it carries the media on all six rungs, including the three
+> that attributed correctly.
 
 The failure is in the **reference**, not the metric:
 
@@ -72,13 +87,21 @@ read 0.
 
 YouTube's shortfall is **not** CORS zeroing (`rt_size_zeroed_entries` = 0 on
 every rung) and **not** buffer eviction (10–18 entries against a 250-entry
-default). Probable cause is this probe's own filter — an `initiatorType`
-allowlist plus a 20 KB floor — which is **unconfirmed**. RT is therefore reported
-as corroboration, not as an independent validator, on YouTube.
+default). ~~Probable cause is this probe's own filter — an `initiatorType`
+allowlist plus a 20 KB floor.~~ **That is now disproven**: measured unfiltered,
+the filter accounts for 74,523 B — 1.07 % — of a 10.90 % shortfall, and the
+buffer never overflowed (0 events against 3000 entries). The remaining ~10 % is
+**unknown**; see `CORRECTIONS.md` §6. RT is therefore reported as corroboration,
+not as an independent validator, on YouTube.
 
 ## Preliminary Vimeo results
 
 Reference is media-host pcap bytes plus RT; there is no stats-for-nerds.
+
+Rebuffer counts in this table are **one too high** — the initial buffer fill
+was miscounted as a rebuffer. Corrected column: 3, 0, 0, 0, 0, 3. Startup here
+is `startup_delay_ms` (probe install → first presented frame), not the legacy
+~1.0 s figure. See `CORRECTIONS.md` §2 and §3.
 
 | rung | res | startup | rebuf (ms) | video Mbps | audio Mbps | switches | rendered fps | buffer mean | pcap÷MSE | RT÷MSE | verdict |
 |---|---|---|---|---|---|---|---|---|---|---|---|
@@ -103,13 +126,19 @@ in this sweep.
 ## Resolution vs bitrate — distinct, with evidence from this ladder
 
 YouTube held **720p at 3, 6 and 10 Mbps** while appending **identical bytes**
-(17,686,076 at all three rungs). Vimeo held **720p at 6 and 10 Mbps** with
+(17,686,076 at all three rungs) — but this rests on one trial per rung, and a
+repeat at 3 Mbps served **480p AV1** instead with an identical player box, so
+the rendition at a given cap varies between runs (`CORRECTIONS.md` §4). Vimeo held **720p at 6 and 10 Mbps** with
 delivered video bitrate **2.474 vs 2.997 Mbps**. Same resolution, different
 bitrate — they are not interchangeable, and both are reported separately.
 
 ## Known limitations
 
-- **One trial per rung.** No variance estimate.
+- **One trial per rung.** No variance estimate. Repeat trials run on
+  2026-10-09 show this matters: at YouTube 3 Mbps two trials served different
+  renditions (480p AV1 vs 720p VP9) and delivered bitrates differing 2x, with
+  the player box identical. Any single-trial statement about a rung's
+  rendition, codec or delivered bitrate may be luck.
 - **Delivered bitrate saturates when the asset finishes downloading.** YouTube's
   appended bytes are identical at 3/6/10 Mbps because the whole clip was
   fetched, so the figure is bytes ÷ measurement window, not the encoded
