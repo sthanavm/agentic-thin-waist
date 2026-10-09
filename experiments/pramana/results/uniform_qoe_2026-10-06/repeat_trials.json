@@ -1,0 +1,715 @@
+[
+  {
+    "tag": "vimeo_10M_t82_probeon",
+    "app": "vimeo",
+    "bw": 10.0,
+    "n_samples": 167,
+    "startup_delay_ms": 2281.0,
+    "initial_buffering_ms": 455.0,
+    "rebuffer_events": 1,
+    "rebuffer_duration_ms": 582.0,
+    "video_mbps": 2.8937,
+    "audio_mbps": 0.1962,
+    "switch_count": 3,
+    "rendered_fps": 23.17,
+    "res_p": 720,
+    "mse_v": 64680941.0,
+    "mse_a": 4943572.0,
+    "codec": "video/mp4;codecs=av01.0.01M.08.0.111.01.01.01.0",
+    "vmime": "video/mp4;codecs=av01.0.01M.08.0.111.01.01.01.0",
+    "rt_all": 69746921,
+    "rt_media": 69575676,
+    "rt_all_e": 135,
+    "rt_media_e": 66,
+    "rt_drop_init": 26,
+    "rt_drop_floor": 43,
+    "rt_drop_bytes": 171245,
+    "rt_full": 0,
+    "fp_ms": 2281,
+    "peer_ip": "23.211.177.200",
+    "peer_mb": 75.11,
+    "ratio_peer_over_mse": 1.0788,
+    "pcap_all_mb": 77.71,
+    "peer_name": "vod-adaptive-ak.vimeocdn.com",
+    "peer_name_from": "SNI",
+    "names_with_needle": 11,
+    "dns_needle": 11,
+    "sni_needle": 2,
+    "tcp_clienthello_to_peer": 1,
+    "hostattr_needle_mb": 75.97,
+    "hostattr_top": [
+      [
+        "vod-adaptive-ak.vimeocdn.com",
+        75109002
+      ],
+      [
+        "i.vimeocdn.com",
+        865308
+      ],
+      [
+        "r5---sn-jxopj-n5oe.gvt1.com",
+        498881
+      ]
+    ],
+    "adopted": {}
+  },
+  {
+    "tag": "youtube_1M_t1_probeon",
+    "app": "youtube",
+    "bw": 1.0,
+    "n_samples": 166,
+    "startup_delay_ms": 19779.0,
+    "initial_buffering_ms": 5103.0,
+    "rebuffer_events": 2,
+    "rebuffer_duration_ms": 15304.0,
+    "video_mbps": 0.178,
+    "audio_mbps": 0.1289,
+    "switch_count": 3,
+    "rendered_fps": 24.98,
+    "res_p": 360,
+    "mse_v": 4339585.0,
+    "mse_a": 3502924.0,
+    "codec": "video/mp4; codecs=\"av01.0.04M.08\"",
+    "vmime": "video/mp4; codecs=\"av01.0.04M.08\"",
+    "rt_all": 6987336,
+    "rt_media": 6912813,
+    "rt_all_e": 156,
+    "rt_media_e": 17,
+    "rt_drop_init": 11,
+    "rt_drop_floor": 128,
+    "rt_drop_bytes": 74523,
+    "rt_full": 0,
+    "fp_ms": 19779,
+    "peer_ip": "198.189.66.13",
+    "peer_mb": 8.77,
+    "ratio_peer_over_mse": 1.1186,
+    "pcap_all_mb": 17.07,
+    "peer_name": "rr2---sn-jxopj-n5oe.googlevideo.com",
+    "peer_name_from": "SNI",
+    "names_with_needle": 2,
+    "dns_needle": 0,
+    "sni_needle": 2,
+    "tcp_clienthello_to_peer": 1,
+    "hostattr_needle_mb": 8.97,
+    "hostattr_top": [
+      [
+        "rr2---sn-jxopj-n5oe.googlevideo.com",
+        8772559
+      ],
+      [
+        "www.youtube.com",
+        4273176
+      ],
+      [
+        "www.google.com",
+        1671884
+      ]
+    ],
+    "adopted": {}
+  },
+  {
+    "tag": "youtube_1M_t2_probeon",
+    "app": "youtube",
+    "bw": 1.0,
+    "n_samples": 167,
+    "startup_delay_ms": 20731.0,
+    "initial_buffering_ms": 2403.0,
+    "rebuffer_events": 1,
+    "rebuffer_duration_ms": 11147.0,
+    "video_mbps": 0.218,
+    "audio_mbps": 0.1395,
+    "switch_count": 3,
+    "rendered_fps": 24.81,
+    "res_p": 360,
+    "mse_v": 5651518.0,
+    "mse_a": 3433384.0,
+    "codec": "video/mp4; codecs=\"av01.0.01M.08\"",
+    "vmime": "video/mp4; codecs=\"av01.0.01M.08\"",
+    "rt_all": 9185542,
+    "rt_media": 9063851,
+    "rt_all_e": 59,
+    "rt_media_e": 18,
+    "rt_drop_init": 16,
+    "rt_drop_floor": 25,
+    "rt_drop_bytes": 121691,
+    "rt_full": 0,
+    "fp_ms": 20731,
+    "peer_ip": "198.189.66.13",
+    "peer_mb": 10.23,
+    "ratio_peer_over_mse": 1.126,
+    "pcap_all_mb": 16.63,
+    "peer_name": null,
+    "peer_name_from": null,
+    "names_with_needle": 0,
+    "dns_needle": 0,
+    "sni_needle": 0,
+    "tcp_clienthello_to_peer": 0,
+    "hostattr_needle_mb": 0.0,
+    "hostattr_top": [
+      [
+        "www.youtube.com",
+        4314841
+      ],
+      [
+        "r5---sn-jxopj-n5oe.gvt1.com",
+        528155
+      ],
+      [
+        "www.google.com",
+        283906
+      ]
+    ],
+    "adopted": {
+      "198.189.66.13": "youtube:prefix/24"
+    }
+  },
+  {
+    "tag": "youtube_1M_t3_probeon",
+    "app": "youtube",
+    "bw": 1.0,
+    "n_samples": 173,
+    "startup_delay_ms": 19315.0,
+    "initial_buffering_ms": 2125.0,
+    "rebuffer_events": 1,
+    "rebuffer_duration_ms": 15017.0,
+    "video_mbps": 0.2022,
+    "audio_mbps": 0.1302,
+    "switch_count": 4,
+    "rendered_fps": 24.95,
+    "res_p": 360,
+    "mse_v": 5385523.0,
+    "mse_a": 3433384.0,
+    "codec": "video/mp4; codecs=\"av01.0.04M.08\"",
+    "vmime": "video/mp4; codecs=\"av01.0.04M.08\"",
+    "rt_all": 7759177,
+    "rt_media": 7637357,
+    "rt_all_e": 60,
+    "rt_media_e": 17,
+    "rt_drop_init": 16,
+    "rt_drop_floor": 27,
+    "rt_drop_bytes": 121820,
+    "rt_full": 0,
+    "fp_ms": 19315,
+    "peer_ip": "198.189.66.13",
+    "peer_mb": 8.69,
+    "ratio_peer_over_mse": 0.9855,
+    "pcap_all_mb": 16.54,
+    "peer_name": null,
+    "peer_name_from": null,
+    "names_with_needle": 1,
+    "dns_needle": 0,
+    "sni_needle": 1,
+    "tcp_clienthello_to_peer": 0,
+    "hostattr_needle_mb": 1.26,
+    "hostattr_top": [
+      [
+        "www.youtube.com",
+        4277489
+      ],
+      [
+        "rr4---sn-a5meknzr.googlevideo.com",
+        1261407
+      ],
+      [
+        "r5---sn-jxopj-n5oe.gvt1.com",
+        533625
+      ]
+    ],
+    "adopted": {
+      "198.189.66.13": "youtube:prefix/24"
+    }
+  },
+  {
+    "tag": "youtube_3M_t1_probeon",
+    "app": "youtube",
+    "bw": 3.0,
+    "n_samples": 163,
+    "startup_delay_ms": 7448.0,
+    "initial_buffering_ms": 1157.0,
+    "rebuffer_events": 0,
+    "rebuffer_duration_ms": 0,
+    "video_mbps": 0.29,
+    "audio_mbps": 0.0899,
+    "switch_count": 0,
+    "rendered_fps": 24.91,
+    "res_p": 480,
+    "mse_v": 9874338.0,
+    "mse_a": 3433384.0,
+    "codec": "video/mp4; codecs=\"av01.0.04M.08\"",
+    "vmime": "video/mp4; codecs=\"av01.0.04M.08\"",
+    "rt_all": 8322899,
+    "rt_media": 8314664,
+    "rt_all_e": 56,
+    "rt_media_e": 12,
+    "rt_drop_init": 2,
+    "rt_drop_floor": 42,
+    "rt_drop_bytes": 8235,
+    "rt_full": 0,
+    "fp_ms": 7448,
+    "peer_ip": "198.189.66.13",
+    "peer_mb": 11.42,
+    "ratio_peer_over_mse": 0.8583,
+    "pcap_all_mb": 22.06,
+    "peer_name": null,
+    "peer_name_from": null,
+    "names_with_needle": 1,
+    "dns_needle": 0,
+    "sni_needle": 1,
+    "tcp_clienthello_to_peer": 0,
+    "hostattr_needle_mb": 0.04,
+    "hostattr_top": [
+      [
+        "www.youtube.com",
+        4287258
+      ],
+      [
+        "www.google.com",
+        1569665
+      ],
+      [
+        "r5---sn-jxopj-n5oe.gvt1.com",
+        515189
+      ]
+    ],
+    "adopted": {
+      "198.189.66.13": "youtube:prefix/24",
+      "74.125.157.105": "youtube:prefix/16"
+    }
+  },
+  {
+    "tag": "youtube_3M_t2_probeon",
+    "app": "youtube",
+    "bw": 3.0,
+    "n_samples": 162,
+    "startup_delay_ms": 8057.0,
+    "initial_buffering_ms": 1846.0,
+    "rebuffer_events": 0,
+    "rebuffer_duration_ms": 0,
+    "video_mbps": 0.5922,
+    "audio_mbps": 0.1186,
+    "switch_count": 0,
+    "rendered_fps": 24.97,
+    "res_p": 720,
+    "mse_v": 17686076.0,
+    "mse_a": 3433384.0,
+    "codec": "video/webm; codecs=\"vp09.00.51.08.01.01.01.01.00\"",
+    "vmime": "video/webm; codecs=\"vp09.00.51.08.01.01.01.01.00\"",
+    "rt_all": 17160049,
+    "rt_media": 17158143,
+    "rt_all_e": 40,
+    "rt_media_e": 12,
+    "rt_drop_init": 2,
+    "rt_drop_floor": 26,
+    "rt_drop_bytes": 1906,
+    "rt_full": 0,
+    "fp_ms": 8057,
+    "peer_ip": "198.189.66.13",
+    "peer_mb": 22.6,
+    "ratio_peer_over_mse": 1.07,
+    "pcap_all_mb": 30.34,
+    "peer_name": null,
+    "peer_name_from": null,
+    "names_with_needle": 0,
+    "dns_needle": 0,
+    "sni_needle": 0,
+    "tcp_clienthello_to_peer": 0,
+    "hostattr_needle_mb": 0.0,
+    "hostattr_top": [
+      [
+        "www.youtube.com",
+        4267847
+      ],
+      [
+        "www.google.com",
+        1567607
+      ],
+      [
+        "r5---sn-jxopj-n5oe.gvt1.com",
+        501736
+      ]
+    ],
+    "adopted": {
+      "198.189.66.13": "youtube:prefix/24"
+    }
+  },
+  {
+    "tag": "youtube_3M_t3_probeon",
+    "app": "youtube",
+    "bw": 3.0,
+    "n_samples": 164,
+    "startup_delay_ms": 7527.0,
+    "initial_buffering_ms": 1071.0,
+    "rebuffer_events": 0,
+    "rebuffer_duration_ms": 0,
+    "video_mbps": 0.5964,
+    "audio_mbps": 0.1177,
+    "switch_count": 0,
+    "rendered_fps": 24.94,
+    "res_p": 720,
+    "mse_v": 17686076.0,
+    "mse_a": 3433384.0,
+    "codec": "video/webm; codecs=\"vp09.00.51.08.01.01.01.01.00\"",
+    "vmime": "video/webm; codecs=\"vp09.00.51.08.01.01.01.01.00\"",
+    "rt_all": 17002487,
+    "rt_media": 17000461,
+    "rt_all_e": 125,
+    "rt_media_e": 15,
+    "rt_drop_init": 2,
+    "rt_drop_floor": 108,
+    "rt_drop_bytes": 2026,
+    "rt_full": 0,
+    "fp_ms": 7527,
+    "peer_ip": "198.189.66.13",
+    "peer_mb": 22.61,
+    "ratio_peer_over_mse": 1.0705,
+    "pcap_all_mb": 30.41,
+    "peer_name": null,
+    "peer_name_from": null,
+    "names_with_needle": 0,
+    "dns_needle": 0,
+    "sni_needle": 0,
+    "tcp_clienthello_to_peer": 0,
+    "hostattr_needle_mb": 0.0,
+    "hostattr_top": [
+      [
+        "www.youtube.com",
+        4299835
+      ],
+      [
+        "www.google.com",
+        1554840
+      ],
+      [
+        "r5---sn-jxopj-n5oe.gvt1.com",
+        514336
+      ]
+    ],
+    "adopted": {
+      "198.189.66.13": "youtube:prefix/24"
+    }
+  },
+  {
+    "tag": "vimeo_3M_t1_probeon",
+    "app": "vimeo",
+    "bw": 3.0,
+    "n_samples": 169,
+    "startup_delay_ms": 4450.0,
+    "initial_buffering_ms": 1386.0,
+    "rebuffer_events": 0,
+    "rebuffer_duration_ms": 0,
+    "video_mbps": 1.0842,
+    "audio_mbps": 0.2023,
+    "switch_count": 4,
+    "rendered_fps": 23.79,
+    "res_p": 540,
+    "mse_v": 24589893.0,
+    "mse_a": 5089056.0,
+    "codec": "video/mp4;codecs=av01.0.01M.08.0.111.01.01.01.0",
+    "vmime": "video/mp4;codecs=av01.0.01M.08.0.111.01.01.01.0",
+    "rt_all": 29765472,
+    "rt_media": 29633057,
+    "rt_all_e": 129,
+    "rt_media_e": 65,
+    "rt_drop_init": 26,
+    "rt_drop_floor": 38,
+    "rt_drop_bytes": 132415,
+    "rt_full": 0,
+    "fp_ms": 4450,
+    "peer_ip": "23.211.177.13",
+    "peer_mb": 32.16,
+    "ratio_peer_over_mse": 1.0835,
+    "pcap_all_mb": 34.67,
+    "peer_name": "vod-adaptive-ak.vimeocdn.com",
+    "peer_name_from": "SNI",
+    "names_with_needle": 5,
+    "dns_needle": 4,
+    "sni_needle": 3,
+    "tcp_clienthello_to_peer": 1,
+    "hostattr_needle_mb": 33.03,
+    "hostattr_top": [
+      [
+        "vod-adaptive-ak.vimeocdn.com",
+        32157419
+      ],
+      [
+        "i.vimeocdn.com",
+        870789
+      ],
+      [
+        "r5---sn-jxopj-n5oe.gvt1.com",
+        501122
+      ]
+    ],
+    "adopted": {}
+  },
+  {
+    "tag": "vimeo_3M_t2_probeon",
+    "app": "vimeo",
+    "bw": 3.0,
+    "n_samples": 169,
+    "startup_delay_ms": 4260.0,
+    "initial_buffering_ms": 1378.0,
+    "rebuffer_events": 0,
+    "rebuffer_duration_ms": 0,
+    "video_mbps": 1.0243,
+    "audio_mbps": 0.1956,
+    "switch_count": 4,
+    "rendered_fps": 23.74,
+    "res_p": 540,
+    "mse_v": 22997063.0,
+    "mse_a": 4943572.0,
+    "codec": "video/mp4;codecs=av01.0.01M.08.0.111.01.01.01.0",
+    "vmime": "video/mp4;codecs=av01.0.01M.08.0.111.01.01.01.0",
+    "rt_all": 28027674,
+    "rt_media": 27883142,
+    "rt_all_e": 130,
+    "rt_media_e": 63,
+    "rt_drop_init": 26,
+    "rt_drop_floor": 41,
+    "rt_drop_bytes": 144532,
+    "rt_full": 0,
+    "fp_ms": 4260,
+    "peer_ip": "23.211.177.7",
+    "peer_mb": 30.34,
+    "ratio_peer_over_mse": 1.086,
+    "pcap_all_mb": 32.67,
+    "peer_name": "vod-adaptive-ak.vimeocdn.com",
+    "peer_name_from": "SNI",
+    "names_with_needle": 5,
+    "dns_needle": 4,
+    "sni_needle": 3,
+    "tcp_clienthello_to_peer": 1,
+    "hostattr_needle_mb": 31.21,
+    "hostattr_top": [
+      [
+        "vod-adaptive-ak.vimeocdn.com",
+        30344251
+      ],
+      [
+        "i.vimeocdn.com",
+        862076
+      ],
+      [
+        "r5---sn-jxopj-n5oe.gvt1.com",
+        500725
+      ]
+    ],
+    "adopted": {}
+  },
+  {
+    "tag": "vimeo_3M_t3_probeon",
+    "app": "vimeo",
+    "bw": 3.0,
+    "n_samples": 168,
+    "startup_delay_ms": 4572.0,
+    "initial_buffering_ms": 1411.0,
+    "rebuffer_events": 0,
+    "rebuffer_duration_ms": 0,
+    "video_mbps": 1.0813,
+    "audio_mbps": 0.2082,
+    "switch_count": 4,
+    "rendered_fps": 23.71,
+    "res_p": 540,
+    "mse_v": 24577871.0,
+    "mse_a": 5089056.0,
+    "codec": "video/mp4;codecs=av01.0.05M.08.0.111.01.01.01.0",
+    "vmime": "video/mp4;codecs=av01.0.05M.08.0.111.01.01.01.0",
+    "rt_all": 29765366,
+    "rt_media": 29621035,
+    "rt_all_e": 132,
+    "rt_media_e": 65,
+    "rt_drop_init": 27,
+    "rt_drop_floor": 40,
+    "rt_drop_bytes": 144331,
+    "rt_full": 0,
+    "fp_ms": 4572,
+    "peer_ip": "23.211.177.12",
+    "peer_mb": 32.22,
+    "ratio_peer_over_mse": 1.086,
+    "pcap_all_mb": 34.92,
+    "peer_name": "vod-adaptive-ak.vimeocdn.com",
+    "peer_name_from": "SNI",
+    "names_with_needle": 5,
+    "dns_needle": 4,
+    "sni_needle": 3,
+    "tcp_clienthello_to_peer": 1,
+    "hostattr_needle_mb": 33.08,
+    "hostattr_top": [
+      [
+        "vod-adaptive-ak.vimeocdn.com",
+        32218371
+      ],
+      [
+        "i.vimeocdn.com",
+        865781
+      ],
+      [
+        "r5---sn-jxopj-n5oe.gvt1.com",
+        513263
+      ]
+    ],
+    "adopted": {}
+  },
+  {
+    "tag": "vimeo_6M_t1_probeon",
+    "app": "vimeo",
+    "bw": 6.0,
+    "n_samples": 167,
+    "startup_delay_ms": 2531.0,
+    "initial_buffering_ms": 631.0,
+    "rebuffer_events": 0,
+    "rebuffer_duration_ms": 0,
+    "video_mbps": 2.2911,
+    "audio_mbps": 0.2021,
+    "switch_count": 4,
+    "rendered_fps": 23.67,
+    "res_p": 720,
+    "mse_v": 51512987.0,
+    "mse_a": 5089056.0,
+    "codec": "video/mp4;codecs=av01.0.05M.08.0.111.01.01.01.0",
+    "vmime": "video/mp4;codecs=av01.0.05M.08.0.111.01.01.01.0",
+    "rt_all": 56718324,
+    "rt_media": 56569434,
+    "rt_all_e": 133,
+    "rt_media_e": 67,
+    "rt_drop_init": 26,
+    "rt_drop_floor": 40,
+    "rt_drop_bytes": 148890,
+    "rt_full": 0,
+    "fp_ms": 2531,
+    "peer_ip": "23.211.177.12",
+    "peer_mb": 61.72,
+    "ratio_peer_over_mse": 1.0904,
+    "pcap_all_mb": 64.34,
+    "peer_name": "vod-adaptive-ak.vimeocdn.com",
+    "peer_name_from": "SNI",
+    "names_with_needle": 6,
+    "dns_needle": 6,
+    "sni_needle": 2,
+    "tcp_clienthello_to_peer": 1,
+    "hostattr_needle_mb": 62.58,
+    "hostattr_top": [
+      [
+        "vod-adaptive-ak.vimeocdn.com",
+        61716720
+      ],
+      [
+        "i.vimeocdn.com",
+        863129
+      ],
+      [
+        "r5---sn-jxopj-n5oe.gvt1.com",
+        497288
+      ]
+    ],
+    "adopted": {}
+  },
+  {
+    "tag": "vimeo_6M_t2_probeon",
+    "app": "vimeo",
+    "bw": 6.0,
+    "n_samples": 167,
+    "startup_delay_ms": 3094.0,
+    "initial_buffering_ms": 1213.0,
+    "rebuffer_events": 0,
+    "rebuffer_duration_ms": 0,
+    "video_mbps": 2.2962,
+    "audio_mbps": 0.196,
+    "switch_count": 4,
+    "rendered_fps": 23.67,
+    "res_p": 720,
+    "mse_v": 51186648.0,
+    "mse_a": 4943572.0,
+    "codec": "video/mp4;codecs=av01.0.05M.08.0.111.01.01.01.0",
+    "vmime": "video/mp4;codecs=av01.0.05M.08.0.111.01.01.01.0",
+    "rt_all": 56247158,
+    "rt_media": 56098307,
+    "rt_all_e": 132,
+    "rt_media_e": 66,
+    "rt_drop_init": 26,
+    "rt_drop_floor": 40,
+    "rt_drop_bytes": 148851,
+    "rt_full": 0,
+    "fp_ms": 3094,
+    "peer_ip": "23.211.177.12",
+    "peer_mb": 60.53,
+    "ratio_peer_over_mse": 1.0784,
+    "pcap_all_mb": 63.12,
+    "peer_name": "vod-adaptive-ak.vimeocdn.com",
+    "peer_name_from": "SNI",
+    "names_with_needle": 6,
+    "dns_needle": 6,
+    "sni_needle": 3,
+    "tcp_clienthello_to_peer": 1,
+    "hostattr_needle_mb": 61.39,
+    "hostattr_top": [
+      [
+        "vod-adaptive-ak.vimeocdn.com",
+        60529631
+      ],
+      [
+        "i.vimeocdn.com",
+        864700
+      ],
+      [
+        "r5---sn-jxopj-n5oe.gvt1.com",
+        508681
+      ]
+    ],
+    "adopted": {}
+  },
+  {
+    "tag": "vimeo_6M_t3_probeon",
+    "app": "vimeo",
+    "bw": 6.0,
+    "n_samples": 167,
+    "startup_delay_ms": 2726.0,
+    "initial_buffering_ms": 880.0,
+    "rebuffer_events": 0,
+    "rebuffer_duration_ms": 0,
+    "video_mbps": 2.333,
+    "audio_mbps": 0.2021,
+    "switch_count": 5,
+    "rendered_fps": 23.56,
+    "res_p": 720,
+    "mse_v": 52560538.0,
+    "mse_a": 5089056.0,
+    "codec": "video/mp4;codecs=av01.0.09M.08.0.111.01.01.01.0",
+    "vmime": "video/mp4;codecs=av01.0.09M.08.0.111.01.01.01.0",
+    "rt_all": 57784341,
+    "rt_media": 57588909,
+    "rt_all_e": 143,
+    "rt_media_e": 67,
+    "rt_drop_init": 28,
+    "rt_drop_floor": 48,
+    "rt_drop_bytes": 195432,
+    "rt_full": 0,
+    "fp_ms": 2726,
+    "peer_ip": "23.211.177.37",
+    "peer_mb": 62.55,
+    "ratio_peer_over_mse": 1.085,
+    "pcap_all_mb": 65.17,
+    "peer_name": "vod-adaptive-ak.vimeocdn.com",
+    "peer_name_from": "SNI",
+    "names_with_needle": 6,
+    "dns_needle": 6,
+    "sni_needle": 3,
+    "tcp_clienthello_to_peer": 1,
+    "hostattr_needle_mb": 63.41,
+    "hostattr_top": [
+      [
+        "vod-adaptive-ak.vimeocdn.com",
+        62549280
+      ],
+      [
+        "i.vimeocdn.com",
+        863271
+      ],
+      [
+        "r5---sn-jxopj-n5oe.gvt1.com",
+        498830
+      ]
+    ],
+    "adopted": {}
+  }
+]

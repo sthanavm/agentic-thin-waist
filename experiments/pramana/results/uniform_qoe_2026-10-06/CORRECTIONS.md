@@ -17,10 +17,23 @@ measured), or **unknown** (candidate explanations exist and none is proven).
 page load" and, at 3/6/10 Mbps, a "QUIC/HTTP3 attribution gap".
 
 **Measured now:** against bytes to and from the dominant media peer IP -- which
-needs no hostname at all -- the ratio is **1.056-1.092 on all six rungs**,
-inside the band. A seventh, independent run reproduces it at **1.119**. The
-metric was never wrong; the reference was being computed from a hostname-string
-filter that returned 0.00 whenever the media flow had no name.
+needs no hostname at all -- the ratio is **1.056-1.120 on all six rungs**,
+inside the band (re-verified 2026-10-09). The original failure came from a
+hostname-string filter that returned 0.00 whenever the media flow had no name.
+
+> **Superseded in part by `REPEAT_TRIALS.md`.** Across 13 runs this reference
+> passes 11 and **fails low on 2** (0.9855 and 0.8583), because YouTube
+> delivered the media over two peer IPs in those runs and a single-peer
+> reference cannot see the second. A ratio under 1.00 is impossible for a
+> complete reference, so those are reference failures -- but the reference has
+> **not** been patched, because no peer-selection rule tested passes all 13.
+> Treat YouTube's pcap agreement as **unresolved**, not as a pass. Vimeo's
+> 7/7 at 1.078-1.090 is the sound part.
+
+**Still open:** whether the naming unknown below is now closed -- it is; see
+`REPEAT_TRIALS.md`. The media peer is named from TLS SNI only, never DNS, and
+YouTube opened a TCP ClientHello to it in just 1 of 6 runs against Vimeo's
+7 of 7.
 
 Three of my own explanations for the original failure are **disproven**:
 
