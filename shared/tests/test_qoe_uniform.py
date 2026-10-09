@@ -107,8 +107,8 @@ def test_bitrate_rejects_a_counter_that_goes_backwards():
 # ── rebuffering ─────────────────────────────────────────────────────────────
 def test_rebuffers_come_from_waiting_to_playing_spans():
     spans = [
-        {"start": 1000, "end": 2500, "dur_ms": 1500, "during_seek": False},
-        {"start": 9000, "end": 9400, "dur_ms": 400, "during_seek": False},
+        {"start": 1000, "end": 2500, "dur_ms": 1500, "ct": 4.0, "during_seek": False},
+        {"start": 9000, "end": 9400, "dur_ms": 400, "ct": 11.2, "during_seek": False},
     ]
     s = _samples([{}, {"waiting_spans": spans}])
     n, ms, real, basis = qoe.event_rebuffers(_st(s))
@@ -117,11 +117,38 @@ def test_rebuffers_come_from_waiting_to_playing_spans():
     assert "waiting" in basis
 
 
+def test_initial_buffering_is_startup_not_a_rebuffer():
+    """Regression. Measured across 12 ladder runs: every run had exactly one
+    `waiting` span at currentTime 0 - the initial buffer fill - so counting it
+    inflated every rebuffer figure by one. YouTube at 1.5/3/6/10Mbps reported
+    one rebuffer and actually had none.
+    """
+    spans = [
+        {"start": 500, "end": 1936, "dur_ms": 1436, "ct": 0, "during_seek": False},
+        {"start": 9000, "end": 11021, "dur_ms": 2021, "ct": 27.5, "during_seek": False},
+    ]
+    s = _samples([{"waiting_spans": spans}])
+    n, ms, real, basis = qoe.event_rebuffers(_st(s))
+    assert n == 1
+    assert ms == 2021.0
+    assert "initial buffering excluded" in basis
+    assert qoe.initial_buffering_ms(_st(s)) == 1436.0
+
+
+def test_a_run_whose_only_stall_was_the_initial_fill_has_zero_rebuffers():
+    spans = [{"start": 0, "end": 676, "dur_ms": 676, "ct": 0, "during_seek": False}]
+    s = _samples([{"waiting_spans": spans}])
+    n, ms, _, _ = qoe.event_rebuffers(_st(s))
+    assert n == 0
+    assert ms == 0.0
+    assert qoe.initial_buffering_ms(_st(s)) == 676.0
+
+
 def test_a_seek_is_not_a_rebuffer():
     """Seeking also fires `waiting`; counting it would invent stalls."""
     spans = [
-        {"start": 1000, "end": 2000, "dur_ms": 1000, "during_seek": True},
-        {"start": 5000, "end": 5500, "dur_ms": 500, "during_seek": False},
+        {"start": 1000, "end": 2000, "dur_ms": 1000, "ct": 8.0, "during_seek": True},
+        {"start": 5000, "end": 5500, "dur_ms": 500, "ct": 9.5, "during_seek": False},
     ]
     s = _samples([{"waiting_spans": spans}])
     n, ms, _, _ = qoe.event_rebuffers(_st(s))

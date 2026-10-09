@@ -457,6 +457,9 @@ class ExperimentConfig:
     # independent of the reference it is validated against; the vendor values
     # are always recorded under `sfn_*` regardless.
     merge_vendor_stats: bool = False
+    # Turn the uniform streaming probe off for this run. Used to measure the
+    # probe's own cost: the same cell with hooks on and off, on a 2-vCPU host.
+    disable_stream_probe: bool = False
 
     experiment_id: str = ""
     slug: str = ""
@@ -802,6 +805,8 @@ def build_collector_jobs(
                 # the generic channel is compared against, so merging them into
                 # the generic fields would make that comparison circular.
                 "merge_vendor_stats": bool(cfg.merge_vendor_stats),
+                # A/B control for measuring the probe's own overhead.
+                "disable_stream_probe": bool(cfg.disable_stream_probe),
             }
         )
         display += 1

@@ -248,9 +248,47 @@ def event_rebuffers(
     spans = _last(st, "waiting_spans")
     if spans is None:
         return None, None, [], "unavailable (no media-event probe in these samples)"
-    real = [w for w in spans if isinstance(w, dict) and not w.get("during_seek")]
+    real, initial = [], []
+    for w in spans:
+        if not isinstance(w, dict):
+            continue
+        if w.get("during_seek"):
+            continue  # a seek fires `waiting` too, and a seek is not a stall
+        # A `waiting` while currentTime is still 0 is INITIAL buffering, which
+        # is startup, not a rebuffer. Measured across 12 ladder runs: every run
+        # had exactly one such span, so counting them inflated every rebuffer
+        # figure by one - YouTube at 1.5/3/6/10Mbps and Vimeo at 1/1.5/3/6Mbps
+        # each had zero real rebuffers while reporting one.
+        if float(w.get("ct") or 0) <= 0:
+            initial.append(w)
+            continue
+        real.append(w)
     total = sum(float(w.get("dur_ms") or 0) for w in real)
-    return len(real), round(total, 1), real, "media events (waiting -> playing)"
+    out = list(real)
+    basis = "media events (waiting -> playing), initial buffering excluded"
+    if initial:
+        basis += " [%d initial span(s), %.0fms, reported as startup]" % (
+            len(initial),
+            sum(float(w.get("dur_ms") or 0) for w in initial),
+        )
+    return len(real), round(total, 1), out, basis
+
+
+def initial_buffering_ms(st: list[dict[str, Any]]) -> Optional[float]:
+    """Time spent in the first `waiting` span, before any media time elapsed.
+
+    Kept as its own figure rather than folded into either metric: it is part of
+    startup, and reporting it separately is what keeps the rebuffer count clean.
+    """
+    spans = _last(st, "waiting_spans")
+    if spans is None:
+        return None
+    tot = sum(
+        float(w.get("dur_ms") or 0)
+        for w in spans
+        if isinstance(w, dict) and float(w.get("ct") or 0) <= 0
+    )
+    return round(tot, 1) if tot else 0.0
 
 
 def presented_frame_rate(
@@ -562,6 +600,7 @@ def _summarize_html5(
             "rebuffer_duration_ms": u_reb_ms,
             "rebuffer_spans": u_reb_spans,
             "rebuffer_basis": u_reb_basis,
+            "initial_buffering_ms": initial_buffering_ms(st),
             "delivered_video_bitrate_mbps": u_vbr,
             "delivered_audio_bitrate_mbps": u_abr,
             "bitrate_basis": u_br_basis,
@@ -581,6 +620,25 @@ def _summarize_html5(
             "mse_audio_mime": _last(st, "mse_audio_mime"),
             "rt_media_bytes": _num(_last(st, "rt_media_bytes")),
             "rt_sizes_usable": _last(st, "rt_sizes_usable"),
+            # Resource Timing accounting, so a shortfall against the MSE
+            # figure can be attributed instead of guessed at: the unfiltered
+            # total, what this probe's own filter removed, and whether the
+            # entry buffer overflowed.
+            "rt_all_bytes": _num(_last(st, "rt_all_bytes")),
+            "rt_all_entries": _num(_last(st, "rt_all_entries")),
+            "rt_media_entries": _num(_last(st, "rt_media_entries")),
+            "rt_dropped_by_initiator": _num(_last(st, "rt_dropped_by_initiator")),
+            "rt_dropped_by_size_floor": _num(_last(st, "rt_dropped_by_size_floor")),
+            "rt_dropped_bytes": _num(_last(st, "rt_dropped_bytes")),
+            "rt_bytes_by_initiator": _last(st, "rt_bytes_by_initiator"),
+            "rt_buffer_full_events": _num(_last(st, "rt_buffer_full_events")),
+            # Page-timeline anchors. nav_start_page_ms == 0 confirms the
+            # performance timeline origin is navigationStart, which is what
+            # makes startup_delay_ms cross-checkable against a capture.
+            "page_now_ms": _num(_last(st, "page_now_ms")),
+            "probe_t0_page_ms": _num(_last(st, "probe_t0_page_ms")),
+            "nav_start_page_ms": _num(_last(st, "nav_start_page_ms")),
+            "dom_content_loaded_ms": _num(_last(st, "dom_content_loaded_ms")),
             "uses_worker_media": _last(st, "uses_worker_media"),
             "mean_processing_duration_ms": _num(
                 _last(st, "mean_processing_duration_ms")

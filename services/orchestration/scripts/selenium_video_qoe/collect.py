@@ -304,6 +304,18 @@ STREAM_PROBE_JS = r"""
             try { v.requestVideoFrameCallback(step); } catch (e) {}
         }
     };
+    // Resource Timing evicts entries once its buffer fills, with no error. Raise
+    // the limit and count the event, so an undercount is attributable instead of
+    // guessed at.
+    try {
+        if (performance.setResourceTimingBufferSize) {
+            performance.setResourceTimingBufferSize(3000);
+        }
+        window.__netgentRtBufferFull = 0;
+        performance.addEventListener('resourcetimingbufferfull', () => {
+            try { window.__netgentRtBufferFull += 1; } catch (e) {}
+        });
+    } catch (e) { /* observability only */ }
     const scan = () => {
         try { document.querySelectorAll('video').forEach(attach); } catch (e) {}
     };
@@ -583,6 +595,22 @@ function genericVideoStats(video) {
             out.rvfc_frame_h = S.rvfc.height || null;
             out.mean_processing_duration_ms = S.rvfc.processing_n
                 ? (1000.0 * S.rvfc.processing_total / S.rvfc.processing_n) : null;
+            // The page clock at the moment this sample was taken, plus the
+            // probe's own origin. Without these, a page-relative figure such as
+            // first_presentation_ms cannot be placed on the capture's epoch
+            // timeline, so startup delay cannot be checked against the pcap at
+            // all - which is exactly the gap that left startup unvalidated.
+            out.page_now_ms = (performance && performance.now)
+                ? Math.round(performance.now()) : null;
+            out.probe_t0_page_ms = Math.round(S.t0);
+            // Navigation start in the same page clock, so "document start" is
+            // stated rather than assumed to equal the probe's install time.
+            try {
+                const nav = performance.getEntriesByType('navigation')[0];
+                out.nav_start_page_ms = nav ? Math.round(nav.startTime) : 0;
+                out.dom_content_loaded_ms = nav
+                    ? Math.round(nav.domContentLoadedEventEnd) : null;
+            } catch (e) { out.nav_start_page_ms = null; }
 
             // `waiting` -> `playing` spans are the spec's own definition of a
             // stall, independent of any progress-counter heuristic.
@@ -611,12 +639,25 @@ function genericVideoStats(video) {
         let list = [];
         try { list = performance.getEntriesByType('resource') || []; } catch (e) { list = []; }
         let n = 0, bytes = 0, tao = 0, zero = 0;
+        // Unfiltered accounting alongside the filtered figure. The filtered
+        // total undercounted appended bytes on YouTube (0.75-0.99) and the two
+        // obvious causes were ruled out by the data, leaving THIS filter as the
+        // prime suspect. Counting what it discards, and why, is the only way to
+        // confirm or clear it.
+        let allN = 0, allBytes = 0;
+        let dropInitiator = 0, dropSmall = 0, dropBytes = 0;
+        const byInitiator = {};
         for (const e of list) {
-            const it = e.initiatorType || '';
-            if (!(it === 'xmlhttprequest' || it === 'fetch' || it === 'video'
-                  || it === 'audio')) { continue; }
+            const it = e.initiatorType || '(none)';
             const enc = e.encodedBodySize || 0;
-            if (enc < 20000 && (e.transferSize || 0) < 20000) { continue; }
+            allN += 1; allBytes += enc;
+            byInitiator[it] = (byInitiator[it] || 0) + enc;
+            const okInit = (it === 'xmlhttprequest' || it === 'fetch'
+                            || it === 'video' || it === 'audio');
+            if (!okInit) { dropInitiator += 1; dropBytes += enc; continue; }
+            if (enc < 20000 && (e.transferSize || 0) < 20000) {
+                dropSmall += 1; dropBytes += enc; continue;
+            }
             n += 1; bytes += enc;
             if (e.nextHopProtocol) { tao += 1; }
             if (enc === 0) { zero += 1; }
@@ -626,6 +667,17 @@ function genericVideoStats(video) {
         out.rt_tao_entries = tao;
         out.rt_size_zeroed_entries = zero;
         out.rt_sizes_usable = n > 0 && bytes > 0;
+        out.rt_all_entries = allN;
+        out.rt_all_bytes = allBytes;
+        out.rt_dropped_by_initiator = dropInitiator;
+        out.rt_dropped_by_size_floor = dropSmall;
+        out.rt_dropped_bytes = dropBytes;
+        out.rt_bytes_by_initiator = byInitiator;
+        // Chrome's resource-timing buffer evicts silently once full; record the
+        // limit so an undercount can be attributed or cleared.
+        try {
+            out.rt_buffer_full_events = window.__netgentRtBufferFull || 0;
+        } catch (e) { out.rt_buffer_full_events = null; }
     } catch (e) { /* ditto */ }
 
     // Any countdown the conferencing UI shows about the meeting ending. A free
@@ -1282,12 +1334,34 @@ def install_media_hook(driver: Any) -> None:
             "Page.addScriptToEvaluateOnNewDocument",
             {"source": MEDIA_HOOK_JS},
         )
+    except Exception as exc:  # noqa: BLE001 - codec is a bonus, never a gate
+        print(f"[collector] codec hook unavailable: {type(exc).__name__}", flush=True)
+
+
+def install_stream_probe(driver: Any, enabled: bool, app: str = "") -> None:
+    """Install the uniform streaming probe, unless this run is the A/B control.
+
+    Separate from the codec hook on purpose. An earlier version installed both
+    inside one try block and referenced `job`, which is not in scope there; the
+    resulting NameError was swallowed by the broad except and silently disabled
+    BOTH hooks, so a whole run produced no probe fields while reporting
+    "codec hook unavailable". One hook's failure must not take the other down,
+    and the message must name the hook that actually failed.
+
+    The opt-out exists so the probe's own cost can be measured: it runs
+    requestVideoFrameCallback every frame, wraps appendBuffer and keeps a
+    MutationObserver alive, which is not free on a 2-vCPU host.
+    """
+    if not enabled:
+        print(f"[{app or 'collector'}] stream probe DISABLED for this run", flush=True)
+        return
+    try:
         driver.execute_cdp_cmd(
             "Page.addScriptToEvaluateOnNewDocument",
             {"source": STREAM_PROBE_JS},
         )
-    except Exception as exc:  # noqa: BLE001 - codec is a bonus, never a gate
-        print(f"[collector] codec hook unavailable: {type(exc).__name__}", flush=True)
+    except Exception as exc:  # noqa: BLE001 - never fail a run over the probe
+        print(f"[collector] stream probe unavailable: {type(exc).__name__}", flush=True)
 
 
 def get_google_meet_stats(driver: Any) -> dict[str, Any]:
@@ -1714,6 +1788,7 @@ def run_job(
         # by the shaped link. Setting the rect after launch makes the window the
         # size we actually asked for.
         install_media_hook(driver)
+        install_stream_probe(driver, not job.get("disable_stream_probe"), app)
         install_vendor_merge_flag(driver, bool(job.get("merge_vendor_stats", False)))
         install_codec_block(driver, list(job.get("block_codecs") or []))
         # A per-app viewport cap bounds the top of an adaptive ladder: the
