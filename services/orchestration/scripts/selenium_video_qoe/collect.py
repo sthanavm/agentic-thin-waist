@@ -52,6 +52,14 @@ import time
 from pathlib import Path
 from typing import Any
 
+# Chrome's own per-host byte accounting. Kept in its own module because its
+# logic is unit-tested without a browser (shared/tests/test_cdp_bytes.py).
+try:
+    from cdp_bytes import CdpByteLedger, drain_performance_log
+except ImportError:  # running from a different cwd inside the image
+    sys.path.insert(0, str(Path(__file__).resolve().parent))
+    from cdp_bytes import CdpByteLedger, drain_performance_log
+
 # Runs in the page. Detects YouTube vs. a generic <video> element (Vimeo
 # falls into the generic branch - that's exactly what worked in PR #6).
 MEDIA_HOOK_JS = r"""
@@ -177,6 +185,167 @@ STREAM_PROBE_JS = r"""
     const now = () => ((performance && performance.now) ? performance.now() : 0);
 
     // ---- MSE: bytes per SourceBuffer, keyed by the mime it was created with --
+    // ── codec of the rendition actually decoding ────────────────────────────
+    // The MIME handed to addSourceBuffer() is what the page said it MIGHT
+    // send. Measured on YouTube: one declared av01.0.04M.08 held constant
+    // while the rendition went itag 394 -> 395 -> 396 -> 397 and changeType()
+    // was never called, so the mime history stayed empty and reported no
+    // switch. The init segment is the generic answer, because the decoder is
+    // configured from it. Validated offline against ffmpeg-written segments
+    // with ffprobe as ground truth (see initseg/).
+    const IS = {
+        be: (b, o, n) => { let v = 0; for (let i = 0; i < n; i++) v = v * 256 + b[o + i]; return v; },
+        fcc: (b, o) => String.fromCharCode(b[o], b[o + 1], b[o + 2], b[o + 3]),
+        boxes: function (b, s, e, cb) {
+            let o = s;
+            while (o + 8 <= e) {
+                let size = this.be(b, o, 4); const t = this.fcc(b, o + 4); let hdr = 8;
+                if (size === 1) { if (o + 16 > e) return; size = this.be(b, o + 8, 8); hdr = 16; }
+                else if (size === 0) { size = e - o; }
+                if (size < hdr || o + size > e) return;   // malformed: stop, never guess
+                cb(t, o + hdr, o + size); o += size;
+            }
+        },
+        av1c: function (b, s, e) {
+            if (e - s < 3) return null;
+            const prof = (b[s + 1] >> 5) & 7, lvl = b[s + 1] & 31;
+            const tier = (b[s + 2] >> 7) & 1, hi = (b[s + 2] >> 6) & 1, tw = (b[s + 2] >> 5) & 1;
+            const d = tw ? 12 : (hi ? 10 : 8);
+            return 'av01.' + prof + '.' + String(lvl).padStart(2, '0') + (tier ? 'H' : 'M')
+                + '.' + String(d).padStart(2, '0');
+        },
+        avcc: function (b, s, e) {
+            if (e - s < 4) return null;
+            const h = (x) => x.toString(16).padStart(2, '0');
+            return 'avc1.' + h(b[s + 1]) + h(b[s + 2]) + h(b[s + 3]);
+        },
+        vpcc: function (b, s, e, fcc) {
+            if (e - s < 6) return null;
+            return (fcc === 'vp08' ? 'vp08.' : 'vp09.') + String(b[s + 4]).padStart(2, '0')
+                + '.' + String(b[s + 5]).padStart(2, '0') + '.'
+                + String((e - s >= 7) ? (b[s + 6] >> 4) : 8).padStart(2, '0');
+        },
+        esds: function (b, s, e) {
+            for (let o = s; o + 2 < e; o++) {
+                if (b[o] !== 4) continue;
+                let q = o + 1; while (q < e && (b[q] & 0x80)) q++; q++;
+                if (q >= e) break;
+                if (b[q] !== 0x40) return 'mp4a.' + b[q].toString(16).padStart(2, '0');
+                for (let r = q; r + 2 < e; r++) {
+                    if (b[r] !== 5) continue;
+                    let z = r + 1; while (z < e && (b[z] & 0x80)) z++; z++;
+                    if (z >= e) break;
+                    return 'mp4a.40.' + ((b[z] >> 3) & 31);
+                }
+                return 'mp4a.40';
+            }
+            return null;
+        },
+        mp4: function (b) {
+            const out = []; const CONT = {moov: 1, trak: 1, mdia: 1, minf: 1, stbl: 1};
+            const visit = (s, e) => {
+                this.boxes(b, s, e, (t, cs, ce) => {
+                    if (CONT[t]) { visit(cs, ce); return; }
+                    if (t !== 'stsd' || ce - cs < 8) return;
+                    this.boxes(b, cs + 8, ce, (fcc, es, ee) => {
+                        const ent = {sample_entry: fcc, codec: null, w: null, h: null};
+                        if (ee - es >= 78) {
+                            const w = this.be(b, es + 24, 2), h = this.be(b, es + 26, 2);
+                            if (w && h) { ent.w = w; ent.h = h; }
+                        }
+                        // Child boxes sit 78 bytes into a VisualSampleEntry (the
+                        // 8-byte SampleEntry base is easy to drop and costs the
+                        // whole answer) and 28 into an AudioSampleEntry.
+                        const scan = (off) => {
+                            let got = null;
+                            if (es + off >= ee) return null;
+                            this.boxes(b, es + off, ee, (cfg, xs, xe) => {
+                                if (cfg === 'av1C') got = this.av1c(b, xs, xe);
+                                else if (cfg === 'avcC') got = this.avcc(b, xs, xe);
+                                else if (cfg === 'vpcC') got = this.vpcc(b, xs, xe, fcc);
+                                else if (cfg === 'esds') got = this.esds(b, xs, xe);
+                                else if (cfg === 'dOps') got = 'opus';
+                            });
+                            return got;
+                        };
+                        ent.codec = scan(78) || scan(28) || scan(0);
+                        if (!ent.codec && fcc === 'Opus') ent.codec = 'opus';
+                        out.push(ent);
+                    });
+                });
+            };
+            visit(0, b.length);
+            return out;
+        },
+        ebmlNum: function (b, o, e, isId) {
+            if (o >= e) return null;
+            const f = b[o]; let len = 1, m = 0x80;
+            while (len <= 8 && !(f & m)) { m >>= 1; len++; }
+            if (len > 8 || o + len > e) return null;
+            let v = isId ? f : (f & (m - 1));
+            for (let i = 1; i < len; i++) v = v * 256 + b[o + i];
+            return {v: v, len: len};
+        },
+        webm: function (b) {
+            const tracks = []; let cur = null;
+            const DESC = {0x18538067: 1, 0x1654AE6B: 1, 0xAE: 1, 0xE0: 1, 0xE1: 1};
+            const walk = (s, e, d) => {
+                if (d > 6) return;
+                let o = s;
+                while (o < e) {
+                    const id = this.ebmlNum(b, o, e, true); if (!id) return;
+                    const sz = this.ebmlNum(b, o + id.len, e, false); if (!sz) return;
+                    const cs = o + id.len + sz.len; let ce = cs + sz.v;
+                    if (sz.v >= Math.pow(2, 7 * sz.len) - 1 || ce > e) ce = e;
+                    if (id.v === 0xAE) {
+                        cur = {codec_id: null, codec: null, w: null, h: null, priv: null};
+                        tracks.push(cur); walk(cs, ce, d + 1);
+                    } else if (DESC[id.v]) { walk(cs, ce, d + 1); }
+                    else if (cur) {
+                        if (id.v === 0x86) {
+                            cur.codec_id = String.fromCharCode.apply(null,
+                                b.subarray(cs, ce)).replace(/\0+$/, '');
+                        } else if (id.v === 0x63A2) { cur.priv = [cs, ce]; }
+                        else if (id.v === 0xB0) { cur.w = this.be(b, cs, ce - cs); }
+                        else if (id.v === 0xBA) { cur.h = this.be(b, cs, ce - cs); }
+                    }
+                    if (ce <= cs) return;
+                    o = ce;
+                }
+            };
+            walk(0, b.length, 0);
+            for (const t of tracks) {
+                const i = t.codec_id || '';
+                // VP9 in WebM ships no CodecPrivate at all (verified on a real
+                // file), so its profile lives in the bitstream and the family
+                // is all the container can give.
+                if (i === 'V_AV1') t.codec = (t.priv ? this.av1c(b, t.priv[0], t.priv[1]) : null) || 'av01';
+                else if (i === 'V_VP9') t.codec = 'vp09';
+                else if (i === 'V_VP8') t.codec = 'vp08';
+                else if (i === 'A_OPUS') t.codec = 'opus';
+                else if (i.indexOf('A_AAC') === 0) t.codec = 'mp4a.40.2';
+                else t.codec = i || null;
+                delete t.priv;
+            }
+            return tracks;
+        },
+        parse: function (buf) {
+            try {
+                let b = buf;
+                if (b && b.buffer !== undefined && !(b instanceof Uint8Array)) {
+                    b = new Uint8Array(b.buffer, b.byteOffset || 0, b.byteLength);
+                } else if (b instanceof ArrayBuffer) { b = new Uint8Array(b); }
+                if (!b || b.length < 8) return null;
+                if (b[0] === 0x1A && b[1] === 0x45 && b[2] === 0xDF && b[3] === 0xA3) {
+                    const t = this.webm(b);
+                    return t.length ? {container: 'webm', tracks: t} : null;
+                }
+                const m = this.mp4(b);
+                return m.length ? {container: 'iso-bmff', tracks: m} : null;
+            } catch (e) { return null; }
+        }
+    };
+
     const MS = window.MediaSource || window.WebKitMediaSource;
     const findRec = (sb) => {
         for (const r of S.buffers) { if (r.sb === sb) { return r; } }
@@ -189,7 +358,8 @@ STREAM_PROBE_JS = r"""
             try {
                 S.buffers.push({
                     sb: sb, mime: String(mime || ''), bytes: 0, appends: 0,
-                    mime_history: [{t: now() - S.t0, mime: String(mime || '')}]
+                    mime_history: [{t: now() - S.t0, mime: String(mime || '')}],
+                    init_history: [], init_seen: 0
                 });
             } catch (e) { /* observation must never break playback */ }
             return sb;
@@ -206,6 +376,28 @@ STREAM_PROBE_JS = r"""
                 const r = findRec(this);
                 if (r) { r.bytes += n; r.appends += 1; }
                 S.appends += 1; S.bytes_total += n;
+                // An init segment, not media: it carries the decoder config and
+                // no samples. Cheap to recognise and small, so parsing it costs
+                // nothing on the append path. Capped so a player that re-sends
+                // init on every segment cannot grow this without bound.
+                if (r && r.init_seen < 40 && n > 0 && n < 200000) {
+                    const d = IS.parse(data);
+                    if (d && d.tracks && d.tracks.length) {
+                        const tr = d.tracks.filter((x) => x.codec)[0] || d.tracks[0];
+                        const sig = d.container + '|' + tr.codec + '|' + (tr.w || '')
+                            + 'x' + (tr.h || '');
+                        const last = r.init_history[r.init_history.length - 1];
+                        if (!last || last.sig !== sig) {
+                            r.init_seen += 1;
+                            r.init_history.push({
+                                t: Math.round(now() - S.t0), sig: sig,
+                                container: d.container, codec: tr.codec,
+                                w: tr.w, h: tr.h,
+                                sample_entry: tr.sample_entry || tr.codec_id || null
+                            });
+                        }
+                    }
+                }
             } catch (e) { /* ditto */ }
             return nativeAppend.apply(this, arguments);
         };
@@ -584,6 +776,38 @@ function genericVideoStats(video) {
             out.mse_mime_switches = switches.length;
             out.mse_mime_switch_log = switches.slice(0, 12);
             out.mse_appends_total = S.appends;
+
+            // The real rendition history, read from the init segments. This is
+            // reported ALONGSIDE the declared mime rather than instead of it,
+            // because the gap between the two is itself the finding: a player
+            // can change rendition, resolution and even codec without ever
+            // calling changeType(), which leaves mse_mime_switch_log empty.
+            let initLog = [];
+            let vcodec = null, vw = null, vh = null, acodec = null;
+            for (const r of S.buffers) {
+                const m = String(r.mime || '');
+                if (!r.init_history || !r.init_history.length) { continue; }
+                for (const h of r.init_history) { initLog.push({mime: m, ev: h}); }
+                const lastH = r.init_history[r.init_history.length - 1];
+                if (m.indexOf('video/') === 0) {
+                    vcodec = lastH.codec; vw = lastH.w; vh = lastH.h;
+                } else if (m.indexOf('audio/') === 0) {
+                    acodec = lastH.codec;
+                }
+            }
+            out.init_segment_log = initLog.slice(0, 40);
+            out.init_segment_count = initLog.length;
+            // Distinct video configs seen: >1 means the rendition changed, and
+            // is a switch count that does not depend on changeType being used.
+            const sigs = {};
+            for (const e of initLog) {
+                if (String(e.mime).indexOf('video/') === 0) { sigs[e.ev.sig] = 1; }
+            }
+            out.init_video_configs = Object.keys(sigs).length;
+            out.decoding_video_codec = vcodec;
+            out.decoding_video_width = vw;
+            out.decoding_video_height = vh;
+            out.decoding_audio_codec = acodec;
 
             // presentedFrames is frames submitted for composition - the
             // rendering rate. totalVideoFrames above counts DECODED frames.
@@ -1222,6 +1446,13 @@ def build_driver(user_data_dir: str | None = None, mode: str = "uc"):
         chromium_arg=chromium_arg,
         use_auto_ext=False,
         undetectable=True,
+        # Chrome's own Network-domain events, drained during the run. This is
+        # the byte reference that does not have to guess which peer IP carried
+        # the media: pcap sees addresses, and a QUIC-only media flow sends no
+        # TLS SNI to name itself, which is why no peer-selection rule put all
+        # 13 earlier runs in band. Chrome knows the URL of every request it
+        # made. Bands pre-registered in THRESHOLDS.md.
+        log_cdp_events=True,
     )
     binary_location = os.environ.get("CHROME_BINARY")
     if binary_location:
@@ -1743,6 +1974,16 @@ def run_job(
     out_path = Path(job["out_path"])
     duration_seconds = float(job["duration_seconds"])
     sample_interval_seconds = float(job.get("sample_interval_seconds", 1.0))
+    # Hosts whose bytes are the media for this app. Explicit per app rather
+    # than inferred, so the figure cannot quietly include the page itself.
+    _CDP_HOSTS = {
+        "youtube": ("googlevideo.com",),
+        "vimeo": ("vimeocdn.com", "akamaized.net"),
+        "twitch": ("ttvnw.net", "twitchcdn.net"),
+        "tubi": ("tubitv.com", "adrise.tv", "cloudfront.net"),
+    }
+    cdp_suffixes = _CDP_HOSTS.get(app, ())
+    cdp_ledger = CdpByteLedger() if cdp_suffixes else None
     user_data_dir = job.get("user_data_dir")
     guest_name = str(job.get("guest_name", "NetGent QoE Collector"))
     meet_join_timeout_seconds = float(job.get("join_timeout_seconds", 180))
@@ -1934,6 +2175,18 @@ def run_job(
                             sample["stats"][
                                 "sampling_interval_s"
                             ] = sample_interval_seconds
+                            # Drained every sample, not once at teardown: the
+                            # performance log is a bounded buffer that silently
+                            # discards its oldest entries, so a 180 s run read
+                            # only at the end can lose events with no error.
+                            if cdp_ledger is not None:
+                                try:
+                                    drain_performance_log(driver, cdp_ledger)
+                                    sample["stats"].update(
+                                        cdp_ledger.totals(cdp_suffixes)
+                                    )
+                                except Exception as exc:  # noqa: BLE001
+                                    sample["stats"]["cdp_error"] = str(exc)[:200]
                 except Exception as exc:  # noqa: BLE001
                     sample["stats"] = None
                     sample["sample_error"] = str(exc)

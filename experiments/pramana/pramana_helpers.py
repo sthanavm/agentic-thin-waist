@@ -1164,6 +1164,16 @@ def run_qoe_collectors(
         src = Path(collector_src).expanduser().resolve()
         args += ["--volume", f"{src}:/app/collect.py:ro"]
         print(f"    · collector source overridden from {src}")
+        # collect.py imports siblings (cdp_bytes), and mounting only collect.py
+        # leaves those unimportable inside the image -- which fails the run at
+        # import time, with the override silently to blame. Mount each sibling
+        # the collector actually imports, so a source override behaves like a
+        # rebuilt image.
+        for sibling in ("cdp_bytes.py",):
+            sp = src.parent / sibling
+            if sp.exists():
+                args += ["--volume", f"{sp}:/app/{sibling}:ro"]
+                print(f"    · mounted sibling {sibling}")
     args += [
         "--entrypoint",
         "nsenter",

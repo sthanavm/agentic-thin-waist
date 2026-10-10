@@ -125,7 +125,16 @@ REGISTRY: dict[str, AppSpec] = {
     "tubi": AppSpec(
         name="tubi",
         kind=HTML5_VIDEO,
-        default_url="https://tubitv.com/movies/593796/another-cinderella-story",
+        # Tubi's catalogue ROTATES and a pulled title still serves a 200 with
+        # the right <title>: the body reads "CONTENT UNAVAILABLE", the primary
+        # action becomes "Remind Me", and NO <video> element is ever created.
+        # That is what produced "Tubi never produced a player" -- measured, not
+        # a consent gate, login wall, ad, geo or bot block (0 MediaSource
+        # constructions, no such text on the page). To re-point this, list
+        # current titles with
+        #   curl -s https://tubitv.com/movies | grep -oE '/movies/[0-9]+/[a-z0-9-]+'
+        # and reject any whose page contains "CONTENT UNAVAILABLE".
+        default_url="https://tubitv.com/movies/568500/forrest-gump",
         bitrate_source="none",
         domains=("tubitv.com", "adrise.tv", "tubi.video", "tubi.io"),
         color="#FBC02D",
@@ -134,7 +143,10 @@ REGISTRY: dict[str, AppSpec] = {
             "Ad-supported: pre-roll ads play before the title, so early samples "
             "describe the AD, not the content. The summarizer reports "
             "startup to first frame of whatever plays first — treat the opening "
-            "seconds as ad, not content QoE."
+            "seconds as ad, not content QoE. "
+            "Constructs MediaSource in the MAIN world (3 constructions "
+            "measured), so appended-byte hooks reach it; it also spawns a "
+            "blob Worker, but the element is not fed through it, unlike Twitch."
         ),
     ),
     "twitch": AppSpec(
