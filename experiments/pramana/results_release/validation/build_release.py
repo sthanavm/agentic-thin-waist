@@ -120,17 +120,26 @@ def height_of(s):
     return None
 
 
-def per_second(pcap: Path, apps, cap, window, direction):
+def per_second_both(pcap: Path, apps, cap, window):
+    """Both directions from ONE pass over the capture.
+
+    attribute_capture already fills download and upload, so calling it per
+    direction parses the whole pcap twice for no new information -- on a
+    19-run release that is 19 wasted passes over tens of megabytes each.
+    """
     at = H.attribute_capture(pcap, apps, cap)
     w0, w1 = window
     t0 = at.t0_epoch or w0
     lo = max(0, int(math.floor(w0 - t0)))
     hi = max(lo + 1, int(math.ceil(w1 - t0)))
     out = {}
-    for a in apps:
-        t = at.traffic(a, direction)
-        s = (t.mbps if t else []) or []
-        out[a] = [s[i] if 0 <= i < len(s) else 0.0 for i in range(lo, hi)]
+    for direction in ("download", "upload"):
+        d = {}
+        for a in apps:
+            t = at.traffic(a, direction)
+            s = (t.mbps if t else []) or []
+            d[a] = [s[i] if 0 <= i < len(s) else 0.0 for i in range(lo, hi)]
+        out[direction] = d
     return out, list(range(hi - lo)), at
 
 
@@ -212,12 +221,12 @@ def build_run(run_dir: Path, out_root: Path, checks: list) -> dict | None:
     thr = {}
     at = None
     if pcap.is_file():
+        both, secs, at = per_second_both(pcap, [app], cap, (w0, w1))
         for direction, fname, label in (
             ("download", "download_throughput.png", "Download"),
             ("upload", "upload_throughput.png", "Upload"),
         ):
-            mbps, secs, at = per_second(pcap, [app], cap, (w0, w1), direction)
-            series = mbps.get(app, [])
+            series = both[direction].get(app, [])
             thr[direction] = {
                 "peak_mbps": round(max(series), 4) if series else 0.0,
                 "mean_mbps": round(sum(series) / len(series), 4) if series else 0.0,
