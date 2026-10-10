@@ -96,6 +96,30 @@ def num(v):
         return None
 
 
+def height_of(s):
+    """Frame height from a sample.
+
+    The populated field is `resolution` ("854x480"); `frame_height` is absent on
+    these runs. Reading frame_height alone yields an EMPTY resolution chart and
+    zero switch markers, with nothing visibly wrong -- found by checking a real
+    sample rather than trusting the field name.
+    """
+    r = s.get("resolution")
+    if isinstance(r, str) and "x" in r:
+        try:
+            return int(r.split("x")[1])
+        except Exception:
+            pass
+    for k in ("frame_height", "decoding_video_height"):
+        v = s.get(k)
+        try:
+            if v:
+                return int(v)
+        except Exception:
+            continue
+    return None
+
+
 def per_second(pcap: Path, apps, cap, window, direction):
     at = H.attribute_capture(pcap, apps, cap)
     w0, w1 = window
@@ -285,7 +309,7 @@ def build_run(run_dir: Path, out_root: Path, checks: list) -> dict | None:
     ax.set_xlim(0, max(relt) if relt else 1)
     save(f, d / "qoe_buffer.png")
 
-    res = [num(s.get("frame_height")) for s in st]
+    res = [height_of(s) for s in st]
     f, ax = fig(
         "Video Resolution — %s @ %g Mbps" % (H.display_name(app), cap),
         "Seconds from first QoE sample",

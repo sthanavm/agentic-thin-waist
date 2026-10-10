@@ -63,6 +63,30 @@ def num(v):
         return None
 
 
+def height_of(s):
+    """Frame height from a sample.
+
+    The populated field is `resolution` ("854x480"); `frame_height` is absent on
+    these runs. Reading frame_height alone yields an EMPTY resolution chart and
+    zero switch markers, with nothing visibly wrong -- found by checking a real
+    sample rather than trusting the field name.
+    """
+    r = s.get("resolution")
+    if isinstance(r, str) and "x" in r:
+        try:
+            return int(r.split("x")[1])
+        except Exception:
+            pass
+    for k in ("frame_height", "decoding_video_height"):
+        v = s.get(k)
+        try:
+            if v:
+                return int(v)
+        except Exception:
+            continue
+    return None
+
+
 def ip4(data, lt):
     off = 14 if lt == 1 else (16 if lt == 113 else 0)
     if len(data) < off + 20 or data[off] >> 4 != 4:
@@ -298,13 +322,11 @@ def sec_c(runs):
     p("|---|---|---|---|---|---|---|")
     for r in runs:
         last = r["st"][-1]
-        heights = sorted(
-            {
-                int(num(s.get("frame_height")) or 0)
-                for s in r["st"]
-                if num(s.get("frame_height"))
-            }
-        )
+        heights = []
+        for s in r["st"]:
+            h = height_of(s)
+            if h and (not heights or heights[-1] != h):
+                heights.append(h)
         p(
             "| %s_%gM_t%s | %s | %s | **%s** | %s | %sx%s | %s |"
             % (
