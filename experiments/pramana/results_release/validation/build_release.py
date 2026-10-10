@@ -278,21 +278,46 @@ def build_run(run_dir: Path, out_root: Path, checks: list) -> dict | None:
     # be mapped through page_now_ms. If that anchor is missing the shading is
     # SKIPPED rather than drawn at the wrong place.
     page0 = num(st[0].get("page_now_ms"))
+    n_before = 0
     if page0 is not None:
         for sp in (u.get("rebuffer_spans") or [])[:40]:
             try:
                 a = (float(sp["start"]) - page0) / 1000.0 + relt[0]
                 b = (float(sp["end"]) - page0) / 1000.0 + relt[0]
-                if b >= 0:
-                    ax.axvspan(max(0.0, a), b, color="#C62828", alpha=0.18)
+                if b < 0:
+                    # Happened before the first QoE sample. Sampling starts when
+                    # playback is detected, which at low bandwidth can be tens of
+                    # seconds after the page loads, so a real stall can fall
+                    # entirely to the left of this axis. Counting it in a caption
+                    # keeps an empty chart from reading as "no rebuffering".
+                    n_before += 1
+                    continue
+                ax.axvspan(max(0.0, a), b, color="#C62828", alpha=0.18)
             except Exception:
                 pass
+        cap_txt = "%d rebuffer event(s); shaded in red" % (
+            u.get("rebuffer_events") or 0
+        )
+        if n_before:
+            cap_txt += (
+                "\n%d occurred BEFORE the first sample (page t=%.1fs) "
+                "and cannot be shown on this axis" % (n_before, page0 / 1000.0)
+            )
+        ax.text(
+            0.01,
+            0.97,
+            cap_txt,
+            transform=ax.transAxes,
+            va="top",
+            fontsize=8,
+            color="#C62828" if (u.get("rebuffer_events") or 0) else "#555",
+        )
         checks.append(
             dict(
                 run=name,
                 check="rebuffer_shading_anchored",
                 result="PASS",
-                detail="page_now_ms anchor present",
+                detail="anchored; %d span(s) before window, captioned" % n_before,
             )
         )
     else:
