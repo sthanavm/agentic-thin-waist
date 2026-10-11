@@ -1,0 +1,34 @@
+{
+  "run": "zoom_3Mbps_150ms_pfifo_a15e72bd",
+  "app": "zoom",
+  "kind": "html5_video",
+  "run_dir_on_vm": "/home/student/sthanav-agentic-thin-waist/experiments/pramana/results/pramana_runs/zoom_3mbps_150ms_0pct_pfifo_cubic_solo_t1_a15e72bd94",
+  "admission": "MANUAL \u2014 a human admitted the bot into the meeting",
+  "shaping": {
+    "bandwidth_mbps": 3.0,
+    "latency_ms": 150.0,
+    "aqm": "pfifo",
+    "loss_pct": 0
+  },
+  "metrics": {
+    "resolution_p": 720,
+    "resolutions_observed": [
+      720
+    ],
+    "resolution_changes": 0,
+    "rebuffer_events": 0,
+    "rebuffer_duration_ms": 0.0,
+    "decoded_frame_rate_fps": 20.0,
+    "raw_dropped_video_frames": 4,
+    "raw_total_video_frames": 3617,
+    "session_seconds": 179.36,
+    "total_samples": 173,
+    "delivered_bitrate_mbps": null,
+    "delivered_bitrate_reason": "no MediaSource and no readable peer connection on this client, so there is no byte channel to measure",
+    "startup_ms": null,
+    "startup_reason": "only the legacy counter-advance figure exists here (video_startup_time_ms=1039.8), which is floored at one sampling interval by construction and does not measure startup"
+  },
+  "charts": [
+    "conf_resolution.png"
+  ]
+}

@@ -1,0 +1,85 @@
+{
+ "run": "tubi_3Mbps_50ms_pfifo_trial10",
+ "app": "tubi",
+ "verdict": "OK",
+ "shaping": {
+  "bandwidth_mbps": 3.0,
+  "latency_ms": 50,
+  "aqm": "pfifo",
+  "loss_pct": 0.0,
+  "cca": "cubic"
+ },
+ "metrics": {
+  "startup_delay_ms": null,
+  "startup_basis": "unavailable (requestVideoFrameCallback not supported here)",
+  "initial_buffering_ms": 865.0,
+  "buffer_level_secs": {
+   "mean": 78.2254,
+   "min": 5.219043,
+   "max": 146.136591,
+   "basis": "video.buffered end - currentTime, sampled once per interval"
+  },
+  "rebuffer_events": 0,
+  "rebuffer_duration_ms": 0,
+  "delivered_video_bitrate_mbps": 2.136,
+  "delivered_audio_bitrate_mbps": 0.2331,
+  "bitrate_basis": "mse_appended_bytes(video sourcebuffer)",
+  "switch_count": 3,
+  "switch_events": [
+   {
+    "t": 2.18,
+    "from_p": 240,
+    "to_p": 360,
+    "direction": "up",
+    "signal": "decoded_height"
+   },
+   {
+    "t": 6.65,
+    "from_p": 360,
+    "to_p": 480,
+    "direction": "up",
+    "signal": "decoded_height"
+   },
+   {
+    "t": 17.02,
+    "to_mime": "audio/mp4;codecs=mp4a.40.5",
+    "direction": "codec_change",
+    "signal": "sourcebuffer_changeType"
+   }
+  ],
+  "rendered_fps": null,
+  "raw_decoded_frames": 4344.0,
+  "raw_dropped_frames": 0.0,
+  "raw_presented_frames": 0.0
+ },
+ "throughput_mbps": {
+  "download": {
+   "peak_mbps": 2.9887,
+   "mean_mbps": 2.6191
+  },
+  "upload": {
+   "peak_mbps": 0.1422,
+   "mean_mbps": 0.0609
+  }
+ },
+ "references": {
+  "mse_video_bytes": 48086826.0,
+  "mse_audio_bytes": 5273426.0,
+  "cdp_finished_bytes": 2882581,
+  "cdp_received_bytes": 2750970,
+  "cdp_open_at_end_bytes": 0,
+  "cdp_events_seen": 26612,
+  "rt_all_bytes": 927284,
+  "rt_media_bytes": 68804
+ },
+ "codec": {
+  "declared_mime": "video/mp4;codecs=avc1.4D401E",
+  "decoding": "avc1.640028",
+  "decoding_wh": [
+   854,
+   480
+  ],
+  "init_video_configs": 3,
+  "mse_mime_switches": 1
+ }
+}

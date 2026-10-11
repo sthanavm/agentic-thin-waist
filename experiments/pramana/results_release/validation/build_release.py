@@ -566,15 +566,59 @@ def build_run(run_dir: Path, out_root: Path, checks: list) -> dict | None:
     save(f, d / "qoe_startup.png")
 
     # ---- chart-vs-summary equality (the brief's requirement)
-    if u.get("rendered_fps") is not None and len([x for x in fps if x > 0]) > 2:
-        plotted = sum(x for x in fps[1:]) / max(1, len(fps[1:]))
+    # Compare like with like. The summary's rendered_fps is TIME-weighted
+    # (total presented frames over total elapsed), while a plain mean of the
+    # per-interval rates is unweighted and counts a 17 s gap the same as a 1 s
+    # one. Comparing those two was an ill-posed check, not a data defect: on
+    # one run with a 17.4 s sampling gap it read 25.483 against 22.740 while
+    # both figures were correct for what they measured.
+    pv = [(relt[i], pres[i]) for i in range(len(pres)) if pres[i] is not None]
+    if u.get("rendered_fps") is not None and len(pv) >= 2 and pv[-1][0] > pv[0][0]:
+        # Sum positive deltas, matching how the summary derives the rate. A
+        # player that swaps its video element restarts the counter mid-run
+        # (measured on YouTube at 1.5 Mbps), and last-minus-first across that
+        # reset is negative -- it read -5.021 against a summary of 24.210
+        # while both the chart and the summary were correct.
+        acc, prv = 0.0, pv[0][1]
+        for _, v in pv[1:]:
+            if v >= prv:
+                acc += v - prv
+            prv = v
+        plotted = acc / (pv[-1][0] - pv[0][0])
         ok = abs(plotted - u["rendered_fps"]) <= max(1.0, 0.1 * u["rendered_fps"])
         checks.append(
             dict(
                 run=name,
                 check="chart_fps_matches_summary",
                 result="PASS" if ok else "FAIL",
-                detail="chart mean %.3f vs summary %.3f" % (plotted, u["rendered_fps"]),
+                detail="chart time-weighted %.3f vs summary %.3f"
+                % (plotted, u["rendered_fps"]),
+            )
+        )
+
+    # Actual sampling gaps, not the nominal interval. A run can carry a long
+    # hole while sampling_interval_s still says 1.0, and every series through
+    # that hole is interpolated by the eye. Surfaced rather than averaged away.
+    gaps = [relt[i] - relt[i - 1] for i in range(1, len(relt))]
+    if gaps:
+        gmax = max(gaps)
+        nominal = float(u.get("sampling_interval_s") or 1.0)
+        # The requirement is "buffer sampled at least once per second". The bar
+        # here is 2x the nominal interval -- a gap that long means a whole
+        # sample period was missed, so the >=1/s guarantee is broken for that
+        # stretch. Chosen from the requirement rather than from the observed
+        # numbers; this check did not exist until these gaps were found, so it
+        # is a disclosure, not a pre-registered criterion, and it is labelled
+        # as such in the verification report.
+        n_over = sum(1 for g in gaps if g > 2 * nominal)
+        checks.append(
+            dict(
+                run=name,
+                check="disclosure:sampling_cadence",
+                result="PASS" if gmax <= 2 * nominal else "FAIL",
+                detail="max gap %.2f s; %d of %d intervals exceed 2x "
+                "nominal (%.1f s); mean %.2f s"
+                % (gmax, n_over, len(gaps), 2 * nominal, sum(gaps) / len(gaps)),
             )
         )
     bufvals = [b for b in buf if b is not None]

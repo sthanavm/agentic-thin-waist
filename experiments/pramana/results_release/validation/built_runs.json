@@ -1,0 +1,1500 @@
+[
+ {
+  "name": "tubi_10Mbps_50ms_pfifo_trial10",
+  "app": "tubi",
+  "cap": 10.0,
+  "lat": 50,
+  "aqm": "pfifo",
+  "trial": 10,
+  "verdict": "OK",
+  "metrics": {
+   "startup_delay_ms": null,
+   "startup_basis": "unavailable (requestVideoFrameCallback not supported here)",
+   "initial_buffering_ms": 799.0,
+   "buffer_level_secs": {
+    "mean": 131.5531,
+    "min": 7.398434,
+    "max": 147.71442,
+    "basis": "video.buffered end - currentTime, sampled once per interval"
+   },
+   "rebuffer_events": 0,
+   "rebuffer_duration_ms": 0,
+   "delivered_video_bitrate_mbps": 2.1295,
+   "delivered_audio_bitrate_mbps": 0.2324,
+   "bitrate_basis": "mse_appended_bytes(video sourcebuffer)",
+   "switch_count": 2,
+   "switch_events": [
+    {
+     "t": 2.16,
+     "from_p": 240,
+     "to_p": 480,
+     "direction": "up",
+     "signal": "decoded_height"
+    },
+    {
+     "t": 13.58,
+     "to_mime": "audio/mp4;codecs=mp4a.40.5",
+     "direction": "codec_change",
+     "signal": "sourcebuffer_changeType"
+    }
+   ],
+   "rendered_fps": null,
+   "raw_decoded_frames": 4330.0,
+   "raw_dropped_frames": 1.0,
+   "raw_presented_frames": 0.0
+  },
+  "thr": {
+   "download": {
+    "peak_mbps": 8.5474,
+    "mean_mbps": 2.6223
+   },
+   "upload": {
+    "peak_mbps": 0.1822,
+    "mean_mbps": 0.056
+   }
+  },
+  "pcap": {
+   "run": "tubi_10Mbps_50ms_pfifo_trial10",
+   "filename": "capture.pcap",
+   "size_bytes": 68451900,
+   "sha256": "991d8903d58af575201148fa007be91e913c63fd38569cf08e0c08be8bf4c5d1",
+   "host_split": "nc-aka2.tubi.video=61.2MB; md0.tubitv.com=1.7MB; canvas-lb.tubitv.com=1.0MB; r5---sn-jxopj-n5oe.gvt1.com=0.5MB; mcdn.tubitv.com=0.5MB; tubitv.com=0.2MB",
+   "per_app_pcap": "tubi_10Mbps_50ms_pfifo_trial10.tubi.pcap: 57245 pkts, 64.9 MB, 18 attributed IP(s), sha 2d37d28818239ce1",
+   "stored_at": "VM:/home/student/sthanav-agentic-thin-waist/experiments/pramana/results/pramana_runs/tubi_10mbps_50ms_0pct_pfifo_cubic_solo_t10_cbff2c5aa3/capture.pcap | archive:/home/student/pramana-data/pcaps"
+  },
+  "dir": "/tmp/release/tubi/tubi_10Mbps_50ms_pfifo_trial10",
+  "res_p": 480,
+  "decoding_codec": "avc1.640028",
+  "measured_box": "1256x908"
+ },
+ {
+  "name": "tubi_3Mbps_50ms_pfifo_trial10",
+  "app": "tubi",
+  "cap": 3.0,
+  "lat": 50,
+  "aqm": "pfifo",
+  "trial": 10,
+  "verdict": "OK",
+  "metrics": {
+   "startup_delay_ms": null,
+   "startup_basis": "unavailable (requestVideoFrameCallback not supported here)",
+   "initial_buffering_ms": 865.0,
+   "buffer_level_secs": {
+    "mean": 78.2254,
+    "min": 5.219043,
+    "max": 146.136591,
+    "basis": "video.buffered end - currentTime, sampled once per interval"
+   },
+   "rebuffer_events": 0,
+   "rebuffer_duration_ms": 0,
+   "delivered_video_bitrate_mbps": 2.136,
+   "delivered_audio_bitrate_mbps": 0.2331,
+   "bitrate_basis": "mse_appended_bytes(video sourcebuffer)",
+   "switch_count": 3,
+   "switch_events": [
+    {
+     "t": 2.18,
+     "from_p": 240,
+     "to_p": 360,
+     "direction": "up",
+     "signal": "decoded_height"
+    },
+    {
+     "t": 6.65,
+     "from_p": 360,
+     "to_p": 480,
+     "direction": "up",
+     "signal": "decoded_height"
+    },
+    {
+     "t": 17.02,
+     "to_mime": "audio/mp4;codecs=mp4a.40.5",
+     "direction": "codec_change",
+     "signal": "sourcebuffer_changeType"
+    }
+   ],
+   "rendered_fps": null,
+   "raw_decoded_frames": 4344.0,
+   "raw_dropped_frames": 0.0,
+   "raw_presented_frames": 0.0
+  },
+  "thr": {
+   "download": {
+    "peak_mbps": 2.9887,
+    "mean_mbps": 2.6191
+   },
+   "upload": {
+    "peak_mbps": 0.1422,
+    "mean_mbps": 0.0609
+   }
+  },
+  "pcap": {
+   "run": "tubi_3Mbps_50ms_pfifo_trial10",
+   "filename": "capture.pcap",
+   "size_bytes": 68884148,
+   "sha256": "bb1f497702ace727adbf62f4f4fd81d78bda6136b173cf817d73f713cdb0df57",
+   "host_split": "nc-fa2.tubi.video=61.6MB; md0.tubitv.com=1.7MB; canvas-lb.tubitv.com=1.0MB; r5---sn-jxopj-n5oe.gvt1.com=0.5MB; mcdn.tubitv.com=0.5MB; tubitv.com=0.2MB",
+   "per_app_pcap": "tubi_3Mbps_50ms_pfifo_trial10.tubi.pcap: 52874 pkts, 65.4 MB, 17 attributed IP(s), sha 1e1878a01a2fba53",
+   "stored_at": "VM:/home/student/sthanav-agentic-thin-waist/experiments/pramana/results/pramana_runs/tubi_3mbps_50ms_0pct_pfifo_cubic_solo_t10_696e04c624/capture.pcap | archive:/home/student/pramana-data/pcaps"
+  },
+  "dir": "/tmp/release/tubi/tubi_3Mbps_50ms_pfifo_trial10",
+  "res_p": 480,
+  "decoding_codec": "avc1.640028",
+  "measured_box": "1256x908"
+ },
+ {
+  "name": "tubi_6Mbps_50ms_pfifo_trial10",
+  "app": "tubi",
+  "cap": 6.0,
+  "lat": 50,
+  "aqm": "pfifo",
+  "trial": 10,
+  "verdict": "OK",
+  "metrics": {
+   "startup_delay_ms": null,
+   "startup_basis": "unavailable (requestVideoFrameCallback not supported here)",
+   "initial_buffering_ms": 634.0,
+   "buffer_level_secs": {
+    "mean": 123.1203,
+    "min": 7.164094,
+    "max": 147.347484,
+    "basis": "video.buffered end - currentTime, sampled once per interval"
+   },
+   "rebuffer_events": 0,
+   "rebuffer_duration_ms": 0,
+   "delivered_video_bitrate_mbps": 2.1559,
+   "delivered_audio_bitrate_mbps": 0.2353,
+   "bitrate_basis": "mse_appended_bytes(video sourcebuffer)",
+   "switch_count": 2,
+   "switch_events": [
+    {
+     "t": 2.19,
+     "from_p": 240,
+     "to_p": 480,
+     "direction": "up",
+     "signal": "decoded_height"
+    },
+    {
+     "t": 13.18,
+     "to_mime": "audio/mp4;codecs=mp4a.40.5",
+     "direction": "codec_change",
+     "signal": "sourcebuffer_changeType"
+    }
+   ],
+   "rendered_fps": null,
+   "raw_decoded_frames": 4335.0,
+   "raw_dropped_frames": 1.0,
+   "raw_presented_frames": 0.0
+  },
+  "thr": {
+   "download": {
+    "peak_mbps": 5.827,
+    "mean_mbps": 2.5882
+   },
+   "upload": {
+    "peak_mbps": 0.1387,
+    "mean_mbps": 0.0576
+   }
+  },
+  "pcap": {
+   "run": "tubi_6Mbps_50ms_pfifo_trial10",
+   "filename": "capture.pcap",
+   "size_bytes": 68395940,
+   "sha256": "d0292538fbbe5cf54a5e43cdeb076de794c43e47e08b48dd6a649d757e4ce2ce",
+   "host_split": "nc-fa2.tubi.video=61.1MB; md0.tubitv.com=1.7MB; canvas-lb.tubitv.com=1.0MB; r5---sn-jxopj-n5oe.gvt1.com=0.5MB; mcdn.tubitv.com=0.5MB; tubitv.com=0.2MB",
+   "per_app_pcap": "tubi_6Mbps_50ms_pfifo_trial10.tubi.pcap: 56637 pkts, 64.8 MB, 16 attributed IP(s), sha db96ec417e6cbe18",
+   "stored_at": "VM:/home/student/sthanav-agentic-thin-waist/experiments/pramana/results/pramana_runs/tubi_6mbps_50ms_0pct_pfifo_cubic_solo_t10_77378d0648/capture.pcap | archive:/home/student/pramana-data/pcaps"
+  },
+  "dir": "/tmp/release/tubi/tubi_6Mbps_50ms_pfifo_trial10",
+  "res_p": 480,
+  "decoding_codec": "avc1.640028",
+  "measured_box": "1256x908"
+ },
+ {
+  "name": "twitch_10Mbps_50ms_pfifo_trial10",
+  "app": "twitch",
+  "cap": 10.0,
+  "lat": 50,
+  "aqm": "pfifo",
+  "trial": 10,
+  "verdict": "OK",
+  "metrics": {
+   "startup_delay_ms": 12683.0,
+   "startup_basis": "requestVideoFrameCallback first presentationTime",
+   "initial_buffering_ms": 0.0,
+   "buffer_level_secs": {
+    "mean": 20.1035,
+    "min": 5.826496000000002,
+    "max": 26.006597999999997,
+    "basis": "video.buffered end - currentTime, sampled once per interval"
+   },
+   "rebuffer_events": 4,
+   "rebuffer_duration_ms": 2078.0,
+   "delivered_video_bitrate_mbps": null,
+   "delivered_audio_bitrate_mbps": null,
+   "bitrate_basis": "unavailable (player appends media inside a Worker; a main-world hook cannot observe it)",
+   "switch_count": 1,
+   "switch_events": [
+    {
+     "t": 27.81,
+     "from_p": 1080,
+     "to_p": 720,
+     "direction": "down",
+     "signal": "decoded_height"
+    }
+   ],
+   "rendered_fps": 26.22,
+   "raw_decoded_frames": 4999.0,
+   "raw_dropped_frames": 102.0,
+   "raw_presented_frames": 4898.0
+  },
+  "thr": {
+   "download": {
+    "peak_mbps": 8.9795,
+    "mean_mbps": 2.4428
+   },
+   "upload": {
+    "peak_mbps": 0.2368,
+    "mean_mbps": 0.061
+   }
+  },
+  "pcap": {
+   "run": "twitch_10Mbps_50ms_pfifo_trial10",
+   "filename": "capture.pcap",
+   "size_bytes": 71561276,
+   "sha256": "7d479a7e39902ebc22e54b4578daad2051675097c0e5c9b69246ac698a5a7afd",
+   "host_split": "21e6b81577ac.j.cloudfront.hls.ttvnw.net=59.3MB; www.twitch.tv=6.6MB; usw21.playlist.ttvnw.net=1.5MB; r5---sn-jxopj-n5oe.gvt1.com=0.5MB; k.twitchcdn.net=0.5MB; dns.google=0.2MB",
+   "per_app_pcap": "twitch_10Mbps_50ms_pfifo_trial10.twitch.pcap: 58317 pkts, 68.2 MB, 13 attributed IP(s), sha 25c24422dc8dc44e",
+   "stored_at": "VM:/home/student/sthanav-agentic-thin-waist/experiments/pramana/results/pramana_runs/twitch_10mbps_50ms_0pct_pfifo_cubic_solo_t10_844e9ef23f/capture.pcap | archive:/home/student/pramana-data/pcaps"
+  },
+  "dir": "/tmp/release/twitch/twitch_10Mbps_50ms_pfifo_trial10",
+  "res_p": 720,
+  "decoding_codec": null,
+  "measured_box": "1331x749"
+ },
+ {
+  "name": "twitch_3Mbps_50ms_pfifo_trial10",
+  "app": "twitch",
+  "cap": 3.0,
+  "lat": 50,
+  "aqm": "pfifo",
+  "trial": 10,
+  "verdict": "OK",
+  "metrics": {
+   "startup_delay_ms": 16434.0,
+   "startup_basis": "requestVideoFrameCallback first presentationTime",
+   "initial_buffering_ms": 0.0,
+   "buffer_level_secs": {
+    "mean": 11.1458,
+    "min": 5.095905000000002,
+    "max": 15.616851999999994,
+    "basis": "video.buffered end - currentTime, sampled once per interval"
+   },
+   "rebuffer_events": 3,
+   "rebuffer_duration_ms": 449.0,
+   "delivered_video_bitrate_mbps": null,
+   "delivered_audio_bitrate_mbps": null,
+   "bitrate_basis": "unavailable (player appends media inside a Worker; a main-world hook cannot observe it)",
+   "switch_count": 1,
+   "switch_events": [
+    {
+     "t": 22.62,
+     "from_p": 480,
+     "to_p": 720,
+     "direction": "up",
+     "signal": "decoded_height"
+    }
+   ],
+   "rendered_fps": 27.84,
+   "raw_decoded_frames": 5540.0,
+   "raw_dropped_frames": 164.0,
+   "raw_presented_frames": 5408.0
+  },
+  "thr": {
+   "download": {
+    "peak_mbps": 2.9874,
+    "mean_mbps": 2.2461
+   },
+   "upload": {
+    "peak_mbps": 0.1226,
+    "mean_mbps": 0.0657
+   }
+  },
+  "pcap": {
+   "run": "twitch_3Mbps_50ms_pfifo_trial10",
+   "filename": "capture.pcap",
+   "size_bytes": 65603140,
+   "sha256": "c1f51a6b48e49791222537bc93e4cf37e5d927ace4679e92dda6b1c0feda56f5",
+   "host_split": "21e6b81577ac.j.cloudfront.hls.ttvnw.net=53.2MB; www.twitch.tv=6.7MB; usw22.playlist.ttvnw.net=1.7MB; k.twitchcdn.net=0.5MB; r5---sn-jxopj-n5oe.gvt1.com=0.5MB; dns.google=0.2MB",
+   "per_app_pcap": "twitch_3Mbps_50ms_pfifo_trial10.twitch.pcap: 50822 pkts, 62.5 MB, 15 attributed IP(s), sha 8116f16737a97b9a",
+   "stored_at": "VM:/home/student/sthanav-agentic-thin-waist/experiments/pramana/results/pramana_runs/twitch_3mbps_50ms_0pct_pfifo_cubic_solo_t10_b63cddf727/capture.pcap | archive:/home/student/pramana-data/pcaps"
+  },
+  "dir": "/tmp/release/twitch/twitch_3Mbps_50ms_pfifo_trial10",
+  "res_p": 720,
+  "decoding_codec": null,
+  "measured_box": "1331x659"
+ },
+ {
+  "name": "twitch_6Mbps_50ms_pfifo_trial10",
+  "app": "twitch",
+  "cap": 6.0,
+  "lat": 50,
+  "aqm": "pfifo",
+  "trial": 10,
+  "verdict": "OK",
+  "metrics": {
+   "startup_delay_ms": 13287.0,
+   "startup_basis": "requestVideoFrameCallback first presentationTime",
+   "initial_buffering_ms": 0.0,
+   "buffer_level_secs": {
+    "mean": 21.3026,
+    "min": 5.758012000000001,
+    "max": 27.202320000000014,
+    "basis": "video.buffered end - currentTime, sampled once per interval"
+   },
+   "rebuffer_events": 6,
+   "rebuffer_duration_ms": 3619.0,
+   "delivered_video_bitrate_mbps": null,
+   "delivered_audio_bitrate_mbps": null,
+   "bitrate_basis": "unavailable (player appends media inside a Worker; a main-world hook cannot observe it)",
+   "switch_count": 1,
+   "switch_events": [
+    {
+     "t": 19.72,
+     "from_p": 1080,
+     "to_p": 720,
+     "direction": "down",
+     "signal": "decoded_height"
+    }
+   ],
+   "rendered_fps": 26.71,
+   "raw_decoded_frames": 5182.0,
+   "raw_dropped_frames": 166.0,
+   "raw_presented_frames": 5044.0
+  },
+  "thr": {
+   "download": {
+    "peak_mbps": 5.4171,
+    "mean_mbps": 2.4735
+   },
+   "upload": {
+    "peak_mbps": 0.1828,
+    "mean_mbps": 0.0667
+   }
+  },
+  "pcap": {
+   "run": "twitch_6Mbps_50ms_pfifo_trial10",
+   "filename": "capture.pcap",
+   "size_bytes": 73715816,
+   "sha256": "3ca1efef723c8e98567916c764e83174f96958d490e52d8625f08312050b0891",
+   "host_split": "21e6b81577ac.j.cloudfront.hls.ttvnw.net=61.3MB; www.twitch.tv=6.6MB; usw23.playlist.ttvnw.net=1.5MB; r5---sn-jxopj-n5oe.gvt1.com=0.5MB; k.twitchcdn.net=0.5MB; www.gstatic.com=0.2MB",
+   "per_app_pcap": "twitch_6Mbps_50ms_pfifo_trial10.twitch.pcap: 61082 pkts, 70.2 MB, 15 attributed IP(s), sha e9f15b53e063c2e0",
+   "stored_at": "VM:/home/student/sthanav-agentic-thin-waist/experiments/pramana/results/pramana_runs/twitch_6mbps_50ms_0pct_pfifo_cubic_solo_t10_903e5dd618/capture.pcap | archive:/home/student/pramana-data/pcaps"
+  },
+  "dir": "/tmp/release/twitch/twitch_6Mbps_50ms_pfifo_trial10",
+  "res_p": 720,
+  "decoding_codec": null,
+  "measured_box": "1331x749"
+ },
+ {
+  "name": "vimeo_0.5Mbps_50ms_pfifo_trial10",
+  "app": "vimeo",
+  "cap": 0.5,
+  "lat": 50,
+  "aqm": "pfifo",
+  "trial": 10,
+  "verdict": "OK",
+  "metrics": {
+   "startup_delay_ms": 21504.0,
+   "startup_basis": "requestVideoFrameCallback first presentationTime",
+   "initial_buffering_ms": 10545.0,
+   "buffer_level_secs": {
+    "mean": 7.5386,
+    "min": 0.0,
+    "max": 15.092457999999997,
+    "basis": "video.buffered end - currentTime, sampled once per interval"
+   },
+   "rebuffer_events": 2,
+   "rebuffer_duration_ms": 2458.0,
+   "delivered_video_bitrate_mbps": 0.2145,
+   "delivered_audio_bitrate_mbps": 0.1892,
+   "bitrate_basis": "mse_appended_bytes(video sourcebuffer)",
+   "switch_count": 1,
+   "switch_events": [
+    {
+     "t": 4.3,
+     "from_p": 720,
+     "to_p": 240,
+     "direction": "down",
+     "signal": "decoded_height"
+    }
+   ],
+   "rendered_fps": 23.07,
+   "raw_decoded_frames": 4284.0,
+   "raw_dropped_frames": 110.0,
+   "raw_presented_frames": 4170.0
+  },
+  "thr": {
+   "download": {
+    "peak_mbps": 0.5073,
+    "mean_mbps": 0.4278
+   },
+   "upload": {
+    "peak_mbps": 0.2064,
+    "mean_mbps": 0.0185
+   }
+  },
+  "pcap": {
+   "run": "vimeo_0.5Mbps_50ms_pfifo_trial10",
+   "filename": "capture.pcap",
+   "size_bytes": 13341196,
+   "sha256": "f84e6e136b4a5f4b06e7c4d1446795028ef25153e2907b19d34f65153eb25947",
+   "host_split": "vod-adaptive-ak.vimeocdn.com=10.2MB; i.vimeocdn.com=0.9MB; r5---sn-jxopj-n5oe.gvt1.com=0.5MB; player.vimeo.com=0.3MB; dns.google=0.2MB; www.gstatic.com=0.2MB",
+   "per_app_pcap": "vimeo_0.5Mbps_50ms_pfifo_trial10.vimeo.pcap: 11798 pkts, 11.5 MB, 6 attributed IP(s), sha 254593e106cf22a7",
+   "stored_at": "VM:/home/student/sthanav-agentic-thin-waist/experiments/pramana/results/pramana_runs/vimeo_0.5mbps_50ms_0pct_pfifo_cubic_solo_t10_b1076effe5/capture.pcap | archive:/home/student/pramana-data/pcaps"
+  },
+  "dir": "/tmp/release/vimeo/vimeo_0.5Mbps_50ms_pfifo_trial10",
+  "res_p": 240,
+  "decoding_codec": "av01.0.00M.08",
+  "measured_box": "1317x988"
+ },
+ {
+  "name": "vimeo_1.5Mbps_50ms_pfifo_trial10",
+  "app": "vimeo",
+  "cap": 1.5,
+  "lat": 50,
+  "aqm": "pfifo",
+  "trial": 10,
+  "verdict": "OK",
+  "metrics": {
+   "startup_delay_ms": 8095.0,
+   "startup_basis": "requestVideoFrameCallback first presentationTime",
+   "initial_buffering_ms": 3006.0,
+   "buffer_level_secs": {
+    "mean": 13.0404,
+    "min": 7.250430999999992,
+    "max": 16.987280999999996,
+    "basis": "video.buffered end - currentTime, sampled once per interval"
+   },
+   "rebuffer_events": 0,
+   "rebuffer_duration_ms": 0,
+   "delivered_video_bitrate_mbps": 0.2395,
+   "delivered_audio_bitrate_mbps": 0.1888,
+   "bitrate_basis": "mse_appended_bytes(video sourcebuffer)",
+   "switch_count": 7,
+   "switch_events": [
+    {
+     "t": 4.4,
+     "from_p": 360,
+     "to_p": 240,
+     "direction": "down",
+     "signal": "decoded_height"
+    },
+    {
+     "t": 57.54,
+     "from_p": 240,
+     "to_p": 360,
+     "direction": "up",
+     "signal": "decoded_height"
+    },
+    {
+     "t": 64.11,
+     "from_p": 360,
+     "to_p": 240,
+     "direction": "down",
+     "signal": "decoded_height"
+    },
+    {
+     "t": 118.14,
+     "from_p": 240,
+     "to_p": 360,
+     "direction": "up",
+     "signal": "decoded_height"
+    },
+    {
+     "t": 124.6,
+     "from_p": 360,
+     "to_p": 240,
+     "direction": "down",
+     "signal": "decoded_height"
+    },
+    {
+     "t": 172.25,
+     "from_p": 240,
+     "to_p": 360,
+     "direction": "up",
+     "signal": "decoded_height"
+    },
+    {
+     "t": 178.66,
+     "from_p": 360,
+     "to_p": 240,
+     "direction": "down",
+     "signal": "decoded_height"
+    }
+   ],
+   "rendered_fps": 23.98,
+   "raw_decoded_frames": 4349.0,
+   "raw_dropped_frames": 2.0,
+   "raw_presented_frames": 4345.0
+  },
+  "thr": {
+   "download": {
+    "peak_mbps": 1.498,
+    "mean_mbps": 0.4611
+   },
+   "upload": {
+    "peak_mbps": 0.192,
+    "mean_mbps": 0.0193
+   }
+  },
+  "pcap": {
+   "run": "vimeo_1.5Mbps_50ms_pfifo_trial10",
+   "filename": "capture.pcap",
+   "size_bytes": 13880636,
+   "sha256": "58cb5827e333feebab8e8e433a3e34138f2899ea8415827d7ccb3a6eab968da3",
+   "host_split": "vod-adaptive-ak.vimeocdn.com=11.1MB; i.vimeocdn.com=0.9MB; r5---sn-jxopj-n5oe.gvt1.com=0.5MB; player.vimeo.com=0.3MB; www.gstatic.com=0.2MB; dns.google=0.1MB",
+   "per_app_pcap": "vimeo_1.5Mbps_50ms_pfifo_trial10.vimeo.pcap: 10012 pkts, 12.4 MB, 7 attributed IP(s), sha c95378738218a609",
+   "stored_at": "VM:/home/student/sthanav-agentic-thin-waist/experiments/pramana/results/pramana_runs/vimeo_1.5mbps_50ms_0pct_pfifo_cubic_solo_t10_e89ebc8193/capture.pcap | archive:/home/student/pramana-data/pcaps"
+  },
+  "dir": "/tmp/release/vimeo/vimeo_1.5Mbps_50ms_pfifo_trial10",
+  "res_p": 240,
+  "decoding_codec": "av01.0.00M.08",
+  "measured_box": "1317x988"
+ },
+ {
+  "name": "vimeo_10Mbps_50ms_pfifo_trial10",
+  "app": "vimeo",
+  "cap": 10.0,
+  "lat": 50,
+  "aqm": "pfifo",
+  "trial": 10,
+  "verdict": "OK",
+  "metrics": {
+   "startup_delay_ms": 2049.0,
+   "startup_basis": "requestVideoFrameCallback first presentationTime",
+   "initial_buffering_ms": 281.0,
+   "buffer_level_secs": {
+    "mean": 24.0575,
+    "min": 13.125868999999998,
+    "max": 28.441122000000007,
+    "basis": "video.buffered end - currentTime, sampled once per interval"
+   },
+   "rebuffer_events": 2,
+   "rebuffer_duration_ms": 822.0,
+   "delivered_video_bitrate_mbps": 2.9975,
+   "delivered_audio_bitrate_mbps": 0.2023,
+   "bitrate_basis": "mse_appended_bytes(video sourcebuffer)",
+   "switch_count": 4,
+   "switch_events": [
+    {
+     "t": 3.22,
+     "from_p": 360,
+     "to_p": 540,
+     "direction": "up",
+     "signal": "decoded_height"
+    },
+    {
+     "t": 9.1,
+     "from_p": 540,
+     "to_p": 1080,
+     "direction": "up",
+     "signal": "decoded_height"
+    },
+    {
+     "t": 28.4,
+     "from_p": 1080,
+     "to_p": 540,
+     "direction": "down",
+     "signal": "decoded_height"
+    },
+    {
+     "t": 46.57,
+     "from_p": 540,
+     "to_p": 720,
+     "direction": "up",
+     "signal": "decoded_height"
+    }
+   ],
+   "rendered_fps": 23.41,
+   "raw_decoded_frames": 4333.0,
+   "raw_dropped_frames": 94.0,
+   "raw_presented_frames": 4241.0
+  },
+  "thr": {
+   "download": {
+    "peak_mbps": 9.9845,
+    "mean_mbps": 3.338
+   },
+   "upload": {
+    "peak_mbps": 0.2284,
+    "mean_mbps": 0.0694
+   }
+  },
+  "pcap": {
+   "run": "vimeo_10Mbps_50ms_pfifo_trial10",
+   "filename": "capture.pcap",
+   "size_bytes": 83252272,
+   "sha256": "ff5f55c78df20027be0aa7b061607a9286a41c402935844a3311229851bd5298",
+   "host_split": "vod-adaptive-ak.vimeocdn.com=78.6MB; i.vimeocdn.com=0.9MB; r5---sn-jxopj-n5oe.gvt1.com=0.5MB; player.vimeo.com=0.3MB; www.gstatic.com=0.2MB; arclight.vimeo.com=0.1MB",
+   "per_app_pcap": "vimeo_10Mbps_50ms_pfifo_trial10.vimeo.pcap: 67225 pkts, 79.9 MB, 7 attributed IP(s), sha 3dafb9e5f0fd2603",
+   "stored_at": "VM:/home/student/sthanav-agentic-thin-waist/experiments/pramana/results/pramana_runs/vimeo_10mbps_50ms_0pct_pfifo_cubic_solo_t10_97e8f06fc3/capture.pcap | archive:/home/student/pramana-data/pcaps"
+  },
+  "dir": "/tmp/release/vimeo/vimeo_10Mbps_50ms_pfifo_trial10",
+  "res_p": 720,
+  "decoding_codec": "av01.0.08M.08",
+  "measured_box": "1317x988"
+ },
+ {
+  "name": "vimeo_1Mbps_50ms_pfifo_trial10",
+  "app": "vimeo",
+  "cap": 1.0,
+  "lat": 50,
+  "aqm": "pfifo",
+  "trial": 10,
+  "verdict": "OK",
+  "metrics": {
+   "startup_delay_ms": 10508.0,
+   "startup_basis": "requestVideoFrameCallback first presentationTime",
+   "initial_buffering_ms": 4350.0,
+   "buffer_level_secs": {
+    "mean": 23.4461,
+    "min": 9.586006000000001,
+    "max": 27.83672,
+    "basis": "video.buffered end - currentTime, sampled once per interval"
+   },
+   "rebuffer_events": 0,
+   "rebuffer_duration_ms": 0,
+   "delivered_video_bitrate_mbps": 0.2859,
+   "delivered_audio_bitrate_mbps": 0.2089,
+   "bitrate_basis": "mse_appended_bytes(video sourcebuffer)",
+   "switch_count": 2,
+   "switch_events": [
+    {
+     "t": 4.38,
+     "from_p": 360,
+     "to_p": 240,
+     "direction": "down",
+     "signal": "decoded_height"
+    },
+    {
+     "t": 155.63,
+     "from_p": 240,
+     "to_p": 360,
+     "direction": "up",
+     "signal": "decoded_height"
+    }
+   ],
+   "rendered_fps": 23.98,
+   "raw_decoded_frames": 4332.0,
+   "raw_dropped_frames": 1.0,
+   "raw_presented_frames": 4328.0
+  },
+  "thr": {
+   "download": {
+    "peak_mbps": 1.0122,
+    "mean_mbps": 0.5236
+   },
+   "upload": {
+    "peak_mbps": 0.1931,
+    "mean_mbps": 0.0202
+   }
+  },
+  "pcap": {
+   "run": "vimeo_1Mbps_50ms_pfifo_trial10",
+   "filename": "capture.pcap",
+   "size_bytes": 15411120,
+   "sha256": "af4b2ee5100741266b57cf1869110f8b65270a5f64be5addffa6763ad84fa3f8",
+   "host_split": "vod-adaptive-ak.vimeocdn.com=12.4MB; f.vimeocdn.com=0.9MB; r5---sn-jxopj-n5oe.gvt1.com=0.5MB; player.vimeo.com=0.3MB; www.gstatic.com=0.2MB; dns.google=0.2MB",
+   "per_app_pcap": "vimeo_1Mbps_50ms_pfifo_trial10.vimeo.pcap: 12626 pkts, 13.7 MB, 7 attributed IP(s), sha 010f5f704484a3ec",
+   "stored_at": "VM:/home/student/sthanav-agentic-thin-waist/experiments/pramana/results/pramana_runs/vimeo_1mbps_50ms_0pct_pfifo_cubic_solo_t10_664dd03a30/capture.pcap | archive:/home/student/pramana-data/pcaps"
+  },
+  "dir": "/tmp/release/vimeo/vimeo_1Mbps_50ms_pfifo_trial10",
+  "res_p": 240,
+  "decoding_codec": "av01.0.01M.08",
+  "measured_box": "1317x988"
+ },
+ {
+  "name": "vimeo_3Mbps_50ms_pfifo_trial10",
+  "app": "vimeo",
+  "cap": 3.0,
+  "lat": 50,
+  "aqm": "pfifo",
+  "trial": 10,
+  "verdict": "OK",
+  "metrics": {
+   "startup_delay_ms": 4084.0,
+   "startup_basis": "requestVideoFrameCallback first presentationTime",
+   "initial_buffering_ms": 1222.0,
+   "buffer_level_secs": {
+    "mean": 23.9908,
+    "min": 13.204267999999999,
+    "max": 28.702920999999996,
+    "basis": "video.buffered end - currentTime, sampled once per interval"
+   },
+   "rebuffer_events": 0,
+   "rebuffer_duration_ms": 0,
+   "delivered_video_bitrate_mbps": 1.024,
+   "delivered_audio_bitrate_mbps": 0.2021,
+   "bitrate_basis": "mse_appended_bytes(video sourcebuffer)",
+   "switch_count": 4,
+   "switch_events": [
+    {
+     "t": 4.39,
+     "from_p": 360,
+     "to_p": 240,
+     "direction": "down",
+     "signal": "decoded_height"
+    },
+    {
+     "t": 16.06,
+     "from_p": 240,
+     "to_p": 360,
+     "direction": "up",
+     "signal": "decoded_height"
+    },
+    {
+     "t": 27.95,
+     "from_p": 360,
+     "to_p": 240,
+     "direction": "down",
+     "signal": "decoded_height"
+    },
+    {
+     "t": 45.97,
+     "from_p": 240,
+     "to_p": 540,
+     "direction": "up",
+     "signal": "decoded_height"
+    }
+   ],
+   "rendered_fps": 23.97,
+   "raw_decoded_frames": 4342.0,
+   "raw_dropped_frames": 4.0,
+   "raw_presented_frames": 4335.0
+  },
+  "thr": {
+   "download": {
+    "peak_mbps": 3.0008,
+    "mean_mbps": 1.2878
+   },
+   "upload": {
+    "peak_mbps": 0.2331,
+    "mean_mbps": 0.0368
+   }
+  },
+  "pcap": {
+   "run": "vimeo_3Mbps_50ms_pfifo_trial10",
+   "filename": "capture.pcap",
+   "size_bytes": 33793384,
+   "sha256": "cf1b70bde780a0e56aef2bea9663d9974b4294146e500e60cc539f740c3eebcb",
+   "host_split": "vod-adaptive-ak.vimeocdn.com=30.5MB; i.vimeocdn.com=0.9MB; r5---sn-jxopj-n5oe.gvt1.com=0.5MB; player.vimeo.com=0.3MB; www.gstatic.com=0.2MB; dns.google=0.1MB",
+   "per_app_pcap": "vimeo_3Mbps_50ms_pfifo_trial10.vimeo.pcap: 25652 pkts, 31.8 MB, 7 attributed IP(s), sha dbcd511e2b901257",
+   "stored_at": "VM:/home/student/sthanav-agentic-thin-waist/experiments/pramana/results/pramana_runs/vimeo_3mbps_50ms_0pct_pfifo_cubic_solo_t10_a87887dc74/capture.pcap | archive:/home/student/pramana-data/pcaps"
+  },
+  "dir": "/tmp/release/vimeo/vimeo_3Mbps_50ms_pfifo_trial10",
+  "res_p": 540,
+  "decoding_codec": "av01.0.05M.08",
+  "measured_box": "1317x988"
+ },
+ {
+  "name": "vimeo_6Mbps_50ms_pfifo_trial10",
+  "app": "vimeo",
+  "cap": 6.0,
+  "lat": 50,
+  "aqm": "pfifo",
+  "trial": 10,
+  "verdict": "OK",
+  "metrics": {
+   "startup_delay_ms": 2854.0,
+   "startup_basis": "requestVideoFrameCallback first presentationTime",
+   "initial_buffering_ms": 849.0,
+   "buffer_level_secs": {
+    "mean": 23.7344,
+    "min": 14.594515999999999,
+    "max": 29.352417999999997,
+    "basis": "video.buffered end - currentTime, sampled once per interval"
+   },
+   "rebuffer_events": 0,
+   "rebuffer_duration_ms": 0,
+   "delivered_video_bitrate_mbps": 2.2459,
+   "delivered_audio_bitrate_mbps": 0.2019,
+   "bitrate_basis": "mse_appended_bytes(video sourcebuffer)",
+   "switch_count": 3,
+   "switch_events": [
+    {
+     "t": 9.94,
+     "from_p": 540,
+     "to_p": 720,
+     "direction": "up",
+     "signal": "decoded_height"
+    },
+    {
+     "t": 27.63,
+     "from_p": 720,
+     "to_p": 360,
+     "direction": "down",
+     "signal": "decoded_height"
+    },
+    {
+     "t": 45.77,
+     "from_p": 360,
+     "to_p": 720,
+     "direction": "up",
+     "signal": "decoded_height"
+    }
+   ],
+   "rendered_fps": 23.89,
+   "raw_decoded_frames": 4349.0,
+   "raw_dropped_frames": 19.0,
+   "raw_presented_frames": 4330.0
+  },
+  "thr": {
+   "download": {
+    "peak_mbps": 6.0001,
+    "mean_mbps": 2.6098
+   },
+   "upload": {
+    "peak_mbps": 0.2233,
+    "mean_mbps": 0.0601
+   }
+  },
+  "pcap": {
+   "run": "vimeo_6Mbps_50ms_pfifo_trial10",
+   "filename": "capture.pcap",
+   "size_bytes": 65777672,
+   "sha256": "e05932cff37b7902e036fd3181c5f0c6c05990aa18d61a38098c1a01db0a5c12",
+   "host_split": "vod-adaptive-ak.vimeocdn.com=61.6MB; i.vimeocdn.com=0.9MB; r5---sn-jxopj-n5oe.gvt1.com=0.5MB; player.vimeo.com=0.3MB; www.gstatic.com=0.2MB; dns.google=0.1MB",
+   "per_app_pcap": "vimeo_6Mbps_50ms_pfifo_trial10.vimeo.pcap: 53544 pkts, 62.8 MB, 7 attributed IP(s), sha 9842107aae6a1d55",
+   "stored_at": "VM:/home/student/sthanav-agentic-thin-waist/experiments/pramana/results/pramana_runs/vimeo_6mbps_50ms_0pct_pfifo_cubic_solo_t10_be3bef07b0/capture.pcap | archive:/home/student/pramana-data/pcaps"
+  },
+  "dir": "/tmp/release/vimeo/vimeo_6Mbps_50ms_pfifo_trial10",
+  "res_p": 720,
+  "decoding_codec": "av01.0.08M.08",
+  "measured_box": "1317x988"
+ },
+ {
+  "name": "youtube_0.5Mbps_50ms_pfifo_trial10",
+  "app": "youtube",
+  "cap": 0.5,
+  "lat": 50,
+  "aqm": "pfifo",
+  "trial": 10,
+  "verdict": "OK",
+  "metrics": {
+   "startup_delay_ms": 40507.0,
+   "startup_basis": "requestVideoFrameCallback first presentationTime",
+   "initial_buffering_ms": 4016.0,
+   "buffer_level_secs": {
+    "mean": 70.8254,
+    "min": 0.0,
+    "max": 120.55432900000001,
+    "basis": "video.buffered end - currentTime, sampled once per interval"
+   },
+   "rebuffer_events": 2,
+   "rebuffer_duration_ms": 13769.0,
+   "delivered_video_bitrate_mbps": 0.0661,
+   "delivered_audio_bitrate_mbps": 0.1466,
+   "bitrate_basis": "mse_appended_bytes(video sourcebuffer)",
+   "switch_count": 1,
+   "switch_events": [
+    {
+     "t": 11.43,
+     "from_p": 480,
+     "to_p": 144,
+     "direction": "down",
+     "signal": "decoded_height"
+    }
+   ],
+   "rendered_fps": 23.39,
+   "raw_decoded_frames": 4385.0,
+   "raw_dropped_frames": 102.0,
+   "raw_presented_frames": 4279.0
+  },
+  "thr": {
+   "download": {
+    "peak_mbps": 0.5162,
+    "mean_mbps": 0.2403
+   },
+   "upload": {
+    "peak_mbps": 0.0708,
+    "mean_mbps": 0.0156
+   }
+  },
+  "pcap": {
+   "run": "youtube_0.5Mbps_50ms_pfifo_trial10",
+   "filename": "capture.pcap",
+   "size_bytes": 11173720,
+   "sha256": "59432f95476920de9f6038206414958babaabdcc98fdbf9467130f09d7ee6ec5",
+   "host_split": "rr2---sn-jxopj-n5oe.googlevideo.com=5.9MB; www.youtube.com=3.1MB; r5---sn-jxopj-n5oe.gvt1.com=0.5MB; www.gstatic.com=0.2MB; dns.google=0.2MB; www.google.com=0.1MB",
+   "per_app_pcap": "youtube_0.5Mbps_50ms_pfifo_trial10.youtube.pcap: 11961 pkts, 9.7 MB, 12 attributed IP(s), sha d2288086b4fa6b2d",
+   "stored_at": "VM:/home/student/sthanav-agentic-thin-waist/experiments/pramana/results/pramana_runs/youtube_0.5mbps_50ms_0pct_pfifo_cubic_solo_t10_ffa31f8ab4/capture.pcap | archive:/home/student/pramana-data/pcaps"
+  },
+  "dir": "/tmp/release/youtube/youtube_0.5Mbps_50ms_pfifo_trial10",
+  "res_p": 144,
+  "decoding_codec": "av01.0.00M.08",
+  "measured_box": "1461x822"
+ },
+ {
+  "name": "youtube_1.5Mbps_50ms_pfifo_trial10",
+  "app": "youtube",
+  "cap": 1.5,
+  "lat": 50,
+  "aqm": "pfifo",
+  "trial": 10,
+  "verdict": "OK",
+  "metrics": {
+   "startup_delay_ms": 14261.0,
+   "startup_basis": "requestVideoFrameCallback first presentationTime",
+   "initial_buffering_ms": 1670.0,
+   "buffer_level_secs": {
+    "mean": 61.5948,
+    "min": 0.0,
+    "max": 113.90155999999999,
+    "basis": "video.buffered end - currentTime, sampled once per interval"
+   },
+   "rebuffer_events": 0,
+   "rebuffer_duration_ms": 0,
+   "delivered_video_bitrate_mbps": 0.2896,
+   "delivered_audio_bitrate_mbps": 0.1011,
+   "bitrate_basis": "mse_appended_bytes(video sourcebuffer)",
+   "switch_count": 0,
+   "switch_events": [],
+   "rendered_fps": 24.21,
+   "raw_decoded_frames": 16.0,
+   "raw_dropped_frames": 6.0,
+   "raw_presented_frames": 1.0
+  },
+  "thr": {
+   "download": {
+    "peak_mbps": 1.5096,
+    "mean_mbps": 0.4018
+   },
+   "upload": {
+    "peak_mbps": 0.0488,
+    "mean_mbps": 0.009
+   }
+  },
+  "pcap": {
+   "run": "youtube_1.5Mbps_50ms_pfifo_trial10",
+   "filename": "capture.pcap",
+   "size_bytes": 22503504,
+   "sha256": "af16162909d1a1dc6e816a780092b3e37f02484d450f3f4a9299bbd82904f650",
+   "host_split": "rr2---sn-jxopj-n5oe.googlevideo.com=14.4MB; www.youtube.com=4.3MB; www.google.com=1.3MB; r5---sn-jxopj-n5oe.gvt1.com=0.5MB; www.gstatic.com=0.3MB; i.ytimg.com=0.2MB",
+   "per_app_pcap": "youtube_1.5Mbps_50ms_pfifo_trial10.youtube.pcap: 19043 pkts, 19.4 MB, 7 attributed IP(s), sha fe30ce8399fed4e3",
+   "stored_at": "VM:/home/student/sthanav-agentic-thin-waist/experiments/pramana/results/pramana_runs/youtube_1.5mbps_50ms_0pct_pfifo_cubic_solo_t10_1b64872a7a/capture.pcap | archive:/home/student/pramana-data/pcaps"
+  },
+  "dir": "/tmp/release/youtube/youtube_1.5Mbps_50ms_pfifo_trial10",
+  "res_p": 480,
+  "decoding_codec": "av01.0.04M.08",
+  "measured_box": "1331x749"
+ },
+ {
+  "name": "youtube_10Mbps_50ms_pfifo_trial10",
+  "app": "youtube",
+  "cap": 10.0,
+  "lat": 50,
+  "aqm": "pfifo",
+  "trial": 10,
+  "verdict": "OK",
+  "metrics": {
+   "startup_delay_ms": 8127.0,
+   "startup_basis": "requestVideoFrameCallback first presentationTime",
+   "initial_buffering_ms": 5078.0,
+   "buffer_level_secs": {
+    "mean": 70.0915,
+    "min": 16.663340000000005,
+    "max": 115.72851800000001,
+    "basis": "video.buffered end - currentTime, sampled once per interval"
+   },
+   "rebuffer_events": 0,
+   "rebuffer_duration_ms": 0,
+   "delivered_video_bitrate_mbps": 0.5482,
+   "delivered_audio_bitrate_mbps": 0.1039,
+   "bitrate_basis": "mse_appended_bytes(video sourcebuffer)",
+   "switch_count": 0,
+   "switch_events": [],
+   "rendered_fps": 24.88,
+   "raw_decoded_frames": 4914.0,
+   "raw_dropped_frames": 86.0,
+   "raw_presented_frames": 4829.0
+  },
+  "thr": {
+   "download": {
+    "peak_mbps": 9.8557,
+    "mean_mbps": 0.821
+   },
+   "upload": {
+    "peak_mbps": 0.088,
+    "mean_mbps": 0.0093
+   }
+  },
+  "pcap": {
+   "run": "youtube_10Mbps_50ms_pfifo_trial10",
+   "filename": "capture.pcap",
+   "size_bytes": 30647548,
+   "sha256": "fc00916c2efff9d94c9b35c64e81d88e85e9212ab92d09db8129f6843f3f4278",
+   "host_split": "www.youtube.com=4.3MB; www.google.com=1.2MB; r5---sn-jxopj-n5oe.gvt1.com=0.5MB; i.ytimg.com=0.3MB; www.gstatic.com=0.2MB; fonts.gstatic.com=0.2MB",
+   "per_app_pcap": "youtube_10Mbps_50ms_pfifo_trial10.youtube.pcap: 23688 pkts, 27.7 MB, 8 attributed IP(s), sha 0bb549749bd82360",
+   "stored_at": "VM:/home/student/sthanav-agentic-thin-waist/experiments/pramana/results/pramana_runs/youtube_10mbps_50ms_0pct_pfifo_cubic_solo_t10_2132666cd2/capture.pcap | archive:/home/student/pramana-data/pcaps"
+  },
+  "dir": "/tmp/release/youtube/youtube_10Mbps_50ms_pfifo_trial10",
+  "res_p": 720,
+  "decoding_codec": "vp09",
+  "measured_box": "1246x701"
+ },
+ {
+  "name": "youtube_1Mbps_50ms_pfifo_trial10",
+  "app": "youtube",
+  "cap": 1.0,
+  "lat": 50,
+  "aqm": "pfifo",
+  "trial": 10,
+  "verdict": "OK",
+  "metrics": {
+   "startup_delay_ms": 20521.0,
+   "startup_basis": "requestVideoFrameCallback first presentationTime",
+   "initial_buffering_ms": 2018.0,
+   "buffer_level_secs": {
+    "mean": 74.0521,
+    "min": 19.879626000000002,
+    "max": 122.227113,
+    "basis": "video.buffered end - currentTime, sampled once per interval"
+   },
+   "rebuffer_events": 1,
+   "rebuffer_duration_ms": 18103.0,
+   "delivered_video_bitrate_mbps": 0.2218,
+   "delivered_audio_bitrate_mbps": 0.1241,
+   "bitrate_basis": "mse_appended_bytes(video sourcebuffer)",
+   "switch_count": 3,
+   "switch_events": [
+    {
+     "t": 3.18,
+     "from_p": 480,
+     "to_p": 240,
+     "direction": "down",
+     "signal": "decoded_height"
+    },
+    {
+     "t": 28.27,
+     "from_p": 240,
+     "to_p": 360,
+     "direction": "up",
+     "signal": "decoded_height"
+    },
+    {
+     "t": 170.08,
+     "from_p": 360,
+     "to_p": 480,
+     "direction": "up",
+     "signal": "decoded_height"
+    }
+   ],
+   "rendered_fps": 25.0,
+   "raw_decoded_frames": 4826.0,
+   "raw_dropped_frames": 12.0,
+   "raw_presented_frames": 4810.0
+  },
+  "thr": {
+   "download": {
+    "peak_mbps": 1.0129,
+    "mean_mbps": 0.3707
+   },
+   "upload": {
+    "peak_mbps": 0.0708,
+    "mean_mbps": 0.013
+   }
+  },
+  "pcap": {
+   "run": "youtube_1Mbps_50ms_pfifo_trial10",
+   "filename": "capture.pcap",
+   "size_bytes": 17576184,
+   "sha256": "4229caab13e734d679af827397c6a53cc13f1c9866c6e3f9e89ec9f1a7c782b8",
+   "host_split": "rr2---sn-jxopj-n5oe.googlevideo.com=9.8MB; www.youtube.com=4.3MB; rr2---sn-a5m7lnld.googlevideo.com=0.9MB; r5---sn-jxopj-n5oe.gvt1.com=0.5MB; www.gstatic.com=0.2MB; i.ytimg.com=0.2MB",
+   "per_app_pcap": "youtube_1Mbps_50ms_pfifo_trial10.youtube.pcap: 16612 pkts, 15.8 MB, 10 attributed IP(s), sha 1de25038cee64f2f",
+   "stored_at": "VM:/home/student/sthanav-agentic-thin-waist/experiments/pramana/results/pramana_runs/youtube_1mbps_50ms_0pct_pfifo_cubic_solo_t10_897eb07231/capture.pcap | archive:/home/student/pramana-data/pcaps"
+  },
+  "dir": "/tmp/release/youtube/youtube_1Mbps_50ms_pfifo_trial10",
+  "res_p": 360,
+  "decoding_codec": "av01.0.04M.08",
+  "measured_box": "1461x822"
+ },
+ {
+  "name": "youtube_3Mbps_50ms_pfifo_trial10",
+  "app": "youtube",
+  "cap": 3.0,
+  "lat": 50,
+  "aqm": "pfifo",
+  "trial": 10,
+  "verdict": "OK",
+  "metrics": {
+   "startup_delay_ms": 7608.0,
+   "startup_basis": "requestVideoFrameCallback first presentationTime",
+   "initial_buffering_ms": 1331.0,
+   "buffer_level_secs": {
+    "mean": 69.9715,
+    "min": 16.187776,
+    "max": 113.639581,
+    "basis": "video.buffered end - currentTime, sampled once per interval"
+   },
+   "rebuffer_events": 1,
+   "rebuffer_duration_ms": 313.0,
+   "delivered_video_bitrate_mbps": 0.5846,
+   "delivered_audio_bitrate_mbps": 0.0957,
+   "bitrate_basis": "mse_appended_bytes(video sourcebuffer)",
+   "switch_count": 0,
+   "switch_events": [],
+   "rendered_fps": 22.74,
+   "raw_decoded_frames": 4899.0,
+   "raw_dropped_frames": 149.0,
+   "raw_presented_frames": 4749.0
+  },
+  "thr": {
+   "download": {
+    "peak_mbps": 3.0078,
+    "mean_mbps": 0.7273
+   },
+   "upload": {
+    "peak_mbps": 0.072,
+    "mean_mbps": 0.0106
+   }
+  },
+  "pcap": {
+   "run": "youtube_3Mbps_50ms_pfifo_trial10",
+   "filename": "capture.pcap",
+   "size_bytes": 32302320,
+   "sha256": "502a7c6724239dbfb3fea74d97142f043fa14efb200eca897ce9ab27524f4dba",
+   "host_split": "rr2---sn-jxopj-n5oe.googlevideo.com=20.9MB; www.youtube.com=4.3MB; www.google.com=1.3MB; r5---sn-jxopj-n5oe.gvt1.com=0.5MB; i.ytimg.com=0.3MB; www.gstatic.com=0.2MB",
+   "per_app_pcap": "youtube_3Mbps_50ms_pfifo_trial10.youtube.pcap: 23891 pkts, 26.1 MB, 7 attributed IP(s), sha fa2acf51444d499c",
+   "stored_at": "VM:/home/student/sthanav-agentic-thin-waist/experiments/pramana/results/pramana_runs/youtube_3mbps_50ms_0pct_pfifo_cubic_solo_t10_5e6a4d8b1d/capture.pcap | archive:/home/student/pramana-data/pcaps"
+  },
+  "dir": "/tmp/release/youtube/youtube_3Mbps_50ms_pfifo_trial10",
+  "res_p": 720,
+  "decoding_codec": "vp09",
+  "measured_box": "1331x749"
+ },
+ {
+  "name": "youtube_3Mbps_50ms_pfifo_trial21",
+  "app": "youtube",
+  "cap": 3.0,
+  "lat": 50,
+  "aqm": "pfifo",
+  "trial": 21,
+  "verdict": "OK",
+  "metrics": {
+   "startup_delay_ms": 7631.0,
+   "startup_basis": "requestVideoFrameCallback first presentationTime",
+   "initial_buffering_ms": 988.0,
+   "buffer_level_secs": {
+    "mean": 68.7049,
+    "min": 13.428362000000021,
+    "max": 114.501591,
+    "basis": "video.buffered end - currentTime, sampled once per interval"
+   },
+   "rebuffer_events": 0,
+   "rebuffer_duration_ms": 0,
+   "delivered_video_bitrate_mbps": 0.2991,
+   "delivered_audio_bitrate_mbps": 0.1037,
+   "bitrate_basis": "mse_appended_bytes(video sourcebuffer)",
+   "switch_count": 0,
+   "switch_events": [],
+   "rendered_fps": 24.97,
+   "raw_decoded_frames": 4995.0,
+   "raw_dropped_frames": 30.0,
+   "raw_presented_frames": 4965.0
+  },
+  "thr": {
+   "download": {
+    "peak_mbps": 3.0078,
+    "mean_mbps": 0.4463
+   },
+   "upload": {
+    "peak_mbps": 0.0585,
+    "mean_mbps": 0.0085
+   }
+  },
+  "pcap": {
+   "run": "youtube_3Mbps_50ms_pfifo_trial21",
+   "filename": "capture.pcap",
+   "size_bytes": 22440148,
+   "sha256": "d443d06eececf65b2c9e69d0053ed0957bbc1b86435f2e7d94406760d1c2b622",
+   "host_split": "rr2---sn-jxopj-n5oe.googlevideo.com=14.3MB; www.youtube.com=4.3MB; www.google.com=1.2MB; r5---sn-jxopj-n5oe.gvt1.com=0.5MB; i.ytimg.com=0.3MB; www.gstatic.com=0.3MB",
+   "per_app_pcap": "youtube_3Mbps_50ms_pfifo_trial21.youtube.pcap: 18104 pkts, 19.5 MB, 9 attributed IP(s), sha 6ec4bb1edee19db8",
+   "stored_at": "VM:/home/student/sthanav-agentic-thin-waist/experiments/pramana/results/pramana_runs/youtube_3mbps_50ms_0pct_pfifo_cubic_solo_t21_vcapyoutube1280x720_c60f0d62f9/capture.pcap | archive:/home/student/pramana-data/pcaps"
+  },
+  "dir": "/tmp/release/youtube/youtube_3Mbps_50ms_pfifo_trial21",
+  "res_p": 480,
+  "decoding_codec": "av01.0.04M.08",
+  "measured_box": "867x488"
+ },
+ {
+  "name": "youtube_3Mbps_50ms_pfifo_trial22",
+  "app": "youtube",
+  "cap": 3.0,
+  "lat": 50,
+  "aqm": "pfifo",
+  "trial": 22,
+  "verdict": "OK",
+  "metrics": {
+   "startup_delay_ms": 7822.0,
+   "startup_basis": "requestVideoFrameCallback first presentationTime",
+   "initial_buffering_ms": 1039.0,
+   "buffer_level_secs": {
+    "mean": 68.6432,
+    "min": 14.057344,
+    "max": 112.80018,
+    "basis": "video.buffered end - currentTime, sampled once per interval"
+   },
+   "rebuffer_events": 0,
+   "rebuffer_duration_ms": 0,
+   "delivered_video_bitrate_mbps": 0.3113,
+   "delivered_audio_bitrate_mbps": 0.1036,
+   "bitrate_basis": "mse_appended_bytes(video sourcebuffer)",
+   "switch_count": 0,
+   "switch_events": [],
+   "rendered_fps": 24.89,
+   "raw_decoded_frames": 4979.0,
+   "raw_dropped_frames": 23.0,
+   "raw_presented_frames": 4956.0
+  },
+  "thr": {
+   "download": {
+    "peak_mbps": 3.0083,
+    "mean_mbps": 0.4647
+   },
+   "upload": {
+    "peak_mbps": 0.1366,
+    "mean_mbps": 0.0096
+   }
+  },
+  "pcap": {
+   "run": "youtube_3Mbps_50ms_pfifo_trial22",
+   "filename": "capture.pcap",
+   "size_bytes": 22467008,
+   "sha256": "f943a98879a7b2a2bc2d787046207c0f83ecf514c5103e695d5b81e239fd1096",
+   "host_split": "rr2---sn-jxopj-n5oe.googlevideo.com=14.3MB; www.youtube.com=4.3MB; www.google.com=1.3MB; r5---sn-jxopj-n5oe.gvt1.com=0.5MB; i.ytimg.com=0.3MB; www.gstatic.com=0.3MB",
+   "per_app_pcap": "youtube_3Mbps_50ms_pfifo_trial22.youtube.pcap: 17912 pkts, 19.5 MB, 9 attributed IP(s), sha 86042e30c5d1de9f",
+   "stored_at": "VM:/home/student/sthanav-agentic-thin-waist/experiments/pramana/results/pramana_runs/youtube_3mbps_50ms_0pct_pfifo_cubic_solo_t22_vcapyoutube1280x720_3b17e3d243/capture.pcap | archive:/home/student/pramana-data/pcaps"
+  },
+  "dir": "/tmp/release/youtube/youtube_3Mbps_50ms_pfifo_trial22",
+  "res_p": 480,
+  "decoding_codec": "av01.0.04M.08",
+  "measured_box": "867x488"
+ },
+ {
+  "name": "youtube_3Mbps_50ms_pfifo_trial23",
+  "app": "youtube",
+  "cap": 3.0,
+  "lat": 50,
+  "aqm": "pfifo",
+  "trial": 23,
+  "verdict": "OK",
+  "metrics": {
+   "startup_delay_ms": 7528.0,
+   "startup_basis": "requestVideoFrameCallback first presentationTime",
+   "initial_buffering_ms": 943.0,
+   "buffer_level_secs": {
+    "mean": 68.8186,
+    "min": 13.794060000000002,
+    "max": 113.420636,
+    "basis": "video.buffered end - currentTime, sampled once per interval"
+   },
+   "rebuffer_events": 0,
+   "rebuffer_duration_ms": 0,
+   "delivered_video_bitrate_mbps": 0.3066,
+   "delivered_audio_bitrate_mbps": 0.1038,
+   "bitrate_basis": "mse_appended_bytes(video sourcebuffer)",
+   "switch_count": 0,
+   "switch_events": [],
+   "rendered_fps": 24.9,
+   "raw_decoded_frames": 4986.0,
+   "raw_dropped_frames": 35.0,
+   "raw_presented_frames": 4949.0
+  },
+  "thr": {
+   "download": {
+    "peak_mbps": 3.0078,
+    "mean_mbps": 0.4595
+   },
+   "upload": {
+    "peak_mbps": 0.0704,
+    "mean_mbps": 0.0094
+   }
+  },
+  "pcap": {
+   "run": "youtube_3Mbps_50ms_pfifo_trial23",
+   "filename": "capture.pcap",
+   "size_bytes": 22316704,
+   "sha256": "1345282afde2822b791fec0791fdba103b5f355d42000ecf423a556ec7b2e386",
+   "host_split": "rr2---sn-jxopj-n5oe.googlevideo.com=14.3MB; www.youtube.com=4.3MB; www.google.com=1.3MB; r5---sn-jxopj-n5oe.gvt1.com=0.5MB; i.ytimg.com=0.3MB; www.gstatic.com=0.2MB",
+   "per_app_pcap": "youtube_3Mbps_50ms_pfifo_trial23.youtube.pcap: 17876 pkts, 19.5 MB, 10 attributed IP(s), sha 74a305a77f733b7f",
+   "stored_at": "VM:/home/student/sthanav-agentic-thin-waist/experiments/pramana/results/pramana_runs/youtube_3mbps_50ms_0pct_pfifo_cubic_solo_t23_vcapyoutube1280x720_8ca09f6cb6/capture.pcap | archive:/home/student/pramana-data/pcaps"
+  },
+  "dir": "/tmp/release/youtube/youtube_3Mbps_50ms_pfifo_trial23",
+  "res_p": 480,
+  "decoding_codec": "av01.0.04M.08",
+  "measured_box": "867x488"
+ },
+ {
+  "name": "youtube_3Mbps_50ms_pfifo_trial24",
+  "app": "youtube",
+  "cap": 3.0,
+  "lat": 50,
+  "aqm": "pfifo",
+  "trial": 24,
+  "verdict": "OK",
+  "metrics": {
+   "startup_delay_ms": 8165.0,
+   "startup_basis": "requestVideoFrameCallback first presentationTime",
+   "initial_buffering_ms": 968.0,
+   "buffer_level_secs": {
+    "mean": 68.9061,
+    "min": 15.896733000000012,
+    "max": 113.470174,
+    "basis": "video.buffered end - currentTime, sampled once per interval"
+   },
+   "rebuffer_events": 0,
+   "rebuffer_duration_ms": 0,
+   "delivered_video_bitrate_mbps": 0.3176,
+   "delivered_audio_bitrate_mbps": 0.111,
+   "bitrate_basis": "mse_appended_bytes(video sourcebuffer)",
+   "switch_count": 0,
+   "switch_events": [],
+   "rendered_fps": 24.97,
+   "raw_decoded_frames": 4933.0,
+   "raw_dropped_frames": 18.0,
+   "raw_presented_frames": 4913.0
+  },
+  "thr": {
+   "download": {
+    "peak_mbps": 2.998,
+    "mean_mbps": 0.4634
+   },
+   "upload": {
+    "peak_mbps": 0.0706,
+    "mean_mbps": 0.0083
+   }
+  },
+  "pcap": {
+   "run": "youtube_3Mbps_50ms_pfifo_trial24",
+   "filename": "capture.pcap",
+   "size_bytes": 22174940,
+   "sha256": "ef4bd59de34e6521f4cafa7acd5571a04d2adb8600ffb122c2c043f8fba5e585",
+   "host_split": "rr2---sn-jxopj-n5oe.googlevideo.com=14.3MB; www.youtube.com=4.3MB; www.google.com=1.2MB; r5---sn-jxopj-n5oe.gvt1.com=0.5MB; www.gstatic.com=0.2MB; dns.google=0.2MB",
+   "per_app_pcap": "youtube_3Mbps_50ms_pfifo_trial24.youtube.pcap: 17773 pkts, 19.3 MB, 10 attributed IP(s), sha 6f49eae2a7d1d97c",
+   "stored_at": "VM:/home/student/sthanav-agentic-thin-waist/experiments/pramana/results/pramana_runs/youtube_3mbps_50ms_0pct_pfifo_cubic_solo_t24_vcapyoutube1280x720_3926a2bf00/capture.pcap | archive:/home/student/pramana-data/pcaps"
+  },
+  "dir": "/tmp/release/youtube/youtube_3Mbps_50ms_pfifo_trial24",
+  "res_p": 480,
+  "decoding_codec": "av01.0.04M.08",
+  "measured_box": "812x457"
+ },
+ {
+  "name": "youtube_3Mbps_50ms_pfifo_trial25",
+  "app": "youtube",
+  "cap": 3.0,
+  "lat": 50,
+  "aqm": "pfifo",
+  "trial": 25,
+  "verdict": "OK",
+  "metrics": {
+   "startup_delay_ms": 7988.0,
+   "startup_basis": "requestVideoFrameCallback first presentationTime",
+   "initial_buffering_ms": 1243.0,
+   "buffer_level_secs": {
+    "mean": 69.1323,
+    "min": 14.975877999999994,
+    "max": 114.683589,
+    "basis": "video.buffered end - currentTime, sampled once per interval"
+   },
+   "rebuffer_events": 0,
+   "rebuffer_duration_ms": 0,
+   "delivered_video_bitrate_mbps": 0.3098,
+   "delivered_audio_bitrate_mbps": 0.1072,
+   "bitrate_basis": "mse_appended_bytes(video sourcebuffer)",
+   "switch_count": 0,
+   "switch_events": [],
+   "rendered_fps": 24.9,
+   "raw_decoded_frames": 4957.0,
+   "raw_dropped_frames": 22.0,
+   "raw_presented_frames": 4933.0
+  },
+  "thr": {
+   "download": {
+    "peak_mbps": 3.0078,
+    "mean_mbps": 0.4668
+   },
+   "upload": {
+    "peak_mbps": 0.1044,
+    "mean_mbps": 0.0096
+   }
+  },
+  "pcap": {
+   "run": "youtube_3Mbps_50ms_pfifo_trial25",
+   "filename": "capture.pcap",
+   "size_bytes": 22510812,
+   "sha256": "4e2a448664d55e1145bef5f513ed459dfe744ecc254d4c59a74b50b73b4d9488",
+   "host_split": "rr2---sn-jxopj-n5oe.googlevideo.com=14.3MB; www.youtube.com=4.3MB; www.google.com=1.2MB; r5---sn-jxopj-n5oe.gvt1.com=0.5MB; i.ytimg.com=0.3MB; www.gstatic.com=0.3MB",
+   "per_app_pcap": "youtube_3Mbps_50ms_pfifo_trial25.youtube.pcap: 18163 pkts, 19.5 MB, 9 attributed IP(s), sha 1ed42c7252ce2db0",
+   "stored_at": "VM:/home/student/sthanav-agentic-thin-waist/experiments/pramana/results/pramana_runs/youtube_3mbps_50ms_0pct_pfifo_cubic_solo_t25_vcapyoutube1280x720_334c520141/capture.pcap | archive:/home/student/pramana-data/pcaps"
+  },
+  "dir": "/tmp/release/youtube/youtube_3Mbps_50ms_pfifo_trial25",
+  "res_p": 480,
+  "decoding_codec": "av01.0.04M.08",
+  "measured_box": "867x488"
+ },
+ {
+  "name": "youtube_6Mbps_50ms_pfifo_trial10",
+  "app": "youtube",
+  "cap": 6.0,
+  "lat": 50,
+  "aqm": "pfifo",
+  "trial": 10,
+  "verdict": "OK",
+  "metrics": {
+   "startup_delay_ms": 6335.0,
+   "startup_basis": "requestVideoFrameCallback first presentationTime",
+   "initial_buffering_ms": 1782.0,
+   "buffer_level_secs": {
+    "mean": 68.1559,
+    "min": 9.974137000000013,
+    "max": 113.94884699999999,
+    "basis": "video.buffered end - currentTime, sampled once per interval"
+   },
+   "rebuffer_events": 0,
+   "rebuffer_duration_ms": 0,
+   "delivered_video_bitrate_mbps": 0.5482,
+   "delivered_audio_bitrate_mbps": 0.1063,
+   "bitrate_basis": "mse_appended_bytes(video sourcebuffer)",
+   "switch_count": 0,
+   "switch_events": [],
+   "rendered_fps": 24.99,
+   "raw_decoded_frames": 5081.0,
+   "raw_dropped_frames": 145.0,
+   "raw_presented_frames": 4941.0
+  },
+  "thr": {
+   "download": {
+    "peak_mbps": 6.0052,
+    "mean_mbps": 0.7823
+   },
+   "upload": {
+    "peak_mbps": 0.0754,
+    "mean_mbps": 0.0081
+   }
+  },
+  "pcap": {
+   "run": "youtube_6Mbps_50ms_pfifo_trial10",
+   "filename": "capture.pcap",
+   "size_bytes": 31523624,
+   "sha256": "fce20f29015caa751d666596af4a7a9f4ba06dd5b2b46007f82c319a46d8c975",
+   "host_split": "rr2---sn-jxopj-n5oe.googlevideo.com=19.4MB; www.youtube.com=4.3MB; rr4---sn-a5meknzr.c.youtube.com=3.9MB; www.google.com=1.3MB; r5---sn-jxopj-n5oe.gvt1.com=0.5MB; i.ytimg.com=0.3MB",
+   "per_app_pcap": "youtube_6Mbps_50ms_pfifo_trial10.youtube.pcap: 24741 pkts, 28.4 MB, 9 attributed IP(s), sha baf306451824c4cb",
+   "stored_at": "VM:/home/student/sthanav-agentic-thin-waist/experiments/pramana/results/pramana_runs/youtube_6mbps_50ms_0pct_pfifo_cubic_solo_t10_363c9d7db1/capture.pcap | archive:/home/student/pramana-data/pcaps"
+  },
+  "dir": "/tmp/release/youtube/youtube_6Mbps_50ms_pfifo_trial10",
+  "res_p": 720,
+  "decoding_codec": "vp09",
+  "measured_box": "1331x749"
+ }
+]

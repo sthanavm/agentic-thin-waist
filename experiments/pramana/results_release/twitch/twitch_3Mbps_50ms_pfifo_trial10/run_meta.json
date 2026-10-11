@@ -1,0 +1,23 @@
+{
+ "run": "twitch_3Mbps_50ms_pfifo_trial10",
+ "run_dir_on_vm": "/home/student/sthanav-agentic-thin-waist/experiments/pramana/results/pramana_runs/twitch_3mbps_50ms_0pct_pfifo_cubic_solo_t10_b63cddf727",
+ "repo_commit": "5d493b2",
+ "chrome_version": "Google Chrome 154.0.8037.57",
+ "vm": "docker-vm-4",
+ "shaping": {
+  "bandwidth_mbps": 3.0,
+  "latency_ms": 50,
+  "aqm": "pfifo",
+  "loss_pct": 0.0,
+  "cca": "cubic",
+  "duration_s": 180
+ },
+ "window_size": null,
+ "measured_element_box": "1331x659",
+ "sampling_interval_s": 1.0,
+ "window_epoch": [
+  1791682736.3618207,
+  1791682916.1675878
+ ],
+ "n_samples": 150
+}

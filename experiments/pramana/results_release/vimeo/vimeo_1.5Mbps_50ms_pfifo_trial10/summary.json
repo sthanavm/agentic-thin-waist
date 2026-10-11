@@ -1,0 +1,114 @@
+{
+ "run": "vimeo_1.5Mbps_50ms_pfifo_trial10",
+ "app": "vimeo",
+ "verdict": "OK",
+ "shaping": {
+  "bandwidth_mbps": 1.5,
+  "latency_ms": 50,
+  "aqm": "pfifo",
+  "loss_pct": 0.0,
+  "cca": "cubic"
+ },
+ "metrics": {
+  "startup_delay_ms": 8095.0,
+  "startup_basis": "requestVideoFrameCallback first presentationTime",
+  "initial_buffering_ms": 3006.0,
+  "buffer_level_secs": {
+   "mean": 13.0404,
+   "min": 7.250430999999992,
+   "max": 16.987280999999996,
+   "basis": "video.buffered end - currentTime, sampled once per interval"
+  },
+  "rebuffer_events": 0,
+  "rebuffer_duration_ms": 0,
+  "delivered_video_bitrate_mbps": 0.2395,
+  "delivered_audio_bitrate_mbps": 0.1888,
+  "bitrate_basis": "mse_appended_bytes(video sourcebuffer)",
+  "switch_count": 7,
+  "switch_events": [
+   {
+    "t": 4.4,
+    "from_p": 360,
+    "to_p": 240,
+    "direction": "down",
+    "signal": "decoded_height"
+   },
+   {
+    "t": 57.54,
+    "from_p": 240,
+    "to_p": 360,
+    "direction": "up",
+    "signal": "decoded_height"
+   },
+   {
+    "t": 64.11,
+    "from_p": 360,
+    "to_p": 240,
+    "direction": "down",
+    "signal": "decoded_height"
+   },
+   {
+    "t": 118.14,
+    "from_p": 240,
+    "to_p": 360,
+    "direction": "up",
+    "signal": "decoded_height"
+   },
+   {
+    "t": 124.6,
+    "from_p": 360,
+    "to_p": 240,
+    "direction": "down",
+    "signal": "decoded_height"
+   },
+   {
+    "t": 172.25,
+    "from_p": 240,
+    "to_p": 360,
+    "direction": "up",
+    "signal": "decoded_height"
+   },
+   {
+    "t": 178.66,
+    "from_p": 360,
+    "to_p": 240,
+    "direction": "down",
+    "signal": "decoded_height"
+   }
+  ],
+  "rendered_fps": 23.98,
+  "raw_decoded_frames": 4349.0,
+  "raw_dropped_frames": 2.0,
+  "raw_presented_frames": 4345.0
+ },
+ "throughput_mbps": {
+  "download": {
+   "peak_mbps": 1.498,
+   "mean_mbps": 0.4611
+  },
+  "upload": {
+   "peak_mbps": 0.192,
+   "mean_mbps": 0.0193
+  }
+ },
+ "references": {
+  "mse_video_bytes": 5391861.0,
+  "mse_audio_bytes": 4652857.0,
+  "cdp_finished_bytes": 11060295,
+  "cdp_received_bytes": 11075307,
+  "cdp_open_at_end_bytes": 55578,
+  "cdp_events_seen": 1596,
+  "rt_all_bytes": 10269471,
+  "rt_media_bytes": 10143007
+ },
+ "codec": {
+  "declared_mime": "video/mp4;codecs=av01.0.01M.08.0.111.01.01.01.0",
+  "decoding": "av01.0.00M.08",
+  "decoding_wh": [
+   320,
+   240
+  ],
+  "init_video_configs": 2,
+  "mse_mime_switches": 0
+ }
+}
