@@ -96,6 +96,76 @@ def num(v):
         return None
 
 
+def write_pcap(path: Path, linktype: int, packets) -> int:
+    """Classic libpcap writer, so a per-app capture is a real openable file.
+
+    Jaber's rule is one pcap PER APP, split by remote host/IP. The pipeline
+    only ever wrote one capture per RUN and split the byte accounting, not the
+    file -- so for a solo run the saved pcap still contains the page, DNS and
+    every third-party host alongside the media. This writes the app's own
+    packets out as a genuine pcap.
+    """
+    n = 0
+    with open(path, "wb") as fh:
+        # magic, version 2.4, no tz correction, no sigfigs, snaplen, linktype
+        fh.write(b"\xd4\xc3\xb2\xa1")
+        fh.write((2).to_bytes(2, "little") + (4).to_bytes(2, "little"))
+        fh.write((0).to_bytes(4, "little") + (0).to_bytes(4, "little"))
+        fh.write((262144).to_bytes(4, "little"))
+        fh.write(int(linktype).to_bytes(4, "little"))
+        for ts, orig_len, data in packets:
+            sec = int(ts)
+            usec = int(round((ts - sec) * 1e6))
+            if usec >= 1000000:
+                sec += 1
+                usec -= 1000000
+            fh.write(sec.to_bytes(4, "little") + usec.to_bytes(4, "little"))
+            fh.write(len(data).to_bytes(4, "little"))
+            fh.write(int(orig_len).to_bytes(4, "little"))
+            fh.write(data)
+            n += 1
+    return n
+
+
+def split_pcap_for_app(pcap: Path, at, app: str, dest: Path):
+    """Write only the packets to/from IPs attributed to `app`.
+
+    Attribution comes from the same AttributedCapture the throughput charts
+    use, so the split file and the plotted bytes describe the same packets.
+    Returns (packets_written, bytes_written, ip_count) or None.
+    """
+    ips = set((at.app_ips or {}).get(app) or [])
+    ips |= {
+        ip
+        for ip, tag in (getattr(at, "adopted_ips", None) or {}).items()
+        if str(tag).startswith(app + ":")
+    }
+    if not ips:
+        return None
+    keep = []
+    lt_seen = 1
+    for ts, orig_len, linktype, data in H.iter_capture(str(pcap)):
+        lt_seen = linktype
+        z = ip_endpoints(data, linktype)
+        if not z:
+            continue
+        if z[0] in ips or z[1] in ips:
+            keep.append((ts, orig_len, data))
+    if not keep:
+        return None
+    npkt = write_pcap(dest, lt_seen, keep)
+    return npkt, sum(k[1] for k in keep), len(ips)
+
+
+def ip_endpoints(data, linktype):
+    off = 14 if linktype == 1 else (16 if linktype == 113 else 0)
+    if len(data) < off + 20 or data[off] >> 4 != 4:
+        return None
+    src = ".".join(str(b) for b in data[off + 12 : off + 16])
+    dst = ".".join(str(b) for b in data[off + 16 : off + 20])
+    return src, dst
+
+
 def height_of(s):
     """Frame height from a sample.
 
@@ -616,6 +686,53 @@ def build_run(run_dir: Path, out_root: Path, checks: list) -> dict | None:
             hosts = dict(list((at.host_bytes or {}).items())[:6]) if at else {}
         except Exception:
             hosts = {}
+        # Per-app split, written next to the run so the archive step can pick
+        # it up. Not placed in the committed tree: pcaps are never committed.
+        split_note = "not split"
+        archive = Path(
+            os.environ.get(
+                "RELEASE_PCAP_ARCHIVE", str(Path.home() / "pramana-data/pcaps")
+            )
+        )
+        archive.mkdir(parents=True, exist_ok=True)
+        split_path = archive / ("%s.%s.pcap" % (name, app))
+        try:
+            r = split_pcap_for_app(pcap, at, app, split_path) if at else None
+            if r:
+                npkt, nby, nip = r
+                split_note = "%s: %d pkts, %.1f MB, %d attributed IP(s), sha %s" % (
+                    split_path.name,
+                    npkt,
+                    nby / 1e6,
+                    nip,
+                    sha256(split_path)[:16],
+                )
+                checks.append(
+                    dict(
+                        run=name,
+                        check="jaber8_per_app_pcap",
+                        result="PASS",
+                        detail=split_note,
+                    )
+                )
+            else:
+                checks.append(
+                    dict(
+                        run=name,
+                        check="jaber8_per_app_pcap",
+                        result="FAIL",
+                        detail="no IPs attributed to %s" % app,
+                    )
+                )
+        except Exception as exc:  # noqa: BLE001
+            checks.append(
+                dict(
+                    run=name,
+                    check="jaber8_per_app_pcap",
+                    result="FAIL",
+                    detail=str(exc)[:160],
+                )
+            )
         pcap_info = {
             "run": name,
             "filename": "capture.pcap",
@@ -625,7 +742,8 @@ def build_run(run_dir: Path, out_root: Path, checks: list) -> dict | None:
                 "%s=%.1fMB" % (k, v / 1e6) for k, v in hosts.items()
             )
             or "n/a",
-            "stored_at": "VM:%s | archive:~/pramana-data/pcaps/%s.pcap" % (pcap, name),
+            "per_app_pcap": split_note,
+            "stored_at": "VM:%s | archive:%s" % (pcap, archive),
         }
     return {
         "name": name,
@@ -691,6 +809,7 @@ def main():
                 "size_bytes",
                 "sha256",
                 "host_split",
+                "per_app_pcap",
                 "stored_at",
             ],
         )
