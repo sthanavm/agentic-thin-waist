@@ -1,0 +1,1144 @@
+"""Reduce per-second player samples into real, player-side QoE metrics.
+
+Input is the per-sample JSONL a collector writes for one app (one JSON object
+per line, ``{"timestamp": <epoch>, "url": ..., "kind": ..., "stats": {...}}``).
+Output is a dict shaped like ``QoEMetrics`` (see ``shared/models/README.md``)
+plus timelines the plots consume.
+
+Guiding rule: **honest nulls**. Where a signal is genuinely absent — no vendor
+stats API, no byte counters, no remote peer — the field is ``None``. Never a
+placeholder, never a stand-in from a different quantity.
+
+Two mislabels this module exists to correct
+-------------------------------------------
+1. *Bitrate.* YouTube's ``getStatsForNerds`` reports ``bandwidth_kbps``, which is
+   the player's estimate of available **connection speed**, not the bitrate of
+   the media being played. Reporting it as ``mean_bitrate_mbps`` (as the older
+   ``scripts/analyze_stats.py`` does) overstates the video bitrate by an order of
+   magnitude — the captured samples show ``76764 Kbps`` on a 3 Mbps shaped link.
+   It is surfaced here as ``connection_speed_estimate_mbps`` and never as bitrate.
+2. *Rebuffering.* A stall is **not** "the network went idle" and **not** "the
+   buffer hit zero". A video player bursts to fill its buffer then coasts; idle
+   with a full buffer is healthy. A real rebuffer is **playback frozen**:
+   ``current_time_secs`` not advancing while the player is not paused and not
+   ended. That is what this module measures.
+"""
+
+from __future__ import annotations
+
+import json
+import math
+from collections import Counter
+from pathlib import Path
+from typing import Any, Iterable, Optional
+
+try:  # package import
+    from shared import apps as _apps
+except ImportError:  # pragma: no cover - standalone/script use
+    try:
+        from . import apps as _apps  # type: ignore[no-redef]
+    except ImportError:
+        import apps as _apps  # type: ignore[no-redef]
+
+
+# A media clock advancing by less than this fraction of wall-clock time, while
+# the player is trying to play, counts as frozen. Playback can legitimately jitter
+# by a few percent between samples, so the bar is deliberately low.
+_ADVANCE_RATIO = 0.20
+# Below this many seconds of media progress an interval is treated as no progress
+# at all, regardless of ratio (guards against tiny float noise).
+_ADVANCE_FLOOR_S = 0.02
+# Buffer at or under this many seconds corroborates a genuine rebuffer.
+_EMPTY_BUFFER_S = 0.5
+# A media-clock jump beyond this multiple of the wall-clock gap is a seek,
+# not watched playback (1.0 would be exactly real-time at 1x).
+_SEEK_FACTOR = 2.0
+# YouTube player state 3 == BUFFERING (direct vendor rebuffer signal).
+_YT_STATE_BUFFERING = 3
+_YT_STATE_ENDED = 0
+
+
+# ═══════════════════════════════════════════════════════════════════════════
+#  loading + small parsers
+# ═══════════════════════════════════════════════════════════════════════════
+def load_samples(source: Any) -> list[dict[str, Any]]:
+    """Load samples from a JSONL path, an open file, or an in-memory list."""
+    if isinstance(source, list):
+        return source
+    path = Path(source)
+    if not path.exists():
+        return []
+    out: list[dict[str, Any]] = []
+    for line in path.read_text(errors="replace").splitlines():
+        line = line.strip()
+        if not line:
+            continue
+        try:
+            out.append(json.loads(line))
+        except json.JSONDecodeError:
+            continue  # a truncated final line if the collector was killed
+    return out
+
+
+def _num(v: Any) -> Optional[float]:
+    if isinstance(v, bool) or v is None:
+        return None
+    if isinstance(v, (int, float)):
+        return None if isinstance(v, float) and math.isnan(v) else float(v)
+    if isinstance(v, str):
+        # "5120 Kbps", "53.38 s", "0 KB"
+        head = v.strip().split()
+        if head:
+            try:
+                return float(head[0])
+            except ValueError:
+                return None
+    return None
+
+
+def _stats_of(sample: dict[str, Any]) -> dict[str, Any]:
+    s = sample.get("stats")
+    return s if isinstance(s, dict) else {}
+
+
+def parse_buffer_ahead(stats: dict[str, Any]) -> Optional[float]:
+    """Seconds of media buffered ahead of the playhead."""
+    v = _num(stats.get("buffer_ahead_secs"))
+    if v is not None:
+        return v
+    return _num(stats.get("buffer_health_seconds"))  # YouTube's SFN spelling
+
+
+def parse_connection_speed_mbps(stats: dict[str, Any]) -> Optional[float]:
+    """YouTube's *connection speed estimate* — explicitly NOT the media bitrate."""
+    kbps = _num(stats.get("bandwidth_kbps"))
+    if kbps is not None and kbps > 0:
+        return round(kbps / 1000.0, 4)
+    samples = stats.get("bandwidth_samples")
+    if isinstance(samples, list):
+        vals = [float(v) for v in samples if isinstance(v, (int, float)) and v > 0]
+        if vals:  # bytes/sec
+            return round((sum(vals) / len(vals)) * 8 / 1e6, 4)
+    return None
+
+
+def _parse_bytes(stats: dict[str, Any]) -> Optional[float]:
+    """Cumulative bytes the player reports having fetched, if it reports any."""
+    raw = stats.get("network_activity_bytes")
+    v = _num(raw)
+    if v is None:
+        return None
+    unit = ""
+    if isinstance(raw, str):
+        parts = raw.strip().split()
+        unit = parts[1].upper() if len(parts) > 1 else ""
+    mult = {"B": 1, "KB": 1e3, "MB": 1e6, "GB": 1e9}.get(unit, 1)
+    return v * mult
+
+
+def _height_of(stats: dict[str, Any]) -> Optional[int]:
+    h = _num(stats.get("video_height"))
+    if h is not None and h > 0:
+        return int(h)
+    res = stats.get("resolution")
+    if isinstance(res, str) and "x" in res:
+        try:
+            h2 = int(res.split("x")[1].split()[0])
+            return h2 if h2 > 0 else None
+        except (ValueError, IndexError):
+            return None
+    return None
+
+
+def _is_paused(stats: dict[str, Any]) -> bool:
+    p = stats.get("paused")
+    return bool(p) if isinstance(p, bool) else False
+
+
+def _is_ended(stats: dict[str, Any], duration: Optional[float]) -> bool:
+    if _num(stats.get("player_state")) == _YT_STATE_ENDED:
+        return True
+    cur = _num(stats.get("current_time_secs"))
+    if cur is not None and duration and duration > 0:
+        return cur >= duration - 0.5
+    return False
+
+
+# ═══════════════════════════════════════════════════════════════════════════
+#  html5_video
+# ═══════════════════════════════════════════════════════════════════════════
+
+# ── uniform streaming-QoE derivations ────────────────────────────────────────
+# These read only the probe's flat keys, so they behave identically on any site
+# and return None (never 0) when a signal is structurally unavailable.
+
+
+def _last(st: list[dict[str, Any]], key: str) -> Any:
+    for x in reversed(st):
+        v = x.get(key)
+        if v is not None:
+            return v
+    return None
+
+
+def delivered_bitrate(
+    st: list[dict[str, Any]], ts: list[float], start: int
+) -> tuple[Optional[float], Optional[float], str]:
+    """(video Mbps, audio Mbps, basis) from bytes appended through MSE.
+
+    This is the one uniform source of delivered bitrate: `appendBuffer`'s
+    argument size, accumulated per SourceBuffer and keyed by the mime the buffer
+    was created with. Audio and video are always separate SourceBuffers, and
+    mixing them overstates video bitrate - measured on this host, YouTube's
+    audio buffer carried 26% of all appended bytes.
+
+    The counter is strictly cumulative, which is what `_derive_bitrate` requires
+    and what YouTube's `network_activity_bytes` gauge was rejected for.
+    """
+    vb = [(ts[i], _num(st[i].get("mse_video_bytes"))) for i in range(start, len(st))]
+    vb = [(t, b) for t, b in vb if b is not None]
+    if len(vb) < 2:
+        if _last(st, "uses_worker_media"):
+            return (
+                None,
+                None,
+                (
+                    "unavailable (player appends media inside a Worker; a main-world "
+                    "hook cannot observe it)"
+                ),
+            )
+        return None, None, "unavailable (no MSE appends observed)"
+    (t0, b0), (t1, b1) = vb[0], vb[-1]
+    if t1 <= t0 or b1 < b0:
+        return None, None, "unavailable (counter did not advance)"
+    if b1 - b0 <= 0:
+        # Zero appended bytes is not a zero bitrate - it means this hook never
+        # saw the appends. Measured on Twitch, which plays normally while
+        # appending inside a Worker: the probe emits 0 for an empty buffer list,
+        # and reporting that as 0.0 Mbps would be a fabricated measurement.
+        if _last(st, "uses_worker_media"):
+            return (
+                None,
+                None,
+                (
+                    "unavailable (player appends media inside a Worker; a main-world "
+                    "hook cannot observe it)"
+                ),
+            )
+        return None, None, "unavailable (no bytes appended through MSE)"
+    v_mbps = round((b1 - b0) * 8 / (t1 - t0) / 1e6, 4)
+    ab = [(ts[i], _num(st[i].get("mse_audio_bytes"))) for i in range(start, len(st))]
+    ab = [(t, b) for t, b in ab if b is not None]
+    a_mbps = None
+    if len(ab) >= 2 and ab[-1][0] > ab[0][0] and ab[-1][1] >= ab[0][1]:
+        a_mbps = round((ab[-1][1] - ab[0][1]) * 8 / (ab[-1][0] - ab[0][0]) / 1e6, 4)
+    return v_mbps, a_mbps, "mse_appended_bytes(video sourcebuffer)"
+
+
+def event_rebuffers(
+    st: list[dict[str, Any]],
+) -> tuple[Optional[int], Optional[float], list[dict], str]:
+    """Rebuffers from the media events, not from a progress heuristic.
+
+    `waiting` is spec-defined as "playback has stopped because of a temporary
+    lack of data" and `playing` ends it, so the span between them IS a rebuffer.
+    Spans flagged as occurring during a seek are excluded: seeking also fires
+    `waiting`, and a seek is not a stall.
+    """
+    spans = _last(st, "waiting_spans")
+    if spans is None:
+        return None, None, [], "unavailable (no media-event probe in these samples)"
+    real, initial = [], []
+    for w in spans:
+        if not isinstance(w, dict):
+            continue
+        if w.get("during_seek"):
+            continue  # a seek fires `waiting` too, and a seek is not a stall
+        # A `waiting` while currentTime is still 0 is INITIAL buffering, which
+        # is startup, not a rebuffer. Measured across 12 ladder runs: every run
+        # had exactly one such span, so counting them inflated every rebuffer
+        # figure by one - YouTube at 1.5/3/6/10Mbps and Vimeo at 1/1.5/3/6Mbps
+        # each had zero real rebuffers while reporting one.
+        if float(w.get("ct") or 0) <= 0:
+            initial.append(w)
+            continue
+        real.append(w)
+    total = sum(float(w.get("dur_ms") or 0) for w in real)
+    out = list(real)
+    basis = "media events (waiting -> playing), initial buffering excluded"
+    if initial:
+        basis += " [%d initial span(s), %.0fms, reported as startup]" % (
+            len(initial),
+            sum(float(w.get("dur_ms") or 0) for w in initial),
+        )
+    return len(real), round(total, 1), out, basis
+
+
+def initial_buffering_ms(st: list[dict[str, Any]]) -> Optional[float]:
+    """Time spent in the first `waiting` span, before any media time elapsed.
+
+    Kept as its own figure rather than folded into either metric: it is part of
+    startup, and reporting it separately is what keeps the rebuffer count clean.
+    """
+    spans = _last(st, "waiting_spans")
+    if spans is None:
+        return None
+    tot = sum(
+        float(w.get("dur_ms") or 0)
+        for w in spans
+        if isinstance(w, dict) and float(w.get("ct") or 0) <= 0
+    )
+    return round(tot, 1) if tot else 0.0
+
+
+def presented_frame_rate(
+    st: list[dict[str, Any]], ts: list[float], start: int
+) -> tuple[Optional[float], str]:
+    """Rendering rate from presentedFrames: frames submitted for composition.
+
+    Distinct from totalVideoFrames, which counts DECODED frames. A host that
+    decodes but cannot composite in time shows the difference, and the metric
+    being asked for is the rendered one.
+    """
+    pf = [(ts[i], _num(st[i].get("presented_frames"))) for i in range(start, len(st))]
+    pf = [(t, v) for t, v in pf if v is not None]
+    if len(pf) < 2:
+        return None, "unavailable (requestVideoFrameCallback not supported here)"
+    (t0, f0), (t1, f1) = pf[0], pf[-1]
+    if t1 <= t0:
+        return None, "unavailable (no time elapsed between samples)"
+    if f1 <= f0:
+        # `<` alone let f1 == f0 == 0 through and produced a measured-looking
+        # 0.0 fps. Measured on Tubi: the callback never fired while
+        # totalVideoFrames still climbed 39 -> 4335, so the element WAS
+        # rendering and "0 frames per second" would have been simply false.
+        # Absence of a counter is not a rate of zero.
+        return None, (
+            "unavailable (presented-frame counter never advanced; the callback "
+            "did not fire on the element that played)"
+        )
+    return round((f1 - f0) / (t1 - t0), 2), "requestVideoFrameCallback.presentedFrames"
+
+
+def switch_events(
+    st: list[dict[str, Any]], ts: list[float], start: int
+) -> tuple[list[dict], str]:
+    """Timestamped rendition switches WITH direction.
+
+    Two independent witnesses, both uniform: the decoded frame height changing
+    (the rendition the player is rendering) and a SourceBuffer's mime changing
+    via changeType (a codec switch, which no resolution series would show).
+    Direction is recorded because "switched" alone cannot distinguish recovery
+    from degradation.
+    """
+    out: list[dict] = []
+    prev_h = None
+    t_base = ts[start] if start < len(ts) else (ts[0] if ts else 0.0)
+    for i in range(start, len(st)):
+        h = _height_of(st[i])
+        if h and h != prev_h:
+            if prev_h is not None:
+                out.append(
+                    {
+                        "t": round(ts[i] - t_base, 2),
+                        "from_p": prev_h,
+                        "to_p": h,
+                        "direction": "up" if h > prev_h else "down",
+                        "signal": "decoded_height",
+                    }
+                )
+            prev_h = h
+    log = _last(st, "mse_mime_switch_log") or []
+    for ev in log:
+        if isinstance(ev, dict) and ev.get("mime"):
+            out.append(
+                {
+                    "t": round(float(ev.get("t") or 0) / 1000.0, 2),
+                    "to_mime": ev.get("mime"),
+                    "direction": "codec_change",
+                    "signal": "sourcebuffer_changeType",
+                }
+            )
+    out.sort(key=lambda e: e.get("t") or 0)
+    return out, "decoded_height + sourcebuffer mime history"
+
+
+def _summarize_html5(
+    samples: list[dict[str, Any]],
+    spec: "_apps.AppSpec",
+    play_trigger_ts: Optional[float],
+) -> dict[str, Any]:
+    ts: list[float] = []
+    st: list[dict[str, Any]] = []
+    for s in samples:
+        t = _num(s.get("timestamp"))
+        if t is None:
+            continue
+        ts.append(t)
+        st.append(_stats_of(s))
+    if not ts:
+        return _empty(spec, "no_samples")
+
+    t0 = ts[0]
+    rel = [t - t0 for t in ts]
+    n = len(ts)
+    duration = next(
+        (
+            d
+            for d in (_num(x.get("duration_secs")) for x in st)
+            # YouTube reports a nonsense duration (1.2e8) before metadata loads
+            if d is not None and 0 < d < 86400
+        ),
+        None,
+    )
+
+    cur = [_num(x.get("current_time_secs")) for x in st]
+    buf = [parse_buffer_ahead(x) for x in st]
+    heights = [_height_of(x) for x in st]
+
+    # ── playback start: first interval where playback actually moves ────────
+    # Most players expose a media clock. Zoom's web client does not: it renders
+    # a MediaStream-backed <video> whose currentTime is pinned at 0 for the whole
+    # call, so the clock test would call a perfectly healthy meeting
+    # "no_playback". Those apps advertise `progress_from_frames` and are judged
+    # on decoded-frame counters instead. Scoped by the registry flag so every
+    # other app keeps the media-clock definition unchanged.
+    frame_driven = bool(getattr(spec, "progress_from_frames", False))
+    tfs = [_num(x.get("total_video_frames")) for x in st]
+    first_advance_idx = None
+    if frame_driven:
+        for i in range(1, n):
+            a, b = tfs[i - 1], tfs[i]
+            if a is not None and b is not None and b > a:
+                first_advance_idx = i
+                break
+    else:
+        for i in range(1, n):
+            a, b = cur[i - 1], cur[i]
+            if a is not None and b is not None and (b - a) > _ADVANCE_FLOOR_S:
+                first_advance_idx = i
+                break
+
+    startup_ms: Optional[float] = None
+    startup_basis = "none"
+    if first_advance_idx is not None:
+        origin = play_trigger_ts if play_trigger_ts is not None else t0
+        startup_basis = (
+            "play_trigger" if play_trigger_ts is not None else "first_sample"
+        )
+        startup_ms = round(max(0.0, (ts[first_advance_idx] - origin)) * 1000.0, 1)
+
+    if first_advance_idx is None:
+        # The page never played. Report that plainly rather than zeros.
+        out = _empty(spec, "no_playback")
+        out["total_samples"] = n
+        out["session_seconds"] = round(rel[-1], 2)
+        out["resolutions_observed"] = sorted({h for h in heights if h})
+        return out
+
+    # ── rebuffers: playback frozen while the player is trying to play ────────
+    rebuffer_spans: list[tuple[float, float]] = []
+    span_start: Optional[float] = None
+    frozen_total = 0.0
+    for i in range(first_advance_idx, n):
+        dt = ts[i] - ts[i - 1]
+        if dt <= 0:
+            continue
+        # On a frame-driven app the media clock never moves, so measuring the
+        # freeze against it would score the whole call as one continuous stall.
+        # The honest freeze signal there is the decoded-frame counter standing
+        # still: no new frame was painted during this wall-clock interval.
+        a, b = (tfs[i - 1], tfs[i]) if frame_driven else (cur[i - 1], cur[i])
+        if a is None or b is None:
+            continue
+        progressed = b - a
+        state = _num(st[i].get("player_state"))
+        trying = not _is_paused(st[i]) and not _is_ended(st[i], duration)
+        if frame_driven and progressed < 0:
+            # The counter went BACKWARDS. getVideoPlaybackQuality() counts are
+            # per-element, so a decrease means the measurement moved to another
+            # <video> - during a Zoom join the preview, a 0x0 placeholder and
+            # the real tile each own a counter - and the delta across that seam
+            # describes nothing about playback. Scoring it as a freeze invented
+            # a rebuffer on an otherwise clean 3Mbps/50ms run (two seams inside
+            # the first 8s, each with rebuffering:false). Re-baseline instead:
+            # close any open span and let the next interval measure the new
+            # element. A real freeze is progressed == 0, not < 0.
+            if span_start is not None:
+                rebuffer_spans.append((round(span_start, 2), round(rel[i - 1], 2)))
+                span_start = None
+            continue
+        if frame_driven:
+            stalled = progressed <= 0
+            # These apps expose no buffered ranges and no vendor state, so the
+            # frame counter is the only witness and stands on its own.
+            corroborated = True
+        else:
+            stalled = progressed < max(_ADVANCE_FLOOR_S, _ADVANCE_RATIO * dt)
+            # Corroboration: an empty buffer or the vendor's own BUFFERING state.
+            corroborated = (
+                (buf[i] is not None and buf[i] <= _EMPTY_BUFFER_S)
+                or state == _YT_STATE_BUFFERING
+                or buf[i] is None  # no buffer signal: fall back to the clock alone
+            )
+        if trying and stalled and corroborated:
+            frozen_total += dt
+            if span_start is None:
+                span_start = rel[i - 1]
+        elif span_start is not None:
+            rebuffer_spans.append((round(span_start, 2), round(rel[i - 1], 2)))
+            span_start = None
+    if span_start is not None:
+        rebuffer_spans.append((round(span_start, 2), round(rel[-1], 2)))
+
+    # ── resolution ───────────────────────────────────────────────────────────
+    active_heights = [h for i, h in enumerate(heights) if i >= first_advance_idx and h]
+    res_p = Counter(active_heights).most_common(1)[0][0] if active_heights else None
+    res_changes = 0
+    prev_h = None
+    res_timeline = []
+    for i in range(first_advance_idx, n):
+        h = heights[i]
+        if h and h != prev_h:
+            if prev_h is not None:
+                res_changes += 1
+            res_timeline.append({"t": round(rel[i], 2), "v": h})
+            prev_h = h
+
+    # ── frames: cumulative counters → ratio + derived fps ────────────────────
+    dropped = _last_num(st, "dropped_video_frames")
+    total_frames = _last_num(st, "total_video_frames")
+    dropped_pct = None
+    if dropped is not None and total_frames:
+        dropped_pct = round(100.0 * dropped / total_frames, 3)
+
+    fps = None
+    fps_basis = "none"
+    first_tf = _first_num(st, "total_video_frames", start=first_advance_idx)
+    if first_tf is not None and total_frames is not None and total_frames > first_tf:
+        span = ts[-1] - ts[first_advance_idx]
+        if span > 1.0:
+            fps = round((total_frames - first_tf) / span, 2)
+            fps_basis = "total_video_frames_delta"
+
+    # ── bitrate: real or null, never a stand-in ──────────────────────────────
+    bitrate, bitrate_basis = _derive_bitrate(st, ts, first_advance_idx, spec)
+    # ── uniform channel: same signals and same code on every site ────────────
+    u_vbr, u_abr, u_br_basis = delivered_bitrate(st, ts, first_advance_idx)
+    u_reb_n, u_reb_ms, u_reb_spans, u_reb_basis = event_rebuffers(st)
+    u_fps, u_fps_basis = presented_frame_rate(st, ts, first_advance_idx)
+    u_switches, u_sw_basis = switch_events(st, ts, first_advance_idx)
+    # Startup ends at the first frame a viewer could actually see. rVFC's first
+    # presentationTime is that instant; the frame-counter fallback can only
+    # resolve it to the sampling interval.
+    u_startup_ms = _num(_last(st, "first_presentation_ms"))
+    u_startup_basis = (
+        "requestVideoFrameCallback first presentationTime"
+        if u_startup_ms is not None
+        else "unavailable (requestVideoFrameCallback not supported here)"
+    )
+
+    conn = [parse_connection_speed_mbps(x) for x in st]
+    conn_vals = [c for c in conn if c is not None]
+
+    # Watched time is the media clock's total FORWARD progress, not simply
+    # last-minus-first. A player resets currentTime to 0 when the video ends or
+    # loops, so a terminal reset made (last - first) negative and the clamp then
+    # reported 0.0 for a session that genuinely played — observed on Vimeo,
+    # which ran 2.71s -> 61.28s and reported 0.00 on its final sample.
+    #
+    # Summing per-interval advances is loop- and reset-safe. An advance larger
+    # than the wall-clock gap that produced it is a seek, not watching, so it is
+    # not credited; backward jumps are simply not counted.
+    watched_s = None
+    advanced = 0.0
+    counted = False
+    for i in range(max(1, first_advance_idx), n):
+        a, b = cur[i - 1], cur[i]
+        if a is None or b is None:
+            continue
+        delta = b - a
+        if delta <= 0:
+            continue
+        dt = ts[i] - ts[i - 1]
+        if dt > 0 and delta > dt * _SEEK_FACTOR:
+            continue  # a jump forward: seek, not playback
+        advanced += delta
+        counted = True
+    if counted:
+        watched_s = round(advanced, 2)
+    if frame_driven:
+        # Time during which decoded frames actually advanced. The media-clock
+        # sum above is structurally 0 here and would understate every call.
+        moved = 0.0
+        for i in range(max(1, first_advance_idx), n):
+            a, b = tfs[i - 1], tfs[i]
+            if a is None or b is None or b <= a:
+                continue
+            gap = ts[i] - ts[i - 1]
+            if gap > 0:
+                moved += gap
+        watched_s = round(moved, 2)
+
+    out: dict[str, Any] = {
+        "app": spec.name,
+        "kind": spec.kind,
+        "player_qoe_available": True,
+        "status": "ok",
+        # ── QoEMetrics fields ────────────────────────────────────────────────
+        "video_startup_time_ms": startup_ms,
+        "mean_bitrate_mbps": bitrate,
+        # ── the five target metrics, one method for every app ────────────────
+        # Additive and independent of the legacy keys above, which are retained
+        # unchanged so existing consumers and ~400 stored runs keep working.
+        "uniform": {
+            "schema": "uniform_qoe/1",
+            "sampling_interval_s": _num(_last(st, "sampling_interval_s")),
+            "startup_delay_ms": u_startup_ms,
+            "startup_basis": u_startup_basis,
+            "buffer_level_secs": {
+                "mean": _mean([b for b in buf[first_advance_idx:] if b is not None]),
+                "min": min(
+                    [b for b in buf[first_advance_idx:] if b is not None], default=None
+                ),
+                "max": max(
+                    [b for b in buf[first_advance_idx:] if b is not None], default=None
+                ),
+                "basis": "video.buffered end - currentTime, sampled once per interval",
+            },
+            "rebuffer_events": u_reb_n,
+            "rebuffer_duration_ms": u_reb_ms,
+            "rebuffer_spans": u_reb_spans,
+            "rebuffer_basis": u_reb_basis,
+            "initial_buffering_ms": initial_buffering_ms(st),
+            "delivered_video_bitrate_mbps": u_vbr,
+            "delivered_audio_bitrate_mbps": u_abr,
+            "bitrate_basis": u_br_basis,
+            "switch_events": u_switches,
+            "switch_count": len(u_switches),
+            "switch_basis": u_sw_basis,
+            "rendered_fps": u_fps,
+            "rendered_fps_basis": u_fps_basis,
+            # Raw-only, per the brief: dropped frames matter little for
+            # streaming and throughput is not QoE.
+            "raw_decoded_frames": _num(_last(st, "total_video_frames")),
+            "raw_dropped_frames": _num(_last(st, "dropped_video_frames")),
+            "raw_presented_frames": _num(_last(st, "presented_frames")),
+            "mse_video_bytes": _num(_last(st, "mse_video_bytes")),
+            "mse_audio_bytes": _num(_last(st, "mse_audio_bytes")),
+            "mse_video_mime": _last(st, "mse_video_mime"),
+            "mse_audio_mime": _last(st, "mse_audio_mime"),
+            "rt_media_bytes": _num(_last(st, "rt_media_bytes")),
+            "rt_sizes_usable": _last(st, "rt_sizes_usable"),
+            # Resource Timing accounting, so a shortfall against the MSE
+            # figure can be attributed instead of guessed at: the unfiltered
+            # total, what this probe's own filter removed, and whether the
+            # entry buffer overflowed.
+            "rt_all_bytes": _num(_last(st, "rt_all_bytes")),
+            "rt_all_entries": _num(_last(st, "rt_all_entries")),
+            "rt_media_entries": _num(_last(st, "rt_media_entries")),
+            "rt_dropped_by_initiator": _num(_last(st, "rt_dropped_by_initiator")),
+            "rt_dropped_by_size_floor": _num(_last(st, "rt_dropped_by_size_floor")),
+            "rt_dropped_bytes": _num(_last(st, "rt_dropped_bytes")),
+            "rt_bytes_by_initiator": _last(st, "rt_bytes_by_initiator"),
+            "rt_buffer_full_events": _num(_last(st, "rt_buffer_full_events")),
+            # Page-timeline anchors. nav_start_page_ms == 0 confirms the
+            # performance timeline origin is navigationStart, which is what
+            # makes startup_delay_ms cross-checkable against a capture.
+            "page_now_ms": _num(_last(st, "page_now_ms")),
+            "probe_t0_page_ms": _num(_last(st, "probe_t0_page_ms")),
+            "nav_start_page_ms": _num(_last(st, "nav_start_page_ms")),
+            "dom_content_loaded_ms": _num(_last(st, "dom_content_loaded_ms")),
+            "uses_worker_media": _last(st, "uses_worker_media"),
+            "mean_processing_duration_ms": _num(
+                _last(st, "mean_processing_duration_ms")
+            ),
+        },
+        "max_bitrate_mbps": None,
+        "min_bitrate_mbps": None,
+        "mean_watched_bitrate_mbps": None,
+        "bitrate_changes": None,  # no per-sample bitrate ⇒ cannot count switches
+        "rebuffer_events": len(rebuffer_spans),
+        "rebuffer_duration_ms": round(frozen_total * 1000.0, 1),
+        "stall_duration_ms": round(frozen_total * 1000.0, 1),
+        "video_resolution_p": res_p,
+        "frame_rate_fps": fps,
+        # ── extras (real, derived, documented) ───────────────────────────────
+        "dropped_frame_pct": dropped_pct,
+        "dropped_video_frames": int(dropped) if dropped is not None else None,
+        "total_video_frames": int(total_frames) if total_frames is not None else None,
+        "resolution_changes": res_changes,
+        "resolutions_observed": sorted({h for h in active_heights}),
+        "mean_buffer_ahead_secs": _mean([b for b in buf if b is not None]),
+        "min_buffer_ahead_secs": (
+            round(min(b for b in buf if b is not None), 2)
+            if any(b is not None for b in buf)
+            else None
+        ),
+        "connection_speed_estimate_mbps": _mean(conn_vals),
+        "watched_seconds": watched_s,
+        "session_seconds": round(rel[-1], 2),
+        "total_samples": n,
+        # Epoch of the first sample. The QoE series below are relative to it,
+        # while capture-derived series are relative to the first packet; a plot
+        # that shares an x-axis between them needs both origins to line up.
+        "session_start_epoch": round(t0, 3),
+        "is_live": bool(spec.live or _truthy(st, "is_live")),
+        "video_duration_secs": None if spec.live else duration,
+        # ── provenance: how each soft number was obtained ────────────────────
+        "derivation": {
+            "progress_basis": (
+                "total_video_frames (media clock unusable on this app)"
+                if frame_driven
+                else "current_time_secs"
+            ),
+            "startup_basis": startup_basis,
+            "bitrate_basis": bitrate_basis,
+            "fps_basis": fps_basis,
+            "rebuffer_rule": (
+                "total_video_frames not advancing while in the call "
+                "(media clock unusable on this app)"
+                if frame_driven
+                else (
+                    "current_time_secs not advancing while not paused and not ended, "
+                    "corroborated by empty buffer or vendor BUFFERING state"
+                )
+            ),
+        },
+        # ── timelines for the plots ──────────────────────────────────────────
+        "series": {
+            "buffer_ahead_secs": [
+                {"t": round(rel[i], 2), "v": buf[i]}
+                for i in range(n)
+                if buf[i] is not None
+            ],
+            "resolution_p": [
+                {"t": round(rel[i], 2), "v": heights[i]} for i in range(n) if heights[i]
+            ],
+            "current_time_secs": [
+                {"t": round(rel[i], 2), "v": cur[i]}
+                for i in range(n)
+                if cur[i] is not None
+            ],
+        },
+        "rebuffer_spans": rebuffer_spans,
+    }
+    if spec.live:
+        # No finite duration ⇒ "fraction of the video delivered" is meaningless.
+        out["delivered_fraction_of_video"] = None
+    elif duration and watched_s is not None:
+        out["delivered_fraction_of_video"] = round(min(1.0, watched_s / duration), 3)
+    return out
+
+
+def _derive_bitrate(
+    st: list[dict[str, Any]],
+    ts: list[float],
+    start: int,
+    spec: "_apps.AppSpec",
+) -> tuple[Optional[float], str]:
+    """Real media bitrate in Mbps, or (None, reason). Never fabricated.
+
+    A bitrate is only emitted from a genuinely CUMULATIVE, non-decreasing byte
+    counter. YouTube's ``network_activity_bytes`` is deliberately rejected: it is
+    an instantaneous "recent activity" gauge, not a counter — observed values
+    bounce (35 KB, 0, 0, 0, 71 KB, 47 KB, ...). Differencing it as though it
+    accumulated yields nonsense (~0.004 Mbps for a 480p stream), which is exactly
+    the kind of fabricated number this module exists to prevent.
+
+    Note also that per-app *network throughput* is measured separately from the
+    PCAP. That is not a media bitrate either — it carries audio, container and
+    protocol overhead — so it is never substituted here.
+    """
+    byte_vals = [(ts[i], _parse_bytes(st[i])) for i in range(start, len(st))]
+    byte_vals = [(t, b) for t, b in byte_vals if b is not None]
+    if len(byte_vals) >= 2:
+        series = [b for _t, b in byte_vals]
+        monotonic = all(b >= a for a, b in zip(series, series[1:]))
+        (t_a, b_a), (t_b, b_b) = byte_vals[0], byte_vals[-1]
+        if monotonic and b_b > b_a and (t_b - t_a) > 1.0:
+            return round((b_b - b_a) * 8 / (t_b - t_a) / 1e6, 4), "player_byte_counter"
+        if not monotonic:
+            return None, "unavailable (player reports an activity gauge, not a counter)"
+    return None, f"unavailable ({spec.bitrate_source})"
+
+
+# ═══════════════════════════════════════════════════════════════════════════
+#  webrtc
+# ═══════════════════════════════════════════════════════════════════════════
+def _summarize_webrtc(
+    samples: list[dict[str, Any]], spec: "_apps.AppSpec"
+) -> dict[str, Any]:
+    """Surface the per-interval WebRTC metrics a conferencing collector derives.
+
+    Expects each sample's ``stats`` to carry inbound-rtp derived fields. If no
+    sample shows inbound media from a REMOTE peer, the app is reported as
+    skipped rather than describing the local camera preview as a measurement.
+    """
+    rows = [_stats_of(s) for s in samples]
+    ts = [_num(s.get("timestamp")) for s in samples]
+    ts = [t for t in ts if t is not None]
+    if not rows or not ts:
+        return _empty(spec, "no_samples")
+
+    def col(*names: str) -> list[float]:
+        out = []
+        for r in rows:
+            for nm in names:
+                v = _num(r.get(nm))
+                if v is not None:
+                    out.append(v)
+                    break
+        return out
+
+    # Two naming conventions reach here and they differ by a factor of 1000.
+    # The collector in this repo emits `inbound_bitrate_mbps`; older or external feeds
+    # use kbps names. Normalise to Mbps ONCE, here, rather than dividing at
+    # every use site - reading the mbps field through the kbps path silently
+    # reported a real call as 1/1000th of its bitrate.
+    inbound_kbps = col("inbound_bitrate_kbps", "bitrate_kbps", "inbound_bitrate")
+    inbound = (
+        [v / 1000.0 for v in inbound_kbps]
+        if inbound_kbps
+        else col("inbound_bitrate_mbps")
+    )
+    # Bytes actually received is the ground truth for "a remote peer is
+    # publishing": a local preview produces no inbound-rtp at all. Keeping it as
+    # a second signal means a future rename of the bitrate field degrades the
+    # bitrate number instead of silently voiding the whole measurement.
+    received = col("bytes_received", "bytesReceived")
+    if not any(v > 0 for v in inbound) and not any(v > 0 for v in received):
+        return _empty(spec, "no_remote_media (no peer publishing video)")
+
+    frames_dropped = col("frames_dropped", "framesDropped")
+    frames_decoded = col("frames_decoded", "framesDecoded")
+    # `packet_loss_percent` is what this repo's collector emits (already a
+    # percentage); the other spellings are kept for external sample feeds.
+    loss = col(
+        "packet_loss_percent", "packet_loss_pct", "packets_lost_pct", "fraction_lost"
+    )
+    freeze_count = col("freeze_count", "freezeCount")
+    # Cumulative, not the per-interval delta: the summary reports total freeze
+    # time for the session.
+    freeze_dur = col(
+        "total_freezes_duration_seconds",
+        "freeze_duration_secs",
+        "total_freezes_duration",
+    )
+    jitter = col("jitter_seconds", "jitter", "jitter_secs")
+    # Per-sample height of the PRIMARY inbound stream (the collector picks the
+    # one carrying the most bytes), kept aligned with `ts` so it can be drawn as
+    # a timeline. Without this the QoE summary had no resolution panel for a
+    # call, while every HTML5 app had one -- side by side that reads as missing
+    # data rather than a platform difference.
+    height_series = [
+        (ts[i], _height_of(rows[i])) for i in range(min(len(ts), len(rows)))
+    ]
+    height_series = [(t, h) for t, h in height_series if h]
+    heights = [h for _t, h in height_series]
+    res_changes = sum(1 for a, b in zip(heights, heights[1:]) if a != b)
+
+    drop_pct = None
+    if frames_decoded and frames_dropped:
+        dec, drp = max(frames_decoded), max(frames_dropped)
+        if dec > 0:
+            drop_pct = round(100.0 * drp / dec, 3)
+
+    # A WebRTC call has no media clock at all - there is no seekable timeline,
+    # so currentTime is meaningless. Progress is the decoded-frame counter,
+    # exactly as for the frame-driven HTML5 apps. Leaving these None made the
+    # run look like it never played: the panel verdict gates on
+    # watched_seconds, so a healthy call with 1373 decoded frames was being
+    # labelled "the app did not play".
+    # Per-sample rates for the timeline panels. Deltas, not cumulative totals:
+    # a reader needs to see the shape of the call, not a monotonic ramp.
+    fps_series: list[Optional[float]] = [None] * len(ts)
+    drop_series: list[Optional[float]] = [None] * len(ts)
+    jitter_series: list[Optional[float]] = [None] * len(ts)
+    _fd = col("frames_decoded", "framesDecoded")
+    _dr = col("frames_dropped", "framesDropped")
+    _ji = col("jitter_seconds", "jitter", "jitter_secs")
+    for i in range(1, min(len(ts), len(_fd))):
+        gap = ts[i] - ts[i - 1]
+        if gap > 0 and _fd[i] >= _fd[i - 1]:
+            fps_series[i] = round((_fd[i] - _fd[i - 1]) / gap, 2)
+    for i in range(1, min(len(ts), len(_dr), len(_fd))):
+        d_dec = _fd[i] - _fd[i - 1]
+        d_drp = _dr[i] - _dr[i - 1]
+        if d_dec > 0 and d_drp >= 0:
+            drop_series[i] = round(100.0 * d_drp / (d_dec + d_drp), 3)
+    for i in range(min(len(ts), len(_ji))):
+        jitter_series[i] = round(_ji[i] * 1000.0, 2)
+
+    session_s = round(ts[-1] - ts[0], 2) if len(ts) > 1 else None
+    watched_s = None
+    first_frame_idx = None
+    if frames_decoded and len(frames_decoded) == len(ts):
+        moved = 0.0
+        for i in range(1, len(ts)):
+            if frames_decoded[i] > frames_decoded[i - 1]:
+                gap = ts[i] - ts[i - 1]
+                if gap > 0:
+                    moved += gap
+                if first_frame_idx is None:
+                    first_frame_idx = i
+        watched_s = round(moved, 2)
+    fps = None
+    if watched_s and frames_decoded and len(frames_decoded) > 1:
+        grew = max(frames_decoded) - min(frames_decoded)
+        if grew > 0 and watched_s > 0:
+            fps = round(grew / watched_s, 2)
+    # Startup is NOT measurable on a call as this harness drives it. The
+    # collector waits for advancing remote video before it starts sampling, so
+    # by sample 0 frames are already flowing - measured across six runs,
+    # frames_decoded at the first sample was 13..85 and advanced on the very
+    # first interval every time. "Time to first advance" therefore reports the
+    # sampling cadence (1.8-3.3s), not anything a participant experienced.
+    # Emitting that as video_startup_time_ms invented a QoE number, so it is
+    # None unless a genuine pre-roll gap was actually observed.
+    startup_ms = None
+    startup_basis = "not observable (sampling begins after media is flowing)"
+    if first_frame_idx is not None and first_frame_idx > 1:
+        startup_ms = round(max(0.0, ts[first_frame_idx] - ts[0]) * 1000.0, 1)
+        startup_basis = "first decoded frame, measured from the first sample"
+
+    # The first interval after joining divides accumulated bytes by a very short
+    # elapsed time, so it reports tens of times the sustained rate - 38.7 Mbps
+    # on a 10 Mbps link in one measured run. That is not a rate, it is an
+    # artifact of where sampling started, so it is dropped rather than shipped
+    # with a caveat that a reader may not follow.
+    sustained = inbound[1:] if len(inbound) > 2 else inbound
+
+    return {
+        "app": spec.name,
+        "kind": spec.kind,
+        "player_qoe_available": True,
+        "status": "ok",
+        "video_startup_time_ms": startup_ms,
+        # All three exclude the first post-join interval. Leaving it in the mean
+        # while dropping it from the max produced max < mean, which is not a
+        # possible pair of numbers; it also reported 1.11 Mbps for a call whose
+        # bytes_received says 0.339 Mbps, a 3.3x overstatement.
+        "mean_bitrate_mbps": round(_mean(sustained), 4) if sustained else None,
+        "max_bitrate_mbps": round(max(sustained), 4) if sustained else None,
+        "min_bitrate_mbps": round(min(sustained), 4) if sustained else None,
+        "mean_watched_bitrate_mbps": None,
+        "bitrate_changes": None,
+        "rebuffer_events": int(max(freeze_count)) if freeze_count else None,
+        "rebuffer_duration_ms": (
+            round(max(freeze_dur) * 1000.0, 1) if freeze_dur else None
+        ),
+        "stall_duration_ms": (
+            round(max(freeze_dur) * 1000.0, 1) if freeze_dur else None
+        ),
+        "video_resolution_p": (
+            Counter(heights).most_common(1)[0][0] if heights else None
+        ),
+        "frame_rate_fps": fps,
+        "watched_seconds": watched_s,
+        "session_seconds": session_s,
+        "total_video_frames": int(max(frames_decoded)) if frames_decoded else None,
+        "dropped_video_frames": int(max(frames_dropped)) if frames_dropped else None,
+        "packet_loss_pct": _mean(loss),
+        "dropped_frame_pct": drop_pct,
+        "mean_jitter_secs": _mean(jitter),
+        "resolutions_observed": sorted(set(heights)),
+        "resolution_changes": res_changes,
+        "total_samples": len(rows),
+        "session_start_epoch": round(ts[0], 3),
+        "is_live": True,
+        # Surfaced in the record itself so a future reader does not quote the
+        # peak as a network finding: the first interval after joining divides a
+        # large accumulated bytesReceived by a very short elapsed time, which
+        # produces a spike tens of times the sustained rate.
+        "max_bitrate_is_startup_artifact": False,
+        "derivation": {
+            "bitrate_caveat": (
+                "mean/max/min_bitrate_mbps all exclude the first post-join "
+                "interval, which divides accumulated bytes by a very short "
+                "elapsed time and reports many times the sustained rate. "
+                "mean_bitrate_mbps is the figure to quote."
+            ),
+            "source": "RTCPeerConnection.getStats() inbound-rtp (remote peer)",
+            "rebuffer_rule": "WebRTC freeze count / freeze duration",
+            "progress_basis": "frames_decoded (a call has no media clock)",
+            "startup_basis": startup_basis,
+            "fps_basis": "frames_decoded_delta / watched_seconds",
+        },
+        "series": {
+            "inbound_bitrate_kbps": [
+                {"t": round(ts[i] - ts[0], 2), "v": inbound[i]}
+                for i in range(min(len(ts), len(inbound)))
+            ],
+            "resolution_p": [
+                {"t": round(t - ts[0], 2), "v": h} for t, h in height_series
+            ],
+            # Per-sample series so the summary can show how the call behaved
+            # over time, not just one number per metric at the end.
+            "fps": [
+                {"t": round(ts[i] - ts[0], 2), "v": v}
+                for i, v in enumerate(fps_series)
+                if v is not None
+            ],
+            "dropped_pct": [
+                {"t": round(ts[i] - ts[0], 2), "v": v}
+                for i, v in enumerate(drop_series)
+                if v is not None
+            ],
+            "jitter_ms": [
+                {"t": round(ts[i] - ts[0], 2), "v": v}
+                for i, v in enumerate(jitter_series)
+                if v is not None
+            ],
+        },
+        "rebuffer_spans": [],
+    }
+
+
+# ═══════════════════════════════════════════════════════════════════════════
+#  shell
+# ═══════════════════════════════════════════════════════════════════════════
+def _summarize_shell(
+    spec: "_apps.AppSpec", transfer: Optional[dict[str, Any]]
+) -> dict[str, Any]:
+    """No player, no player QoE — a transfer summary and nothing invented."""
+    t = transfer or {}
+    return {
+        "app": spec.name,
+        "kind": spec.kind,
+        "player_qoe_available": False,
+        "status": "ok",
+        "reason": "shell app: no browser player, so player-side QoE does not exist",
+        "transfer": {
+            "bytes": t.get("bytes"),
+            "seconds": t.get("seconds"),
+            "completed": t.get("completed"),
+            "mean_throughput_mbps": (
+                round(t["bytes"] * 8 / t["seconds"] / 1e6, 4)
+                if t.get("bytes") and t.get("seconds")
+                else None
+            ),
+        },
+    }
+
+
+# ═══════════════════════════════════════════════════════════════════════════
+#  entry point
+# ═══════════════════════════════════════════════════════════════════════════
+def summarize(
+    source: Any,
+    app: str,
+    play_trigger_ts: Optional[float] = None,
+    transfer: Optional[dict[str, Any]] = None,
+    skipped_reason: Optional[str] = None,
+) -> dict[str, Any]:
+    """Reduce one app's samples to a QoEMetrics-shaped dict.
+
+    `source` is a JSONL path or a list of samples. `play_trigger_ts` is the epoch
+    time the collector triggered playback (enables a true startup measurement);
+    without it startup is measured from the first sample and flagged as such.
+    `skipped_reason`, when given, short-circuits to a skipped record — used for
+    `needs_peer` apps with no peer, or a web client that could not join.
+    """
+    spec = _apps.get(app)
+    if skipped_reason:
+        return _skipped(spec, skipped_reason)
+    if spec.kind == _apps.SHELL:
+        return _summarize_shell(spec, transfer)
+
+    samples = load_samples(source)
+    if not samples:
+        return _empty(spec, "no_samples (collector produced no output)")
+
+    # The collector writes a leading {"record": "meta", ...} line carrying the
+    # moment playback was triggered. Prefer it over a caller-supplied value so
+    # startup time is measured from the real trigger, not the first sample.
+    meta = next((s for s in samples if s.get("record") == "meta"), None)
+    if meta is not None:
+        samples = [s for s in samples if s.get("record") != "meta"]
+        if play_trigger_ts is None:
+            play_trigger_ts = _num(meta.get("play_trigger_ts"))
+    if not samples:
+        return _empty(spec, "no_samples (only metadata written)")
+
+    if spec.kind == _apps.WEBRTC:
+        return _summarize_webrtc(samples, spec)
+    return _summarize_html5(samples, spec, play_trigger_ts)
+
+
+def summarize_run(
+    stats_paths: dict[str, Any],
+    play_triggers: Optional[dict[str, float]] = None,
+    transfers: Optional[dict[str, dict[str, Any]]] = None,
+    skipped: Optional[dict[str, str]] = None,
+) -> dict[str, dict[str, Any]]:
+    """Summarize every app in a run. Returns {app: qoe_dict}."""
+    out: dict[str, dict[str, Any]] = {}
+    for app, path in stats_paths.items():
+        out[app] = summarize(
+            path,
+            app,
+            play_trigger_ts=(play_triggers or {}).get(app),
+            transfer=(transfers or {}).get(app),
+            skipped_reason=(skipped or {}).get(app),
+        )
+    return out
+
+
+def any_real_qoe(per_app: dict[str, dict[str, Any]]) -> bool:
+    """True when at least one app produced real player-side QoE."""
+    return any(v.get("player_qoe_available") for v in per_app.values())
+
+
+# ═══════════════════════════════════════════════════════════════════════════
+#  helpers
+# ═══════════════════════════════════════════════════════════════════════════
+def _mean(vals: Iterable[float]) -> Optional[float]:
+    vals = [v for v in vals if v is not None]
+    return round(sum(vals) / len(vals), 4) if vals else None
+
+
+def _last_num(st: list[dict[str, Any]], key: str) -> Optional[float]:
+    for s in reversed(st):
+        v = _num(s.get(key))
+        if v is not None:
+            return v
+    return None
+
+
+def _first_num(st: list[dict[str, Any]], key: str, start: int = 0) -> Optional[float]:
+    for s in st[start:]:
+        v = _num(s.get(key))
+        if v is not None:
+            return v
+    return None
+
+
+def _truthy(st: list[dict[str, Any]], key: str) -> bool:
+    return any(bool(s.get(key)) for s in st)
+
+
+def _empty(spec: "_apps.AppSpec", reason: str) -> dict[str, Any]:
+    """No usable player signal — say so; do not emit zeros that read as data."""
+    return {
+        "app": spec.name,
+        "kind": spec.kind,
+        "player_qoe_available": False,
+        "status": "no_data",
+        "reason": reason,
+        "video_startup_time_ms": None,
+        "mean_bitrate_mbps": None,
+        "rebuffer_events": None,
+        "rebuffer_duration_ms": None,
+        "video_resolution_p": None,
+        "frame_rate_fps": None,
+        "dropped_frame_pct": None,
+        "series": {},
+        "rebuffer_spans": [],
+    }
+
+
+def _skipped(spec: "_apps.AppSpec", reason: str) -> dict[str, Any]:
+    out = _empty(spec, reason)
+    out["status"] = "skipped"
+    return out
