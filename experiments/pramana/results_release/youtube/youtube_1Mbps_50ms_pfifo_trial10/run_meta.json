@@ -1,0 +1,23 @@
+{
+ "run": "youtube_1Mbps_50ms_pfifo_trial10",
+ "run_dir_on_vm": "/home/student/sthanav-agentic-thin-waist/experiments/pramana/results/pramana_runs/youtube_1mbps_50ms_0pct_pfifo_cubic_solo_t10_897eb07231",
+ "repo_commit": "5d493b2",
+ "chrome_version": "Google Chrome 154.0.8037.57",
+ "vm": "docker-vm-4",
+ "shaping": {
+  "bandwidth_mbps": 1.0,
+  "latency_ms": 50,
+  "aqm": "pfifo",
+  "loss_pct": 0.0,
+  "cca": "cubic",
+  "duration_s": 180
+ },
+ "window_size": null,
+ "measured_element_box": "1461x822",
+ "sampling_interval_s": 1.0,
+ "window_epoch": [
+  1791675868.1748838,
+  1791676047.768687
+ ],
+ "n_samples": 173
+}

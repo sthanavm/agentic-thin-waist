@@ -1,0 +1,72 @@
+{
+ "run": "twitch_3Mbps_50ms_pfifo_trial10",
+ "app": "twitch",
+ "verdict": "OK",
+ "shaping": {
+  "bandwidth_mbps": 3.0,
+  "latency_ms": 50,
+  "aqm": "pfifo",
+  "loss_pct": 0.0,
+  "cca": "cubic"
+ },
+ "metrics": {
+  "startup_delay_ms": 16434.0,
+  "startup_basis": "requestVideoFrameCallback first presentationTime",
+  "initial_buffering_ms": 0.0,
+  "buffer_level_secs": {
+   "mean": 11.1458,
+   "min": 5.095905000000002,
+   "max": 15.616851999999994,
+   "basis": "video.buffered end - currentTime, sampled once per interval"
+  },
+  "rebuffer_events": 3,
+  "rebuffer_duration_ms": 449.0,
+  "delivered_video_bitrate_mbps": null,
+  "delivered_audio_bitrate_mbps": null,
+  "bitrate_basis": "unavailable (player appends media inside a Worker; a main-world hook cannot observe it)",
+  "switch_count": 1,
+  "switch_events": [
+   {
+    "t": 22.62,
+    "from_p": 480,
+    "to_p": 720,
+    "direction": "up",
+    "signal": "decoded_height"
+   }
+  ],
+  "rendered_fps": 27.84,
+  "raw_decoded_frames": 5540.0,
+  "raw_dropped_frames": 164.0,
+  "raw_presented_frames": 5408.0
+ },
+ "throughput_mbps": {
+  "download": {
+   "peak_mbps": 2.9874,
+   "mean_mbps": 2.2461
+  },
+  "upload": {
+   "peak_mbps": 0.1226,
+   "mean_mbps": 0.0657
+  }
+ },
+ "references": {
+  "mse_video_bytes": 0.0,
+  "mse_audio_bytes": 0.0,
+  "cdp_finished_bytes": 62683,
+  "cdp_received_bytes": 61844,
+  "cdp_open_at_end_bytes": 0,
+  "cdp_events_seen": 4364,
+  "rt_all_bytes": 2723016,
+  "rt_media_bytes": 0
+ },
+ "codec": {
+  "declared_mime": null,
+  "decoding": null,
+  "decoding_wh": [
+   null,
+   null
+  ],
+  "init_video_configs": 0,
+  "mse_mime_switches": 0
+ }
+}

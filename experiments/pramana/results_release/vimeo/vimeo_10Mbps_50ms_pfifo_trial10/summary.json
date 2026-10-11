@@ -1,0 +1,93 @@
+{
+ "run": "vimeo_10Mbps_50ms_pfifo_trial10",
+ "app": "vimeo",
+ "verdict": "OK",
+ "shaping": {
+  "bandwidth_mbps": 10.0,
+  "latency_ms": 50,
+  "aqm": "pfifo",
+  "loss_pct": 0.0,
+  "cca": "cubic"
+ },
+ "metrics": {
+  "startup_delay_ms": 2049.0,
+  "startup_basis": "requestVideoFrameCallback first presentationTime",
+  "initial_buffering_ms": 281.0,
+  "buffer_level_secs": {
+   "mean": 24.0575,
+   "min": 13.125868999999998,
+   "max": 28.441122000000007,
+   "basis": "video.buffered end - currentTime, sampled once per interval"
+  },
+  "rebuffer_events": 2,
+  "rebuffer_duration_ms": 822.0,
+  "delivered_video_bitrate_mbps": 2.9975,
+  "delivered_audio_bitrate_mbps": 0.2023,
+  "bitrate_basis": "mse_appended_bytes(video sourcebuffer)",
+  "switch_count": 4,
+  "switch_events": [
+   {
+    "t": 3.22,
+    "from_p": 360,
+    "to_p": 540,
+    "direction": "up",
+    "signal": "decoded_height"
+   },
+   {
+    "t": 9.1,
+    "from_p": 540,
+    "to_p": 1080,
+    "direction": "up",
+    "signal": "decoded_height"
+   },
+   {
+    "t": 28.4,
+    "from_p": 1080,
+    "to_p": 540,
+    "direction": "down",
+    "signal": "decoded_height"
+   },
+   {
+    "t": 46.57,
+    "from_p": 540,
+    "to_p": 720,
+    "direction": "up",
+    "signal": "decoded_height"
+   }
+  ],
+  "rendered_fps": 23.41,
+  "raw_decoded_frames": 4333.0,
+  "raw_dropped_frames": 94.0,
+  "raw_presented_frames": 4241.0
+ },
+ "throughput_mbps": {
+  "download": {
+   "peak_mbps": 9.9845,
+   "mean_mbps": 3.338
+  },
+  "upload": {
+   "peak_mbps": 0.2284,
+   "mean_mbps": 0.0694
+  }
+ },
+ "references": {
+  "mse_video_bytes": 67218055.0,
+  "mse_audio_bytes": 5089056.0,
+  "cdp_finished_bytes": 73244816,
+  "cdp_received_bytes": 73264290,
+  "cdp_open_at_end_bytes": 66697,
+  "cdp_events_seen": 5023,
+  "rt_all_bytes": 72412191,
+  "rt_media_bytes": 72270845
+ },
+ "codec": {
+  "declared_mime": "video/mp4;codecs=av01.0.01M.08.0.111.01.01.01.0",
+  "decoding": "av01.0.08M.08",
+  "decoding_wh": [
+   960,
+   720
+  ],
+  "init_video_configs": 4,
+  "mse_mime_switches": 0
+ }
+}

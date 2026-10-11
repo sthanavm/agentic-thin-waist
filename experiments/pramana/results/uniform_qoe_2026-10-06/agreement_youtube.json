@@ -1,0 +1,293 @@
+[
+  {
+    "cell": "youtube@0.5Mbps",
+    "dir": "ddbbf53c49",
+    "n": 174,
+    "buffer": {
+      "n": 174,
+      "mae_s": 0.204,
+      "r": 0.9999,
+      "pass": true
+    },
+    "frames": {
+      "n": 174,
+      "match_rate": 1.0,
+      "mae": 0.103,
+      "pass": true
+    },
+    "bitrate": {
+      "video_mbps": 0.0654,
+      "audio_mbps": 0.117,
+      "mse_media_mb": 4.17,
+      "pcap_mb": 9.34,
+      "ratio": 2.242,
+      "pass": false,
+      "rt_mb": 4.08,
+      "rt_vs_mse": 0.98
+    },
+    "rebuffers": {
+      "ours": 2,
+      "sfn_buffering_episodes": 1,
+      "pass": true
+    },
+    "switches": {
+      "ours": 0,
+      "sfn_itag_changes": 0,
+      "itags_seen": [
+        "394"
+      ],
+      "pass": true
+    },
+    "startup_ms": 42645.0,
+    "startup_basis": "requestVideoFrameCallback first presentationTime",
+    "fps": {
+      "decoded": 24.59,
+      "rendered": 24.5,
+      "consistent": true
+    },
+    "legacy_res_p": 144
+  },
+  {
+    "cell": "youtube@1Mbps",
+    "dir": "839199e38a",
+    "n": 173,
+    "buffer": {
+      "n": 173,
+      "mae_s": 0.178,
+      "r": 1.0,
+      "pass": true
+    },
+    "frames": {
+      "n": 173,
+      "match_rate": 1.0,
+      "mae": 0.058,
+      "pass": true
+    },
+    "bitrate": {
+      "video_mbps": 0.2089,
+      "audio_mbps": 0.1365,
+      "mse_media_mb": 8.93,
+      "pcap_mb": 15.13,
+      "ratio": 1.694,
+      "pass": false,
+      "rt_mb": 8.82,
+      "rt_vs_mse": 0.988
+    },
+    "rebuffers": {
+      "ours": 2,
+      "sfn_buffering_episodes": 1,
+      "pass": true
+    },
+    "switches": {
+      "ours": 3,
+      "sfn_itag_changes": 3,
+      "itags_seen": [
+        "394",
+        "395",
+        "396",
+        "397"
+      ],
+      "pass": true
+    },
+    "startup_ms": 23992.0,
+    "startup_basis": "requestVideoFrameCallback first presentationTime",
+    "fps": {
+      "decoded": 24.72,
+      "rendered": 24.31,
+      "consistent": true
+    },
+    "legacy_res_p": 360
+  },
+  {
+    "cell": "youtube@1.5Mbps",
+    "dir": "d0910db385",
+    "n": 171,
+    "buffer": {
+      "n": 171,
+      "mae_s": 0.196,
+      "r": 0.9999,
+      "pass": true
+    },
+    "frames": {
+      "n": 171,
+      "match_rate": 0.9942,
+      "mae": 0.404,
+      "pass": true
+    },
+    "bitrate": {
+      "video_mbps": 0.348,
+      "audio_mbps": 0.1174,
+      "mse_media_mb": 13.31,
+      "pcap_mb": 18.88,
+      "ratio": 1.419,
+      "pass": false,
+      "rt_mb": 10.64,
+      "rt_vs_mse": 0.8
+    },
+    "rebuffers": {
+      "ours": 1,
+      "sfn_buffering_episodes": 0,
+      "pass": true
+    },
+    "switches": {
+      "ours": 0,
+      "sfn_itag_changes": 0,
+      "itags_seen": [
+        "397"
+      ],
+      "pass": true
+    },
+    "startup_ms": 13979.0,
+    "startup_basis": "requestVideoFrameCallback first presentationTime",
+    "fps": {
+      "decoded": 25.0,
+      "rendered": 25.0,
+      "consistent": true
+    },
+    "legacy_res_p": 480
+  },
+  {
+    "cell": "youtube@3Mbps",
+    "dir": "70dfeb9335",
+    "n": 169,
+    "buffer": {
+      "n": 169,
+      "mae_s": 0.17,
+      "r": 1.0,
+      "pass": true
+    },
+    "frames": {
+      "n": 169,
+      "match_rate": 0.9763,
+      "mae": 0.473,
+      "pass": true
+    },
+    "bitrate": {
+      "video_mbps": 0.619,
+      "audio_mbps": 0.1176,
+      "mse_media_mb": 21.12,
+      "pcap_mb": 27.27,
+      "ratio": 1.291,
+      "pass": false,
+      "rt_mb": 17.16,
+      "rt_vs_mse": 0.812
+    },
+    "rebuffers": {
+      "ours": 1,
+      "sfn_buffering_episodes": 0,
+      "pass": true
+    },
+    "switches": {
+      "ours": 0,
+      "sfn_itag_changes": 0,
+      "itags_seen": [
+        "247"
+      ],
+      "pass": true
+    },
+    "startup_ms": 8072.0,
+    "startup_basis": "requestVideoFrameCallback first presentationTime",
+    "fps": {
+      "decoded": 24.91,
+      "rendered": 24.9,
+      "consistent": true
+    },
+    "legacy_res_p": 720
+  },
+  {
+    "cell": "youtube@6Mbps",
+    "dir": "6829b48c70",
+    "n": 170,
+    "buffer": {
+      "n": 170,
+      "mae_s": 0.235,
+      "r": 0.9998,
+      "pass": true
+    },
+    "frames": {
+      "n": 170,
+      "match_rate": 0.9941,
+      "mae": 0.382,
+      "pass": true
+    },
+    "bitrate": {
+      "video_mbps": 0.6139,
+      "audio_mbps": 0.1173,
+      "mse_media_mb": 21.12,
+      "pcap_mb": 27.28,
+      "ratio": 1.292,
+      "pass": false,
+      "rt_mb": 15.85,
+      "rt_vs_mse": 0.75
+    },
+    "rebuffers": {
+      "ours": 1,
+      "sfn_buffering_episodes": 0,
+      "pass": true
+    },
+    "switches": {
+      "ours": 0,
+      "sfn_itag_changes": 0,
+      "itags_seen": [
+        "247"
+      ],
+      "pass": true
+    },
+    "startup_ms": 4338.0,
+    "startup_basis": "requestVideoFrameCallback first presentationTime",
+    "fps": {
+      "decoded": 24.92,
+      "rendered": 24.92,
+      "consistent": true
+    },
+    "legacy_res_p": 720
+  },
+  {
+    "cell": "youtube@10Mbps",
+    "dir": "866d12e711",
+    "n": 171,
+    "buffer": {
+      "n": 171,
+      "mae_s": 0.264,
+      "r": 0.9997,
+      "pass": true
+    },
+    "frames": {
+      "n": 171,
+      "match_rate": 1.0,
+      "mae": 0.316,
+      "pass": true
+    },
+    "bitrate": {
+      "video_mbps": 0.5942,
+      "audio_mbps": 0.1172,
+      "mse_media_mb": 21.12,
+      "pcap_mb": 27.29,
+      "ratio": 1.292,
+      "pass": false,
+      "rt_mb": 15.85,
+      "rt_vs_mse": 0.75
+    },
+    "rebuffers": {
+      "ours": 1,
+      "sfn_buffering_episodes": 0,
+      "pass": true
+    },
+    "switches": {
+      "ours": 0,
+      "sfn_itag_changes": 0,
+      "itags_seen": [
+        "247"
+      ],
+      "pass": true
+    },
+    "startup_ms": 3347.0,
+    "startup_basis": "requestVideoFrameCallback first presentationTime",
+    "fps": {
+      "decoded": 24.92,
+      "rendered": 24.92,
+      "consistent": true
+    },
+    "legacy_res_p": 720
+  }
+]

@@ -1,0 +1,228 @@
+run,check,result,detail
+tubi_10Mbps_50ms_pfifo_trial10,cap_not_exceeded_peak,PASS,peak 8.5474 vs cap 10 (5% tolerance for bin edges)
+tubi_10Mbps_50ms_pfifo_trial10,cap_not_exceeded_mean,PASS,mean 2.6223 vs cap 10
+tubi_10Mbps_50ms_pfifo_trial10,rebuffer_shading_anchored,PASS,"anchored; 0 span(s) before window, captioned"
+tubi_10Mbps_50ms_pfifo_trial10,chart_switches_consistent,PASS,drawn 1 <= summary switch_count 2
+tubi_10Mbps_50ms_pfifo_trial10,disclosure:sampling_cadence,PASS,max gap 1.36 s; 0 of 167 intervals exceed 2x nominal (2.0 s); mean 1.07 s
+tubi_10Mbps_50ms_pfifo_trial10,chart_buffer_max_matches_summary,PASS,chart max 147.714 vs summary 147.714
+tubi_10Mbps_50ms_pfifo_trial10,playback_verdict,PASS,OK
+tubi_10Mbps_50ms_pfifo_trial10,separate_direction_plots,PASS,download+upload png present
+tubi_10Mbps_50ms_pfifo_trial10,jaber8_per_app_pcap,PASS,"tubi_10Mbps_50ms_pfifo_trial10.tubi.pcap: 57245 pkts, 64.9 MB, 18 attributed IP(s), sha 2d37d28818239ce1"
+tubi_3Mbps_50ms_pfifo_trial10,cap_not_exceeded_peak,PASS,peak 2.9887 vs cap 3 (5% tolerance for bin edges)
+tubi_3Mbps_50ms_pfifo_trial10,cap_not_exceeded_mean,PASS,mean 2.6191 vs cap 3
+tubi_3Mbps_50ms_pfifo_trial10,rebuffer_shading_anchored,PASS,"anchored; 0 span(s) before window, captioned"
+tubi_3Mbps_50ms_pfifo_trial10,chart_switches_consistent,PASS,drawn 2 <= summary switch_count 3
+tubi_3Mbps_50ms_pfifo_trial10,disclosure:sampling_cadence,PASS,max gap 1.39 s; 0 of 165 intervals exceed 2x nominal (2.0 s); mean 1.09 s
+tubi_3Mbps_50ms_pfifo_trial10,chart_buffer_max_matches_summary,PASS,chart max 146.137 vs summary 146.137
+tubi_3Mbps_50ms_pfifo_trial10,playback_verdict,PASS,OK
+tubi_3Mbps_50ms_pfifo_trial10,separate_direction_plots,PASS,download+upload png present
+tubi_3Mbps_50ms_pfifo_trial10,jaber8_per_app_pcap,PASS,"tubi_3Mbps_50ms_pfifo_trial10.tubi.pcap: 52874 pkts, 65.4 MB, 17 attributed IP(s), sha 1e1878a01a2fba53"
+tubi_6Mbps_50ms_pfifo_trial10,cap_not_exceeded_peak,PASS,peak 5.8270 vs cap 6 (5% tolerance for bin edges)
+tubi_6Mbps_50ms_pfifo_trial10,cap_not_exceeded_mean,PASS,mean 2.5882 vs cap 6
+tubi_6Mbps_50ms_pfifo_trial10,rebuffer_shading_anchored,PASS,"anchored; 0 span(s) before window, captioned"
+tubi_6Mbps_50ms_pfifo_trial10,chart_switches_consistent,PASS,drawn 1 <= summary switch_count 2
+tubi_6Mbps_50ms_pfifo_trial10,disclosure:sampling_cadence,PASS,max gap 1.33 s; 0 of 166 intervals exceed 2x nominal (2.0 s); mean 1.08 s
+tubi_6Mbps_50ms_pfifo_trial10,chart_buffer_max_matches_summary,PASS,chart max 147.347 vs summary 147.347
+tubi_6Mbps_50ms_pfifo_trial10,playback_verdict,PASS,OK
+tubi_6Mbps_50ms_pfifo_trial10,separate_direction_plots,PASS,download+upload png present
+tubi_6Mbps_50ms_pfifo_trial10,jaber8_per_app_pcap,PASS,"tubi_6Mbps_50ms_pfifo_trial10.tubi.pcap: 56637 pkts, 64.8 MB, 16 attributed IP(s), sha db96ec417e6cbe18"
+twitch_10Mbps_50ms_pfifo_trial10,cap_not_exceeded_peak,PASS,peak 8.9795 vs cap 10 (5% tolerance for bin edges)
+twitch_10Mbps_50ms_pfifo_trial10,cap_not_exceeded_mean,PASS,mean 2.4428 vs cap 10
+twitch_10Mbps_50ms_pfifo_trial10,rebuffer_shading_anchored,PASS,"anchored; 4 span(s) before window, captioned"
+twitch_10Mbps_50ms_pfifo_trial10,chart_switches_consistent,PASS,drawn 1 <= summary switch_count 1
+twitch_10Mbps_50ms_pfifo_trial10,chart_fps_matches_summary,PASS,chart time-weighted 25.968 vs summary 26.220
+twitch_10Mbps_50ms_pfifo_trial10,disclosure:sampling_cadence,FAIL,max gap 3.37 s; 1 of 148 intervals exceed 2x nominal (2.0 s); mean 1.22 s
+twitch_10Mbps_50ms_pfifo_trial10,chart_buffer_max_matches_summary,PASS,chart max 26.007 vs summary 26.007
+twitch_10Mbps_50ms_pfifo_trial10,playback_verdict,PASS,OK
+twitch_10Mbps_50ms_pfifo_trial10,separate_direction_plots,PASS,download+upload png present
+twitch_10Mbps_50ms_pfifo_trial10,jaber8_per_app_pcap,PASS,"twitch_10Mbps_50ms_pfifo_trial10.twitch.pcap: 58317 pkts, 68.2 MB, 13 attributed IP(s), sha 25c24422dc8dc44e"
+twitch_3Mbps_50ms_pfifo_trial10,cap_not_exceeded_peak,PASS,peak 2.9874 vs cap 3 (5% tolerance for bin edges)
+twitch_3Mbps_50ms_pfifo_trial10,cap_not_exceeded_mean,PASS,mean 2.2461 vs cap 3
+twitch_3Mbps_50ms_pfifo_trial10,rebuffer_shading_anchored,PASS,"anchored; 3 span(s) before window, captioned"
+twitch_3Mbps_50ms_pfifo_trial10,chart_switches_consistent,PASS,drawn 1 <= summary switch_count 1
+twitch_3Mbps_50ms_pfifo_trial10,chart_fps_matches_summary,PASS,chart time-weighted 27.602 vs summary 27.840
+twitch_3Mbps_50ms_pfifo_trial10,disclosure:sampling_cadence,FAIL,max gap 4.00 s; 2 of 149 intervals exceed 2x nominal (2.0 s); mean 1.21 s
+twitch_3Mbps_50ms_pfifo_trial10,chart_buffer_max_matches_summary,PASS,chart max 15.617 vs summary 15.617
+twitch_3Mbps_50ms_pfifo_trial10,playback_verdict,PASS,OK
+twitch_3Mbps_50ms_pfifo_trial10,separate_direction_plots,PASS,download+upload png present
+twitch_3Mbps_50ms_pfifo_trial10,jaber8_per_app_pcap,PASS,"twitch_3Mbps_50ms_pfifo_trial10.twitch.pcap: 50822 pkts, 62.5 MB, 15 attributed IP(s), sha 8116f16737a97b9a"
+twitch_6Mbps_50ms_pfifo_trial10,cap_not_exceeded_peak,PASS,peak 5.4171 vs cap 6 (5% tolerance for bin edges)
+twitch_6Mbps_50ms_pfifo_trial10,cap_not_exceeded_mean,PASS,mean 2.4735 vs cap 6
+twitch_6Mbps_50ms_pfifo_trial10,rebuffer_shading_anchored,PASS,"anchored; 6 span(s) before window, captioned"
+twitch_6Mbps_50ms_pfifo_trial10,chart_switches_consistent,PASS,drawn 1 <= summary switch_count 1
+twitch_6Mbps_50ms_pfifo_trial10,chart_fps_matches_summary,PASS,chart time-weighted 26.590 vs summary 26.710
+twitch_6Mbps_50ms_pfifo_trial10,disclosure:sampling_cadence,FAIL,max gap 2.30 s; 4 of 148 intervals exceed 2x nominal (2.0 s); mean 1.21 s
+twitch_6Mbps_50ms_pfifo_trial10,chart_buffer_max_matches_summary,PASS,chart max 27.202 vs summary 27.202
+twitch_6Mbps_50ms_pfifo_trial10,playback_verdict,PASS,OK
+twitch_6Mbps_50ms_pfifo_trial10,separate_direction_plots,PASS,download+upload png present
+twitch_6Mbps_50ms_pfifo_trial10,jaber8_per_app_pcap,PASS,"twitch_6Mbps_50ms_pfifo_trial10.twitch.pcap: 61082 pkts, 70.2 MB, 15 attributed IP(s), sha e9f15b53e063c2e0"
+vimeo_0.5Mbps_50ms_pfifo_trial10,cap_not_exceeded_peak,PASS,peak 0.5073 vs cap 0.5 (5% tolerance for bin edges)
+vimeo_0.5Mbps_50ms_pfifo_trial10,cap_not_exceeded_mean,PASS,mean 0.4278 vs cap 0.5
+vimeo_0.5Mbps_50ms_pfifo_trial10,rebuffer_shading_anchored,PASS,"anchored; 0 span(s) before window, captioned"
+vimeo_0.5Mbps_50ms_pfifo_trial10,chart_switches_consistent,PASS,drawn 1 <= summary switch_count 1
+vimeo_0.5Mbps_50ms_pfifo_trial10,chart_fps_matches_summary,PASS,chart time-weighted 23.079 vs summary 23.070
+vimeo_0.5Mbps_50ms_pfifo_trial10,disclosure:sampling_cadence,PASS,max gap 1.22 s; 0 of 169 intervals exceed 2x nominal (2.0 s); mean 1.06 s
+vimeo_0.5Mbps_50ms_pfifo_trial10,chart_buffer_max_matches_summary,PASS,chart max 15.092 vs summary 15.092
+vimeo_0.5Mbps_50ms_pfifo_trial10,playback_verdict,PASS,OK
+vimeo_0.5Mbps_50ms_pfifo_trial10,separate_direction_plots,PASS,download+upload png present
+vimeo_0.5Mbps_50ms_pfifo_trial10,jaber8_per_app_pcap,PASS,"vimeo_0.5Mbps_50ms_pfifo_trial10.vimeo.pcap: 11798 pkts, 11.5 MB, 6 attributed IP(s), sha 254593e106cf22a7"
+vimeo_1.5Mbps_50ms_pfifo_trial10,cap_not_exceeded_peak,PASS,peak 1.4980 vs cap 1.5 (5% tolerance for bin edges)
+vimeo_1.5Mbps_50ms_pfifo_trial10,cap_not_exceeded_mean,PASS,mean 0.4611 vs cap 1.5
+vimeo_1.5Mbps_50ms_pfifo_trial10,rebuffer_shading_anchored,PASS,"anchored; 0 span(s) before window, captioned"
+vimeo_1.5Mbps_50ms_pfifo_trial10,chart_switches_consistent,PASS,drawn 7 <= summary switch_count 7
+vimeo_1.5Mbps_50ms_pfifo_trial10,chart_fps_matches_summary,PASS,chart time-weighted 23.990 vs summary 23.980
+vimeo_1.5Mbps_50ms_pfifo_trial10,disclosure:sampling_cadence,PASS,max gap 1.29 s; 0 of 168 intervals exceed 2x nominal (2.0 s); mean 1.07 s
+vimeo_1.5Mbps_50ms_pfifo_trial10,chart_buffer_max_matches_summary,PASS,chart max 16.987 vs summary 16.987
+vimeo_1.5Mbps_50ms_pfifo_trial10,playback_verdict,PASS,OK
+vimeo_1.5Mbps_50ms_pfifo_trial10,separate_direction_plots,PASS,download+upload png present
+vimeo_1.5Mbps_50ms_pfifo_trial10,jaber8_per_app_pcap,PASS,"vimeo_1.5Mbps_50ms_pfifo_trial10.vimeo.pcap: 10012 pkts, 12.4 MB, 7 attributed IP(s), sha c95378738218a609"
+vimeo_10Mbps_50ms_pfifo_trial10,cap_not_exceeded_peak,PASS,peak 9.9845 vs cap 10 (5% tolerance for bin edges)
+vimeo_10Mbps_50ms_pfifo_trial10,cap_not_exceeded_mean,PASS,mean 3.3380 vs cap 10
+vimeo_10Mbps_50ms_pfifo_trial10,rebuffer_shading_anchored,PASS,"anchored; 0 span(s) before window, captioned"
+vimeo_10Mbps_50ms_pfifo_trial10,chart_switches_consistent,PASS,drawn 4 <= summary switch_count 4
+vimeo_10Mbps_50ms_pfifo_trial10,chart_fps_matches_summary,PASS,chart time-weighted 23.392 vs summary 23.410
+vimeo_10Mbps_50ms_pfifo_trial10,disclosure:sampling_cadence,PASS,max gap 1.55 s; 0 of 162 intervals exceed 2x nominal (2.0 s); mean 1.11 s
+vimeo_10Mbps_50ms_pfifo_trial10,chart_buffer_max_matches_summary,PASS,chart max 28.441 vs summary 28.441
+vimeo_10Mbps_50ms_pfifo_trial10,playback_verdict,PASS,OK
+vimeo_10Mbps_50ms_pfifo_trial10,separate_direction_plots,PASS,download+upload png present
+vimeo_10Mbps_50ms_pfifo_trial10,jaber8_per_app_pcap,PASS,"vimeo_10Mbps_50ms_pfifo_trial10.vimeo.pcap: 67225 pkts, 79.9 MB, 7 attributed IP(s), sha 3dafb9e5f0fd2603"
+vimeo_1Mbps_50ms_pfifo_trial10,cap_not_exceeded_peak,PASS,peak 1.0122 vs cap 1 (5% tolerance for bin edges)
+vimeo_1Mbps_50ms_pfifo_trial10,cap_not_exceeded_mean,PASS,mean 0.5236 vs cap 1
+vimeo_1Mbps_50ms_pfifo_trial10,rebuffer_shading_anchored,PASS,"anchored; 0 span(s) before window, captioned"
+vimeo_1Mbps_50ms_pfifo_trial10,chart_switches_consistent,PASS,drawn 2 <= summary switch_count 2
+vimeo_1Mbps_50ms_pfifo_trial10,chart_fps_matches_summary,PASS,chart time-weighted 23.980 vs summary 23.980
+vimeo_1Mbps_50ms_pfifo_trial10,disclosure:sampling_cadence,PASS,max gap 1.24 s; 0 of 168 intervals exceed 2x nominal (2.0 s); mean 1.07 s
+vimeo_1Mbps_50ms_pfifo_trial10,chart_buffer_max_matches_summary,PASS,chart max 27.837 vs summary 27.837
+vimeo_1Mbps_50ms_pfifo_trial10,playback_verdict,PASS,OK
+vimeo_1Mbps_50ms_pfifo_trial10,separate_direction_plots,PASS,download+upload png present
+vimeo_1Mbps_50ms_pfifo_trial10,jaber8_per_app_pcap,PASS,"vimeo_1Mbps_50ms_pfifo_trial10.vimeo.pcap: 12626 pkts, 13.7 MB, 7 attributed IP(s), sha 010f5f704484a3ec"
+vimeo_3Mbps_50ms_pfifo_trial10,cap_not_exceeded_peak,PASS,peak 3.0008 vs cap 3 (5% tolerance for bin edges)
+vimeo_3Mbps_50ms_pfifo_trial10,cap_not_exceeded_mean,PASS,mean 1.2878 vs cap 3
+vimeo_3Mbps_50ms_pfifo_trial10,rebuffer_shading_anchored,PASS,"anchored; 0 span(s) before window, captioned"
+vimeo_3Mbps_50ms_pfifo_trial10,chart_switches_consistent,PASS,drawn 4 <= summary switch_count 4
+vimeo_3Mbps_50ms_pfifo_trial10,chart_fps_matches_summary,PASS,chart time-weighted 23.969 vs summary 23.970
+vimeo_3Mbps_50ms_pfifo_trial10,disclosure:sampling_cadence,PASS,max gap 1.25 s; 0 of 167 intervals exceed 2x nominal (2.0 s); mean 1.08 s
+vimeo_3Mbps_50ms_pfifo_trial10,chart_buffer_max_matches_summary,PASS,chart max 28.703 vs summary 28.703
+vimeo_3Mbps_50ms_pfifo_trial10,playback_verdict,PASS,OK
+vimeo_3Mbps_50ms_pfifo_trial10,separate_direction_plots,PASS,download+upload png present
+vimeo_3Mbps_50ms_pfifo_trial10,jaber8_per_app_pcap,PASS,"vimeo_3Mbps_50ms_pfifo_trial10.vimeo.pcap: 25652 pkts, 31.8 MB, 7 attributed IP(s), sha dbcd511e2b901257"
+vimeo_6Mbps_50ms_pfifo_trial10,cap_not_exceeded_peak,PASS,peak 6.0001 vs cap 6 (5% tolerance for bin edges)
+vimeo_6Mbps_50ms_pfifo_trial10,cap_not_exceeded_mean,PASS,mean 2.6098 vs cap 6
+vimeo_6Mbps_50ms_pfifo_trial10,rebuffer_shading_anchored,PASS,"anchored; 0 span(s) before window, captioned"
+vimeo_6Mbps_50ms_pfifo_trial10,chart_switches_consistent,PASS,drawn 3 <= summary switch_count 3
+vimeo_6Mbps_50ms_pfifo_trial10,chart_fps_matches_summary,PASS,chart time-weighted 23.889 vs summary 23.890
+vimeo_6Mbps_50ms_pfifo_trial10,disclosure:sampling_cadence,PASS,max gap 1.37 s; 0 of 164 intervals exceed 2x nominal (2.0 s); mean 1.10 s
+vimeo_6Mbps_50ms_pfifo_trial10,chart_buffer_max_matches_summary,PASS,chart max 29.352 vs summary 29.352
+vimeo_6Mbps_50ms_pfifo_trial10,playback_verdict,PASS,OK
+vimeo_6Mbps_50ms_pfifo_trial10,separate_direction_plots,PASS,download+upload png present
+vimeo_6Mbps_50ms_pfifo_trial10,jaber8_per_app_pcap,PASS,"vimeo_6Mbps_50ms_pfifo_trial10.vimeo.pcap: 53544 pkts, 62.8 MB, 7 attributed IP(s), sha 9842107aae6a1d55"
+youtube_0.5Mbps_50ms_pfifo_trial10,cap_not_exceeded_peak,PASS,peak 0.5162 vs cap 0.5 (5% tolerance for bin edges)
+youtube_0.5Mbps_50ms_pfifo_trial10,cap_not_exceeded_mean,PASS,mean 0.2403 vs cap 0.5
+youtube_0.5Mbps_50ms_pfifo_trial10,rebuffer_shading_anchored,PASS,"anchored; 1 span(s) before window, captioned"
+youtube_0.5Mbps_50ms_pfifo_trial10,chart_switches_consistent,PASS,drawn 1 <= summary switch_count 1
+youtube_0.5Mbps_50ms_pfifo_trial10,chart_fps_matches_summary,PASS,chart time-weighted 23.261 vs summary 23.390
+youtube_0.5Mbps_50ms_pfifo_trial10,disclosure:sampling_cadence,PASS,max gap 1.24 s; 0 of 171 intervals exceed 2x nominal (2.0 s); mean 1.05 s
+youtube_0.5Mbps_50ms_pfifo_trial10,chart_buffer_max_matches_summary,PASS,chart max 120.554 vs summary 120.554
+youtube_0.5Mbps_50ms_pfifo_trial10,playback_verdict,PASS,OK
+youtube_0.5Mbps_50ms_pfifo_trial10,separate_direction_plots,PASS,download+upload png present
+youtube_0.5Mbps_50ms_pfifo_trial10,jaber8_per_app_pcap,PASS,"youtube_0.5Mbps_50ms_pfifo_trial10.youtube.pcap: 11961 pkts, 9.7 MB, 12 attributed IP(s), sha d2288086b4fa6b2d"
+youtube_1.5Mbps_50ms_pfifo_trial10,cap_not_exceeded_peak,PASS,peak 1.5096 vs cap 1.5 (5% tolerance for bin edges)
+youtube_1.5Mbps_50ms_pfifo_trial10,cap_not_exceeded_mean,PASS,mean 0.4018 vs cap 1.5
+youtube_1.5Mbps_50ms_pfifo_trial10,rebuffer_shading_anchored,PASS,"anchored; 0 span(s) before window, captioned"
+youtube_1.5Mbps_50ms_pfifo_trial10,chart_switches_consistent,PASS,drawn 0 <= summary switch_count 0
+youtube_1.5Mbps_50ms_pfifo_trial10,chart_fps_matches_summary,PASS,chart time-weighted 24.258 vs summary 24.210
+youtube_1.5Mbps_50ms_pfifo_trial10,disclosure:sampling_cadence,FAIL,max gap 3.52 s; 2 of 158 intervals exceed 2x nominal (2.0 s); mean 1.13 s
+youtube_1.5Mbps_50ms_pfifo_trial10,chart_buffer_max_matches_summary,PASS,chart max 113.902 vs summary 113.902
+youtube_1.5Mbps_50ms_pfifo_trial10,playback_verdict,PASS,OK
+youtube_1.5Mbps_50ms_pfifo_trial10,separate_direction_plots,PASS,download+upload png present
+youtube_1.5Mbps_50ms_pfifo_trial10,jaber8_per_app_pcap,PASS,"youtube_1.5Mbps_50ms_pfifo_trial10.youtube.pcap: 19043 pkts, 19.4 MB, 7 attributed IP(s), sha fe30ce8399fed4e3"
+youtube_10Mbps_50ms_pfifo_trial10,cap_not_exceeded_peak,PASS,peak 9.8557 vs cap 10 (5% tolerance for bin edges)
+youtube_10Mbps_50ms_pfifo_trial10,cap_not_exceeded_mean,PASS,mean 0.8210 vs cap 10
+youtube_10Mbps_50ms_pfifo_trial10,rebuffer_shading_anchored,PASS,"anchored; 0 span(s) before window, captioned"
+youtube_10Mbps_50ms_pfifo_trial10,chart_switches_consistent,PASS,drawn 0 <= summary switch_count 0
+youtube_10Mbps_50ms_pfifo_trial10,chart_fps_matches_summary,PASS,chart time-weighted 24.796 vs summary 24.880
+youtube_10Mbps_50ms_pfifo_trial10,disclosure:sampling_cadence,FAIL,max gap 3.60 s; 3 of 157 intervals exceed 2x nominal (2.0 s); mean 1.14 s
+youtube_10Mbps_50ms_pfifo_trial10,chart_buffer_max_matches_summary,PASS,chart max 115.729 vs summary 115.729
+youtube_10Mbps_50ms_pfifo_trial10,playback_verdict,PASS,OK
+youtube_10Mbps_50ms_pfifo_trial10,separate_direction_plots,PASS,download+upload png present
+youtube_10Mbps_50ms_pfifo_trial10,jaber8_per_app_pcap,PASS,"youtube_10Mbps_50ms_pfifo_trial10.youtube.pcap: 23688 pkts, 27.7 MB, 8 attributed IP(s), sha 0bb549749bd82360"
+youtube_1Mbps_50ms_pfifo_trial10,cap_not_exceeded_peak,PASS,peak 1.0129 vs cap 1 (5% tolerance for bin edges)
+youtube_1Mbps_50ms_pfifo_trial10,cap_not_exceeded_mean,PASS,mean 0.3707 vs cap 1
+youtube_1Mbps_50ms_pfifo_trial10,rebuffer_shading_anchored,PASS,"anchored; 1 span(s) before window, captioned"
+youtube_1Mbps_50ms_pfifo_trial10,chart_switches_consistent,PASS,drawn 3 <= summary switch_count 3
+youtube_1Mbps_50ms_pfifo_trial10,chart_fps_matches_summary,PASS,chart time-weighted 25.006 vs summary 25.000
+youtube_1Mbps_50ms_pfifo_trial10,disclosure:sampling_cadence,PASS,max gap 1.21 s; 0 of 172 intervals exceed 2x nominal (2.0 s); mean 1.04 s
+youtube_1Mbps_50ms_pfifo_trial10,chart_buffer_max_matches_summary,PASS,chart max 122.227 vs summary 122.227
+youtube_1Mbps_50ms_pfifo_trial10,playback_verdict,PASS,OK
+youtube_1Mbps_50ms_pfifo_trial10,separate_direction_plots,PASS,download+upload png present
+youtube_1Mbps_50ms_pfifo_trial10,jaber8_per_app_pcap,PASS,"youtube_1Mbps_50ms_pfifo_trial10.youtube.pcap: 16612 pkts, 15.8 MB, 10 attributed IP(s), sha 1de25038cee64f2f"
+youtube_3Mbps_50ms_pfifo_trial10,cap_not_exceeded_peak,PASS,peak 3.0078 vs cap 3 (5% tolerance for bin edges)
+youtube_3Mbps_50ms_pfifo_trial10,cap_not_exceeded_mean,PASS,mean 0.7273 vs cap 3
+youtube_3Mbps_50ms_pfifo_trial10,rebuffer_shading_anchored,PASS,"anchored; 0 span(s) before window, captioned"
+youtube_3Mbps_50ms_pfifo_trial10,chart_switches_consistent,PASS,drawn 0 <= summary switch_count 0
+youtube_3Mbps_50ms_pfifo_trial10,chart_fps_matches_summary,PASS,chart time-weighted 24.146 vs summary 22.740
+youtube_3Mbps_50ms_pfifo_trial10,disclosure:sampling_cadence,FAIL,max gap 17.39 s; 5 of 142 intervals exceed 2x nominal (2.0 s); mean 1.26 s
+youtube_3Mbps_50ms_pfifo_trial10,chart_buffer_max_matches_summary,PASS,chart max 113.640 vs summary 113.640
+youtube_3Mbps_50ms_pfifo_trial10,playback_verdict,PASS,OK
+youtube_3Mbps_50ms_pfifo_trial10,separate_direction_plots,PASS,download+upload png present
+youtube_3Mbps_50ms_pfifo_trial10,jaber8_per_app_pcap,PASS,"youtube_3Mbps_50ms_pfifo_trial10.youtube.pcap: 23891 pkts, 26.1 MB, 7 attributed IP(s), sha fa2acf51444d499c"
+youtube_3Mbps_50ms_pfifo_trial21,cap_not_exceeded_peak,PASS,peak 3.0078 vs cap 3 (5% tolerance for bin edges)
+youtube_3Mbps_50ms_pfifo_trial21,cap_not_exceeded_mean,PASS,mean 0.4463 vs cap 3
+youtube_3Mbps_50ms_pfifo_trial21,rebuffer_shading_anchored,PASS,"anchored; 0 span(s) before window, captioned"
+youtube_3Mbps_50ms_pfifo_trial21,chart_switches_consistent,PASS,drawn 0 <= summary switch_count 0
+youtube_3Mbps_50ms_pfifo_trial21,chart_fps_matches_summary,PASS,chart time-weighted 24.887 vs summary 24.970
+youtube_3Mbps_50ms_pfifo_trial21,disclosure:sampling_cadence,FAIL,max gap 3.03 s; 2 of 163 intervals exceed 2x nominal (2.0 s); mean 1.10 s
+youtube_3Mbps_50ms_pfifo_trial21,chart_buffer_max_matches_summary,PASS,chart max 114.502 vs summary 114.502
+youtube_3Mbps_50ms_pfifo_trial21,playback_verdict,PASS,OK
+youtube_3Mbps_50ms_pfifo_trial21,separate_direction_plots,PASS,download+upload png present
+youtube_3Mbps_50ms_pfifo_trial21,jaber8_per_app_pcap,PASS,"youtube_3Mbps_50ms_pfifo_trial21.youtube.pcap: 18104 pkts, 19.5 MB, 9 attributed IP(s), sha 6ec4bb1edee19db8"
+youtube_3Mbps_50ms_pfifo_trial22,cap_not_exceeded_peak,PASS,peak 3.0083 vs cap 3 (5% tolerance for bin edges)
+youtube_3Mbps_50ms_pfifo_trial22,cap_not_exceeded_mean,PASS,mean 0.4647 vs cap 3
+youtube_3Mbps_50ms_pfifo_trial22,rebuffer_shading_anchored,PASS,"anchored; 0 span(s) before window, captioned"
+youtube_3Mbps_50ms_pfifo_trial22,chart_switches_consistent,PASS,drawn 0 <= summary switch_count 0
+youtube_3Mbps_50ms_pfifo_trial22,chart_fps_matches_summary,PASS,chart time-weighted 24.933 vs summary 24.890
+youtube_3Mbps_50ms_pfifo_trial22,disclosure:sampling_cadence,FAIL,max gap 3.05 s; 2 of 162 intervals exceed 2x nominal (2.0 s); mean 1.11 s
+youtube_3Mbps_50ms_pfifo_trial22,chart_buffer_max_matches_summary,PASS,chart max 112.800 vs summary 112.800
+youtube_3Mbps_50ms_pfifo_trial22,playback_verdict,PASS,OK
+youtube_3Mbps_50ms_pfifo_trial22,separate_direction_plots,PASS,download+upload png present
+youtube_3Mbps_50ms_pfifo_trial22,jaber8_per_app_pcap,PASS,"youtube_3Mbps_50ms_pfifo_trial22.youtube.pcap: 17912 pkts, 19.5 MB, 9 attributed IP(s), sha 86042e30c5d1de9f"
+youtube_3Mbps_50ms_pfifo_trial23,cap_not_exceeded_peak,PASS,peak 3.0078 vs cap 3 (5% tolerance for bin edges)
+youtube_3Mbps_50ms_pfifo_trial23,cap_not_exceeded_mean,PASS,mean 0.4595 vs cap 3
+youtube_3Mbps_50ms_pfifo_trial23,rebuffer_shading_anchored,PASS,"anchored; 0 span(s) before window, captioned"
+youtube_3Mbps_50ms_pfifo_trial23,chart_switches_consistent,PASS,drawn 0 <= summary switch_count 0
+youtube_3Mbps_50ms_pfifo_trial23,chart_fps_matches_summary,PASS,chart time-weighted 24.894 vs summary 24.900
+youtube_3Mbps_50ms_pfifo_trial23,disclosure:sampling_cadence,FAIL,max gap 2.76 s; 2 of 161 intervals exceed 2x nominal (2.0 s); mean 1.11 s
+youtube_3Mbps_50ms_pfifo_trial23,chart_buffer_max_matches_summary,PASS,chart max 113.421 vs summary 113.421
+youtube_3Mbps_50ms_pfifo_trial23,playback_verdict,PASS,OK
+youtube_3Mbps_50ms_pfifo_trial23,separate_direction_plots,PASS,download+upload png present
+youtube_3Mbps_50ms_pfifo_trial23,jaber8_per_app_pcap,PASS,"youtube_3Mbps_50ms_pfifo_trial23.youtube.pcap: 17876 pkts, 19.5 MB, 10 attributed IP(s), sha 74a305a77f733b7f"
+youtube_3Mbps_50ms_pfifo_trial24,cap_not_exceeded_peak,PASS,peak 2.9980 vs cap 3 (5% tolerance for bin edges)
+youtube_3Mbps_50ms_pfifo_trial24,cap_not_exceeded_mean,PASS,mean 0.4634 vs cap 3
+youtube_3Mbps_50ms_pfifo_trial24,rebuffer_shading_anchored,PASS,"anchored; 0 span(s) before window, captioned"
+youtube_3Mbps_50ms_pfifo_trial24,chart_switches_consistent,PASS,drawn 0 <= summary switch_count 0
+youtube_3Mbps_50ms_pfifo_trial24,chart_fps_matches_summary,PASS,chart time-weighted 24.967 vs summary 24.970
+youtube_3Mbps_50ms_pfifo_trial24,disclosure:sampling_cadence,FAIL,max gap 2.35 s; 2 of 163 intervals exceed 2x nominal (2.0 s); mean 1.10 s
+youtube_3Mbps_50ms_pfifo_trial24,chart_buffer_max_matches_summary,PASS,chart max 113.470 vs summary 113.470
+youtube_3Mbps_50ms_pfifo_trial24,playback_verdict,PASS,OK
+youtube_3Mbps_50ms_pfifo_trial24,separate_direction_plots,PASS,download+upload png present
+youtube_3Mbps_50ms_pfifo_trial24,jaber8_per_app_pcap,PASS,"youtube_3Mbps_50ms_pfifo_trial24.youtube.pcap: 17773 pkts, 19.3 MB, 10 attributed IP(s), sha 6f49eae2a7d1d97c"
+youtube_3Mbps_50ms_pfifo_trial25,cap_not_exceeded_peak,PASS,peak 3.0078 vs cap 3 (5% tolerance for bin edges)
+youtube_3Mbps_50ms_pfifo_trial25,cap_not_exceeded_mean,PASS,mean 0.4668 vs cap 3
+youtube_3Mbps_50ms_pfifo_trial25,rebuffer_shading_anchored,PASS,"anchored; 0 span(s) before window, captioned"
+youtube_3Mbps_50ms_pfifo_trial25,chart_switches_consistent,PASS,drawn 0 <= summary switch_count 0
+youtube_3Mbps_50ms_pfifo_trial25,chart_fps_matches_summary,PASS,chart time-weighted 24.832 vs summary 24.900
+youtube_3Mbps_50ms_pfifo_trial25,disclosure:sampling_cadence,FAIL,max gap 3.75 s; 2 of 162 intervals exceed 2x nominal (2.0 s); mean 1.11 s
+youtube_3Mbps_50ms_pfifo_trial25,chart_buffer_max_matches_summary,PASS,chart max 114.684 vs summary 114.684
+youtube_3Mbps_50ms_pfifo_trial25,playback_verdict,PASS,OK
+youtube_3Mbps_50ms_pfifo_trial25,separate_direction_plots,PASS,download+upload png present
+youtube_3Mbps_50ms_pfifo_trial25,jaber8_per_app_pcap,PASS,"youtube_3Mbps_50ms_pfifo_trial25.youtube.pcap: 18163 pkts, 19.5 MB, 9 attributed IP(s), sha 1ed42c7252ce2db0"
+youtube_6Mbps_50ms_pfifo_trial10,cap_not_exceeded_peak,PASS,peak 6.0052 vs cap 6 (5% tolerance for bin edges)
+youtube_6Mbps_50ms_pfifo_trial10,cap_not_exceeded_mean,PASS,mean 0.7823 vs cap 6
+youtube_6Mbps_50ms_pfifo_trial10,rebuffer_shading_anchored,PASS,"anchored; 0 span(s) before window, captioned"
+youtube_6Mbps_50ms_pfifo_trial10,chart_switches_consistent,PASS,drawn 0 <= summary switch_count 0
+youtube_6Mbps_50ms_pfifo_trial10,chart_fps_matches_summary,PASS,chart time-weighted 24.860 vs summary 24.990
+youtube_6Mbps_50ms_pfifo_trial10,disclosure:sampling_cadence,FAIL,max gap 3.43 s; 2 of 156 intervals exceed 2x nominal (2.0 s); mean 1.15 s
+youtube_6Mbps_50ms_pfifo_trial10,chart_buffer_max_matches_summary,PASS,chart max 113.949 vs summary 113.949
+youtube_6Mbps_50ms_pfifo_trial10,playback_verdict,PASS,OK
+youtube_6Mbps_50ms_pfifo_trial10,separate_direction_plots,PASS,download+upload png present
+youtube_6Mbps_50ms_pfifo_trial10,jaber8_per_app_pcap,PASS,"youtube_6Mbps_50ms_pfifo_trial10.youtube.pcap: 24741 pkts, 28.4 MB, 9 attributed IP(s), sha baf306451824c4cb"

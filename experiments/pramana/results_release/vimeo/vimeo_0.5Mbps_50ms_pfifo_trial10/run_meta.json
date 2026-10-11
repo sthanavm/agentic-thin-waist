@@ -1,0 +1,23 @@
+{
+ "run": "vimeo_0.5Mbps_50ms_pfifo_trial10",
+ "run_dir_on_vm": "/home/student/sthanav-agentic-thin-waist/experiments/pramana/results/pramana_runs/vimeo_0.5mbps_50ms_0pct_pfifo_cubic_solo_t10_b1076effe5",
+ "repo_commit": "5d493b2",
+ "chrome_version": "Google Chrome 154.0.8037.57",
+ "vm": "docker-vm-4",
+ "shaping": {
+  "bandwidth_mbps": 0.5,
+  "latency_ms": 50,
+  "aqm": "pfifo",
+  "loss_pct": 0.0,
+  "cca": "cubic",
+  "duration_s": 180
+ },
+ "window_size": null,
+ "measured_element_box": "1317x988",
+ "sampling_interval_s": 1.0,
+ "window_epoch": [
+  1791677565.3119314,
+  1791677744.7366567
+ ],
+ "n_samples": 170
+}

@@ -1,0 +1,72 @@
+{
+ "run": "vimeo_0.5Mbps_50ms_pfifo_trial10",
+ "app": "vimeo",
+ "verdict": "OK",
+ "shaping": {
+  "bandwidth_mbps": 0.5,
+  "latency_ms": 50,
+  "aqm": "pfifo",
+  "loss_pct": 0.0,
+  "cca": "cubic"
+ },
+ "metrics": {
+  "startup_delay_ms": 21504.0,
+  "startup_basis": "requestVideoFrameCallback first presentationTime",
+  "initial_buffering_ms": 10545.0,
+  "buffer_level_secs": {
+   "mean": 7.5386,
+   "min": 0.0,
+   "max": 15.092457999999997,
+   "basis": "video.buffered end - currentTime, sampled once per interval"
+  },
+  "rebuffer_events": 2,
+  "rebuffer_duration_ms": 2458.0,
+  "delivered_video_bitrate_mbps": 0.2145,
+  "delivered_audio_bitrate_mbps": 0.1892,
+  "bitrate_basis": "mse_appended_bytes(video sourcebuffer)",
+  "switch_count": 1,
+  "switch_events": [
+   {
+    "t": 4.3,
+    "from_p": 720,
+    "to_p": 240,
+    "direction": "down",
+    "signal": "decoded_height"
+   }
+  ],
+  "rendered_fps": 23.07,
+  "raw_decoded_frames": 4284.0,
+  "raw_dropped_frames": 110.0,
+  "raw_presented_frames": 4170.0
+ },
+ "throughput_mbps": {
+  "download": {
+   "peak_mbps": 0.5073,
+   "mean_mbps": 0.4278
+  },
+  "upload": {
+   "peak_mbps": 0.2064,
+   "mean_mbps": 0.0185
+  }
+ },
+ "references": {
+  "mse_video_bytes": 4814395.0,
+  "mse_audio_bytes": 4362402.0,
+  "cdp_finished_bytes": 10053992,
+  "cdp_received_bytes": 10128290,
+  "cdp_open_at_end_bytes": 115329,
+  "cdp_events_seen": 1735,
+  "rt_all_bytes": 9261241,
+  "rt_media_bytes": 9150308
+ },
+ "codec": {
+  "declared_mime": "video/mp4;codecs=av01.0.08M.08.0.111.01.01.01.0",
+  "decoding": "av01.0.00M.08",
+  "decoding_wh": [
+   320,
+   240
+  ],
+  "init_video_configs": 2,
+  "mse_mime_switches": 0
+ }
+}

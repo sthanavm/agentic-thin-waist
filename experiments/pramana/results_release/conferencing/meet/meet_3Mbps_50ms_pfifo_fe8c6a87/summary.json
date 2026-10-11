@@ -1,0 +1,39 @@
+{
+  "run": "meet_3Mbps_50ms_pfifo_fe8c6a87",
+  "app": "meet",
+  "kind": "webrtc",
+  "run_dir_on_vm": "/home/student/sthanav-agentic-thin-waist/experiments/pramana/results/pramana_runs/meet_3mbps_50ms_0pct_pfifo_cubic_solo_t1_fe8c6a87d4",
+  "admission": "MANUAL \u2014 a human admitted the bot into the meeting",
+  "shaping": {
+    "bandwidth_mbps": 3.0,
+    "latency_ms": 50.0,
+    "aqm": "pfifo",
+    "loss_pct": 0
+  },
+  "metrics": {
+    "resolution_p": 360,
+    "resolutions_observed": [
+      360
+    ],
+    "resolution_changes": 0,
+    "rebuffer_events": 6,
+    "rebuffer_duration_ms": 1591.0,
+    "decoded_frame_rate_fps": 21.38,
+    "raw_dropped_video_frames": 2,
+    "raw_total_video_frames": 3939,
+    "session_seconds": 179.57,
+    "total_samples": 161,
+    "inbound_bitrate_mbps": {
+      "mean": 0.3903,
+      "min": 0.1424,
+      "max": 0.7627
+    },
+    "startup_to_first_decoded_frame_ms": null,
+    "mean_jitter_secs": 0.0208,
+    "packet_loss_pct": 0.0
+  },
+  "charts": [
+    "conf_bitrate.png",
+    "conf_resolution.png"
+  ]
+}
