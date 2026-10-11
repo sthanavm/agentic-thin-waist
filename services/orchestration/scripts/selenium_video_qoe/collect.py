@@ -1482,6 +1482,10 @@ def install_webrtc_hook(driver: Any) -> None:
 # up in the sampling cadence itself.
 CDP_DRAIN_EVERY = 5
 
+# Upper bound on a single page-script call, in seconds. See the note where it
+# is applied: this limits the damage from a starved renderer without masking it.
+SCRIPT_TIMEOUT_S = 10
+
 
 # Makes a codec family look unsupported so an adaptive player never selects it.
 # Needed because a player's ladder is bounded by what it believes it can decode,
@@ -2175,6 +2179,21 @@ def run_job(
         deadline = time.monotonic() + duration_seconds
         previous_meet_stats = meet_ready_stats
         previous_meet_timestamp = meet_ready_timestamp
+        # Bound how long one blocked page script can cost, for EVERY app.
+        #
+        # The only existing set_script_timeout sits behind `if is_webrtc`, so
+        # video runs were on Selenium's 30 s default. A starved renderer used
+        # all of it:
+        # measured, one iteration took 39.1 s and wiped out roughly forty
+        # samples. A shorter bound does NOT hide the problem -- the sample is
+        # still written with stats null and a sample_error, and the cadence
+        # check still fails on the gap -- it just limits how much of the run
+        # one stall destroys. Normal readings take 50-600 ms, so 10 s is far
+        # above anything healthy.
+        try:
+            driver.set_script_timeout(SCRIPT_TIMEOUT_S)
+        except Exception as exc:  # noqa: BLE001
+            print(f"[{app}] could not set script timeout: {exc}")
         loop_t0 = time.monotonic()
         tick_index = 0
         try:

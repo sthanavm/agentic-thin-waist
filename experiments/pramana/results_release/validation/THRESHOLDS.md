@@ -129,3 +129,64 @@ A presented-frame counter that never advanced must report `null`, never 0.0.
 A failing check is reported as FAILED in the README table. If a failure is
 traced to a defect, the fix is made and **that cell is re-run**; the failure and
 the re-run are both recorded. Re-running is allowed; re-labelling is not.
+
+---
+
+# Addendum: pre-run host-load gate
+
+Written and committed **before the runs it governs were started**.
+
+## Why
+
+This VM is shared and has 2 vCPUs. Another workload on it (`substrate-worker`)
+keeps about 160 Chrome processes alive, and when they are busy the run queue
+goes far above what two cores can serve. Measured consequences:
+
+- The sampler's page-script call is synchronous, so it waits on the renderer.
+  One call exceeded Selenium's timeout and cost **39.1 s**, destroying roughly
+  forty samples.
+- The runs themselves degrade. The same YouTube 3 Mbps cell gave **720p with 0
+  rebuffers** at load ~3 and **480p with 6-10 rebuffers** at load ~10.
+
+So host load is not a nuisance to be averaged away; it changes the measurement.
+It is now gated before a run and recorded with every run.
+
+## The gate
+
+Before each cell:
+
+1. Sample `/proc/loadavg` 1-minute load every **15 s**.
+2. Start the run once load1 has been **≤ 4.0 for 3 consecutive minutes**
+   (12 consecutive samples).
+3. If that has not happened within **20 minutes**, start the run anyway and
+   mark it `host_load_gate: "timeout"` — a **high-load run**, kept and
+   labelled, never silently discarded.
+
+**Why 4.0.** The box has 2 cores. The collector needs roughly one core for
+Chrome plus a little for the sampler, so for page-script calls to return
+promptly the total runnable count wants to be near or below the core count
+plus our own demand. The measured idle baseline with no collector running is
+**load1 ≈ 3.0**, entirely from the other workload, so 4.0 is reachable at idle
+while still excluding the 5.5-13.4 range in which the failures occurred. The
+threshold is chosen from the machine's capacity and its measured idle floor,
+not from the results of any run judged against it.
+
+## What is recorded, for every run
+
+In the run metadata, so a reader can see the conditions rather than infer them:
+
+| field | meaning |
+|---|---|
+| `host_load_gate` | `passed` or `timeout` |
+| `host_load_gate_wait_s` | how long the gate waited before starting |
+| `load1_at_start` | 1-minute load immediately before the run |
+| `load1_median`, `load1_max` | across the run's own samples |
+| `chrome_procs_at_start` | count of `chrome` **and** `chrome-headless` processes, since the other workload's are named the latter |
+
+A run with `host_load_gate: "timeout"` is reported as a high-load run in the
+results table and is **not** compared against gated runs without saying so.
+
+## What this gate does NOT do
+
+It does not make a failing check pass. B1 and every other check are evaluated
+exactly as written above, on gated and high-load runs alike.

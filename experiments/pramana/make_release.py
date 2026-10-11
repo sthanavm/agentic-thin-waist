@@ -171,6 +171,25 @@ def save(f, path):
     plt.close(f)
 
 
+def host_conditions(run_dir: Path, st: list) -> dict:
+    """Gate result plus the load actually seen during the run."""
+    out = {}
+    hc = run_dir / "host_conditions.json"
+    if hc.exists():
+        try:
+            out.update(json.loads(hc.read_text()))
+        except Exception:
+            pass
+    loads = [num(s_.get("host_load1")) for s_ in st]
+    loads = [x for x in loads if x is not None]
+    if loads:
+        ls = sorted(loads)
+        out["load1_median"] = round(ls[len(ls) // 2], 2)
+        out["load1_max"] = round(max(loads), 2)
+        out["load1_samples"] = len(loads)
+    return out
+
+
 def build_run(run_dir: Path, out_root: Path, meta_env: dict):
     rec = json.loads((run_dir / "record.json").read_text())
     cfg = rec.get("config") or {}
@@ -799,6 +818,11 @@ def build_run(run_dir: Path, out_root: Path, meta_env: dict):
                     "measured_element_box": (last.get("measured_element") or {}).get(
                         "box"
                     ),
+                    # Conditions the cell ran under. This VM is shared, and
+                    # host load changes the measurement, not just its cadence:
+                    # the same 3 Mbps cell gave 720p with 0 rebuffers at load
+                    # ~3 and 480p with 6-10 rebuffers at load ~10.
+                    "host": host_conditions(run_dir, st),
                     "n_samples": len(rows),
                     "window_epoch": [w0, w1],
                 },
