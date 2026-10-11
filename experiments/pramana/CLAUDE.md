@@ -148,6 +148,42 @@ before playback begins. The steady state is healthy everywhere, a little over
 one second. We did not move the bar or delay the start to make this pass; it is
 reported as a failure on the three runs where it crosses.
 
+**The sampling cadence, and what it turned out to be.** The once-a-second
+sampling was slipping on YouTube at 3 and 6 Mbps — gaps of two to three
+seconds — and three guesses about why were all wrong, each killed by a
+measurement rather than an argument. So we put timers on each phase of the
+loop and let the numbers say it.
+
+Two of the causes were ours and are fixed. The loop slept a flat one second
+*after* doing its work, so the real period was work plus a second and every
+millisecond of work pushed the whole series later; it now sleeps to the next
+tick on a fixed clock. And every sample made two separate requests to the
+browser, one for the page address and one for the statistics; the address now
+comes back with the statistics, halving the requests that have to wait their
+turn.
+
+The third cause is not ours. Asking the page for its statistics is a
+synchronous call, so when the browser's main thread is busy it simply waits —
+and on this machine it waited a very long time. One sample waited past the
+thirty-second limit and gave up entirely. The reason is that the machine is
+shared: something else on it keeps about a hundred and sixty browser processes
+alive, and while they are busy the run queue sits far above what two cores can
+serve, with no idle time at all. Our own browser is a dozen processes of that.
+
+The control proves the split. At 1 Mbps, where the load was lighter, the
+cadence is now essentially perfect — one second, dead on. At 3 and 6 Mbps,
+where the load was roughly twice as high, it still fails. We did not paper over
+this by shortening the browser's timeout or by starting the measurement later;
+both would make the check pass while hiding that the browser was starved.
+
+It also matters beyond the cadence: under that load the runs themselves come
+out wrong. The same 3 Mbps cell that gives 720p and no rebuffering on a quiet
+machine gives 480p and several rebuffers on a busy one. So those re-runs were
+treated as diagnostics and deliberately not folded into the results; the kept
+results are the ones measured while the machine was quiet. Every sample now
+records the machine's load alongside the measurement, so this confound is
+visible in the data instead of invisible.
+
 **Reading the bitrate chart.** The per-interval line spikes well above the
 link speed — over 40 Mbps on a 6 Mbps link — because a player fetches a whole
 segment at once and hands it to the buffer in one go. That is not throughput

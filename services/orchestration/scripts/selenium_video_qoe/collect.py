@@ -1017,6 +1017,11 @@ const out = genericVideoStats(video);
 out.platform = platform;
 if (platform === 'youtube') { addYouTubeBonus(out); }
 if (!video && !out.video_width) { out.error = 'no_video'; }
+// Returned here so the sampler needs ONE WebDriver round trip per sample
+// instead of two. driver.current_url was a second command queued behind the
+// renderer, and on a loaded host it blocked for seconds with nothing
+// attributing the delay to it.
+try { out.page_url = location.href; } catch (e) { /* non-fatal */ }
 return standardize(out);
 """
 
@@ -2170,14 +2175,21 @@ def run_job(
         deadline = time.monotonic() + duration_seconds
         previous_meet_stats = meet_ready_stats
         previous_meet_timestamp = meet_ready_timestamp
+        loop_t0 = time.monotonic()
+        tick_index = 0
+        try:
+            last_known_url = driver.current_url
+        except Exception:
+            last_known_url = None
+        _ms_script = 0.0
+        _ms_cdp = 0.0
         with open(out_path, "a", buffering=1) as f:
             while time.monotonic() < deadline:
+                t_iter = time.monotonic()
                 sample = {"timestamp": time.time(), "app": app, "kind": kind}
-                try:
-                    sample["url"] = driver.current_url
-                except Exception as exc:  # noqa: BLE001
-                    sample["url"] = None
-                    sample["url_error"] = str(exc)
+                # URL comes back inside the stats payload (one round trip);
+                # this is the last known value until that lands.
+                sample["url"] = last_known_url
                 try:
                     if is_webrtc:
                         stats = get_google_meet_stats(driver)
@@ -2195,7 +2207,9 @@ def run_job(
                         previous_meet_stats = stats
                         previous_meet_timestamp = sample["timestamp"]
                     else:
+                        _t = time.monotonic()
                         sample["stats"] = driver.execute_script(STATS_JS)
+                        _ms_script = (time.monotonic() - _t) * 1000.0
                         # Recorded per sample, not just per run: a buffer series
                         # is uninterpretable without knowing how often it was
                         # read, and the interval is what makes two apps'
@@ -2225,6 +2239,7 @@ def run_job(
                             # bytes are lost by draining less often.
                             if cdp_ledger is not None:
                                 try:
+                                    _t = time.monotonic()
                                     cdp_tick += 1
                                     # No `or cdp_tick == 1` here: the backlog
                                     # is drained before the loop, and draining
@@ -2235,16 +2250,58 @@ def run_job(
                                     sample["stats"].update(
                                         cdp_ledger.totals(cdp_suffixes)
                                     )
+                                    _ms_cdp = (time.monotonic() - _t) * 1000.0
                                 except Exception as exc:  # noqa: BLE001
                                     sample["stats"]["cdp_error"] = str(exc)[:200]
                 except Exception as exc:  # noqa: BLE001
                     sample["stats"] = None
                     sample["sample_error"] = str(exc)
 
+                # What this iteration actually cost, so a cadence problem can
+                # be attributed to a phase instead of guessed at.
+                if isinstance(sample.get("stats"), dict):
+                    _u = sample["stats"].get("page_url")
+                    if _u:
+                        last_known_url = _u
+                        sample["url"] = _u
+                # Host run-queue at this instant. This VM is shared, so a
+                # cadence miss caused by someone else's load is otherwise
+                # invisible in the output.
+                try:
+                    with open("/proc/loadavg") as _lf:
+                        sample["host_load1"] = float(_lf.read().split()[0])
+                except Exception:
+                    pass
+                sample["loop_ms"] = {
+                    "script": round(_ms_script, 1),
+                    "cdp": round(_ms_cdp, 1),
+                    "total_work": round((time.monotonic() - t_iter) * 1000.0, 1),
+                }
+                _ms_script = 0.0
+                _ms_cdp = 0.0
                 f.write(json.dumps(sample) + "\n")
                 samples.append(sample)
                 _assert_remote_tile(app, job, samples, sampling_started_at)
-                time.sleep(sample_interval_seconds)
+                # Sleep to the NEXT TICK, not for a flat interval.
+                #
+                # The loop used to do `time.sleep(interval)` unconditionally,
+                # so the period was work + interval rather than interval, and
+                # every millisecond of work pushed the whole series later.
+                # Measured on YouTube, a ~1.9 s first sample produced a 2.9 s
+                # gap purely from this. Anchoring each tick to the sampling
+                # start keeps the cadence fixed and prevents the error
+                # accumulating across a 180 s run. If an iteration genuinely
+                # overruns a whole interval the loop does not try to catch up
+                # by sleeping zero repeatedly -- it moves to the next tick in
+                # the future, so a late sample costs one interval, not a burst.
+                tick_index += 1
+                next_tick = loop_t0 + tick_index * sample_interval_seconds
+                now = time.monotonic()
+                if next_tick <= now:
+                    missed = int((now - next_tick) // sample_interval_seconds) + 1
+                    tick_index += missed
+                    next_tick = loop_t0 + tick_index * sample_interval_seconds
+                time.sleep(max(0.0, next_tick - now))
     finally:
         try:
             driver.quit()
