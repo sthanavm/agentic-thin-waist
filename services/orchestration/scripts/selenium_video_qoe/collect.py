@@ -1472,6 +1472,12 @@ def install_webrtc_hook(driver: Any) -> None:
     )
 
 
+# How often the CDP performance log is drained, in samples. See the note at the
+# drain site: draining every sample stalls the sample loop badly enough to show
+# up in the sampling cadence itself.
+CDP_DRAIN_EVERY = 5
+
+
 # Makes a codec family look unsupported so an adaptive player never selects it.
 # Needed because a player's ladder is bounded by what it believes it can decode,
 # not by the element it draws into: with a 945x709 element and 10Mbps spare,
@@ -1984,6 +1990,7 @@ def run_job(
     }
     cdp_suffixes = _CDP_HOSTS.get(app, ())
     cdp_ledger = CdpByteLedger() if cdp_suffixes else None
+    cdp_tick = 0
     user_data_dir = job.get("user_data_dir")
     guest_name = str(job.get("guest_name", "NetGent QoE Collector"))
     meet_join_timeout_seconds = float(job.get("join_timeout_seconds", 180))
@@ -2111,6 +2118,28 @@ def run_job(
                 play_result["ready_wait"] = ready_state_at_play
                 play_trigger_ts = time.time()
                 print(f"[{app}] synchronized play result: {play_result}")
+                # Drain the page-load backlog BEFORE the first sample.
+                #
+                # The performance log holds every Network event since the page
+                # began loading, and on YouTube that is thousands of them
+                # before sampling even starts. Draining it inside the loop put
+                # that whole parse in the first interval: measured, every
+                # inter-sample gap over 2 s sat at sample index 1 or 2 and
+                # never later, was worst where the event count was highest
+                # (YouTube at 3 Mbps, ~15k events, 3.1-3.2 s) and absent on
+                # Vimeo (~2.8k events). Sampling cadence is part of the
+                # measurement, so the instrument's own start-up cost must not
+                # land inside it.
+                if cdp_ledger is not None:
+                    try:
+                        t_drain = time.time()
+                        n_backlog = drain_performance_log(driver, cdp_ledger)
+                        print(
+                            f"[{app}] drained {n_backlog} buffered CDP message(s) "
+                            f"before sampling in {time.time() - t_drain:.2f}s"
+                        )
+                    except Exception as exc:  # noqa: BLE001
+                        print(f"[{app}] pre-sample CDP drain failed: {exc}")
             except Exception as exc:  # sampling records whether playback recovers
                 print(
                     f"[{app}] synchronized play nudge failed: "
@@ -2175,13 +2204,34 @@ def run_job(
                             sample["stats"][
                                 "sampling_interval_s"
                             ] = sample_interval_seconds
-                            # Drained every sample, not once at teardown: the
-                            # performance log is a bounded buffer that silently
-                            # discards its oldest entries, so a 180 s run read
-                            # only at the end can lose events with no error.
+                            # Drained periodically rather than once at
+                            # teardown: the performance log is a bounded buffer
+                            # that silently discards its oldest entries, so a
+                            # 180 s run read only at the end can lose events
+                            # with no error.
+                            #
+                            # NOT every sample, though. get_log("performance")
+                            # is a synchronous WebDriver round-trip returning
+                            # thousands of buffered events, and doing it every
+                            # second measurably stalled the sample loop:
+                            # measured across 17 runs with per-second draining
+                            # against 161 without, intervals longer than 2 s
+                            # went from 0.24 % to 0.80 % and the worst gap from
+                            # 4.19 s to 17.39 s. Sampling cadence is a property
+                            # of the measurement, so the instrument must not
+                            # disturb it. Every CDP_DRAIN_EVERY-th sample keeps
+                            # the buffer well clear of overflow at a fraction of
+                            # the cost, and the totals are cumulative so no
+                            # bytes are lost by draining less often.
                             if cdp_ledger is not None:
                                 try:
-                                    drain_performance_log(driver, cdp_ledger)
+                                    cdp_tick += 1
+                                    # No `or cdp_tick == 1` here: the backlog
+                                    # is drained before the loop, and draining
+                                    # again on the first sample would put that
+                                    # cost straight back inside the window.
+                                    if cdp_tick % CDP_DRAIN_EVERY == 0:
+                                        drain_performance_log(driver, cdp_ledger)
                                     sample["stats"].update(
                                         cdp_ledger.totals(cdp_suffixes)
                                     )

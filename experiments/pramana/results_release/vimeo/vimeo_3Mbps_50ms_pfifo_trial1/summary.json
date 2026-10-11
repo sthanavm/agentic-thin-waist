@@ -1,0 +1,209 @@
+{
+ "run": "vimeo_3Mbps_50ms_pfifo_trial1",
+ "app": "vimeo",
+ "verdict": "OK",
+ "run_metadata": {
+  "repo_commit": "a8ca0dc",
+  "chrome_version": "Google Chrome 154.0.8037.57",
+  "vm": "docker-vm-4",
+  "run_dir_on_vm": "/home/student/sthanav-agentic-thin-waist/experiments/pramana/results/pramana_runs/vimeo_3mbps_50ms_0pct_pfifo_cubic_solo_t1_7d9317c7de",
+  "shaping": {
+   "bandwidth_mbps": 3.0,
+   "latency_ms": 50.0,
+   "aqm": "pfifo",
+   "loss_pct": 0.0,
+   "cca": "cubic",
+   "duration_s": 180
+  },
+  "sampling_interval_s": 1.0,
+  "measured_element_box": "1317x988",
+  "n_samples": 172,
+  "window_epoch": [
+   1791753381.1921887,
+   1791753560.4628544
+  ]
+ },
+ "metrics": {
+  "1_startup_delay": {
+   "startup_delay_ms": 4164.0,
+   "initial_buffering_ms": 1425.0,
+   "basis": "requestVideoFrameCallback first presentationTime"
+  },
+  "2_buffer_rebuffering": {
+   "buffer_level_secs": {
+    "mean": 23.9417,
+    "min": 13.442183999999997,
+    "max": 28.479389,
+    "basis": "video.buffered end - currentTime, sampled once per interval"
+   },
+   "rebuffer_events": 0,
+   "rebuffer_duration_ms": 0,
+   "basis": "media events (waiting -> playing), initial buffering excluded [1 initial span(s), 1425ms, reported as startup]"
+  },
+  "3_delivered_bitrate": {
+   "video_mbps": 1.0253,
+   "audio_mbps": 0.1958,
+   "mse_video_bytes": 23007912.0,
+   "mse_audio_bytes": 4943572.0,
+   "basis": "mse_appended_bytes(video sourcebuffer)"
+  },
+  "4_switching": {
+   "switch_count": 4,
+   "switch_events": [
+    {
+     "t": 4.12,
+     "from_p": 360,
+     "to_p": 240,
+     "direction": "down",
+     "signal": "decoded_height"
+    },
+    {
+     "t": 16.77,
+     "from_p": 240,
+     "to_p": 360,
+     "direction": "up",
+     "signal": "decoded_height"
+    },
+    {
+     "t": 28.2,
+     "from_p": 360,
+     "to_p": 240,
+     "direction": "down",
+     "signal": "decoded_height"
+    },
+    {
+     "t": 46.94,
+     "from_p": 240,
+     "to_p": 540,
+     "direction": "up",
+     "signal": "decoded_height"
+    }
+   ],
+   "basis": "decoded_height + sourcebuffer mime history"
+  },
+  "5_frame_rate": {
+   "rendered_fps": 23.98,
+   "decoded_fps": 23.99,
+   "basis": "requestVideoFrameCallback.presentedFrames"
+  }
+ },
+ "raw_only": {
+  "dropped_video_frames": 2.0,
+  "decoded_video_frames": 4331.0,
+  "presented_video_frames": 4325.0
+ },
+ "throughput_mbps_not_a_qoe_metric": {
+  "download": {
+   "peak_mbps": 3.0044,
+   "mean_mbps": 1.289
+  },
+  "upload": {
+   "peak_mbps": 0.2449,
+   "mean_mbps": 0.0369
+  }
+ },
+ "byte_references": {
+  "cdp_received_bytes": 28812321,
+  "cdp_finished_bytes_diagnostic": 28857304,
+  "cdp_open_at_end_bytes_diagnostic": 0
+ },
+ "codec": {
+  "declared_mime": "video/mp4;codecs=av01.0.01M.08.0.111.01.01.01.0",
+  "decoding": "av01.0.05M.08",
+  "init_video_configs": 3
+ },
+ "checks": {
+  "S1": [
+   "PASS",
+   "startup_delay_ms=4164.0"
+  ],
+  "S2": [
+   "PASS",
+   "4164.0 < 180000.0 ms"
+  ],
+  "J1": [
+   "PASS",
+   "peak 3.0044 vs cap 3 (+5% bin tolerance)"
+  ],
+  "J2": [
+   "PASS",
+   "mean 1.2890 vs cap 3"
+  ],
+  "S3": [
+   "PASS",
+   "navStart->frame 4598 = pkt_page +2667 + pkt->frame 1931 (residual 0.0 ms)"
+  ],
+  "B1": [
+   "PASS",
+   "max gap 1.19 s vs 2.0 s bar (mean 1.05 s)"
+  ],
+  "B2": [
+   "PASS",
+   "buffer min=13.442183999999997"
+  ],
+  "B3": [
+   "PASS",
+   "rebuffer_events=0"
+  ],
+  "B4": [
+   "N/A",
+   "no vendor buffer figure exists for this app"
+  ],
+  "R1": [
+   "PASS",
+   "cdp_received/MSE = 1.03080, band [1.00, 1.15]"
+  ],
+  "R2": [
+   "PASS",
+   "video=1.0253 audio=0.1958"
+  ],
+  "R3": [
+   "PASS",
+   "mse_video_bytes=23007912.0"
+  ],
+  "J8": [
+   "PASS",
+   "chart video line 1.0253 vs appended-over-window 1.0238 Mbps"
+  ],
+  "W1": [
+   "PASS",
+   "switch_count=4, events carry t and direction"
+  ],
+  "W2": [
+   "PASS",
+   "resolution steps drawn 4 <= switch_count 4"
+  ],
+  "F1": [
+   "PASS",
+   "rendered_fps=23.98"
+  ],
+  "F2": [
+   "PASS",
+   "rendered 23.98 vs decoded 23.99 (x1.05)"
+  ],
+  "F3": [
+   "PASS",
+   "chart time-weighted 23.980 vs summary 23.980"
+  ],
+  "J6": [
+   "PASS",
+   "verdict=OK"
+  ],
+  "J4": [
+   "PASS",
+   "separate download and upload PNGs present"
+  ],
+  "J5": [
+   "PASS",
+   "y-axis fixed 0-11 Mbps, line style, clipped to playback window"
+  ],
+  "J7": [
+   "PASS",
+   "chart buffer max 28.479 vs summary 28.479"
+  ],
+  "J3": [
+   "PASS",
+   "vimeo_3Mbps_50ms_pfifo_trial1.vimeo.pcap (25810 pkts) + capture.pcap"
+  ]
+ }
+}

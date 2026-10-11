@@ -70,6 +70,10 @@ class CdpByteLedger:
         # keeps an undercount detectable instead of silent.
         self.events = 0
         self.ignored_events = 0
+        # rid -> does its host match the media suffixes. Parsed once per
+        # request rather than once per request per sample.
+        self._media_cache: dict[str, bool] = {}
+        self._cached_for: tuple[str, ...] = ()
 
     def feed(self, msg: dict[str, Any]) -> None:
         method = msg.get("method") or ""
@@ -105,6 +109,28 @@ class CdpByteLedger:
         else:
             self.events -= 1  # not an event we account for
 
+    def _is_media(self, rid: str, suffixes: tuple[str, ...]) -> Optional[bool]:
+        """Whether this request's host matches, parsed once and remembered.
+
+        totals() is called once per sample, and re-running urlparse over every
+        accumulated request each time makes its cost grow with the number of
+        requests. Measured: YouTube at 3 Mbps reached ~15,000 Network events
+        and the once-a-second sampling slipped to a 3.56 s gap, while Vimeo at
+        ~2,800 events never slipped. The gaps did NOT land on the drain tick,
+        which ruled the drain out and pointed here instead. Caching the
+        per-request answer makes the repeat cost proportional to new requests
+        rather than to all of them.
+        """
+        hit = self._media_cache.get(rid)
+        if hit is not None:
+            return hit
+        url = self.url_of.get(rid)
+        if url is None:
+            return None
+        val = matches(host_of(url), suffixes)
+        self._media_cache[rid] = val
+        return val
+
     def totals(self, suffixes: tuple[str, ...]) -> dict[str, Any]:
         fin = rec = 0
         n_fin = n_rec = 0
@@ -112,13 +138,18 @@ class CdpByteLedger:
         unresolved_ids = 0
         open_bytes = 0
         open_ids = 0
+        if suffixes != self._cached_for:
+            # Classification depends on the suffix set, so a change invalidates
+            # it. In practice this binds once, on the first call.
+            self._media_cache.clear()
+            self._cached_for = suffixes
         for rid, n in self.received.items():
-            url = self.url_of.get(rid)
-            if url is None:
+            m = self._is_media(rid, suffixes)
+            if m is None:
                 unresolved_bytes += n
                 unresolved_ids += 1
                 continue
-            if not matches(host_of(url), suffixes):
+            if not m:
                 continue
             rec += n
             n_rec += 1
@@ -126,11 +157,11 @@ class CdpByteLedger:
                 open_bytes += n
                 open_ids += 1
         for rid, n in self.finished.items():
-            url = self.url_of.get(rid)
-            if url is None:
+            m = self._is_media(rid, suffixes)
+            if m is None:
                 unresolved_ids += 1
                 continue
-            if not matches(host_of(url), suffixes):
+            if not m:
                 continue
             fin += n
             n_fin += 1
