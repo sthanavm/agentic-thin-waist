@@ -305,8 +305,18 @@ def presented_frame_rate(
     if len(pf) < 2:
         return None, "unavailable (requestVideoFrameCallback not supported here)"
     (t0, f0), (t1, f1) = pf[0], pf[-1]
-    if t1 <= t0 or f1 < f0:
-        return None, "unavailable (presented-frame counter did not advance)"
+    if t1 <= t0:
+        return None, "unavailable (no time elapsed between samples)"
+    if f1 <= f0:
+        # `<` alone let f1 == f0 == 0 through and produced a measured-looking
+        # 0.0 fps. Measured on Tubi: the callback never fired while
+        # totalVideoFrames still climbed 39 -> 4335, so the element WAS
+        # rendering and "0 frames per second" would have been simply false.
+        # Absence of a counter is not a rate of zero.
+        return None, (
+            "unavailable (presented-frame counter never advanced; the callback "
+            "did not fire on the element that played)"
+        )
     return round((f1 - f0) / (t1 - t0), 2), "requestVideoFrameCallback.presentedFrames"
 
 

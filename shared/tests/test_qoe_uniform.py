@@ -217,3 +217,27 @@ def test_no_switches_when_the_rendition_never_changes():
     s = _samples([{}, {}, {}])
     ev, _ = qoe.switch_events(_st(s), _ts(s), 0)
     assert ev == []
+
+
+def test_a_presented_counter_that_never_advanced_is_unavailable_not_zero_fps():
+    """Measured on Tubi: rVFC reported supported, the callback never fired, and
+    presented_frames stayed 0 for all 167 samples while totalVideoFrames went
+    39 -> 4335. Reporting 0.0 fps would state the element rendered nothing,
+    which is false. Absence of a counter is not a rate of zero."""
+    st = [
+        {"presented_frames": 0, "total_video_frames": 39},
+        {"presented_frames": 0, "total_video_frames": 2000},
+        {"presented_frames": 0, "total_video_frames": 4335},
+    ]
+    ts = [100.0, 101.0, 102.0]
+    fps, basis = qoe.presented_frame_rate(st, ts, 0)
+    assert fps is None
+    assert "never advanced" in basis
+
+
+def test_a_presented_counter_that_does_advance_still_reports_a_rate():
+    st = [{"presented_frames": 0}, {"presented_frames": 24}, {"presented_frames": 48}]
+    ts = [100.0, 101.0, 102.0]
+    fps, basis = qoe.presented_frame_rate(st, ts, 0)
+    assert fps == 24.0
+    assert "presentedFrames" in basis
