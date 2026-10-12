@@ -241,3 +241,50 @@ def test_a_presented_counter_that_does_advance_still_reports_a_rate():
     fps, basis = qoe.presented_frame_rate(st, ts, 0)
     assert fps == 24.0
     assert "presentedFrames" in basis
+
+
+def test_a_counter_reset_mid_run_still_yields_a_rate():
+    """Measured on YouTube at 1.5 Mbps: the player swapped its video element
+    and the frame counter restarted (decoded ran 997 -> 16). Last-minus-first
+    across that reset is negative; refusing outright discards a run that did
+    render. Positive deltas are summed instead."""
+    st = [
+        {"presented_frames": 0},
+        {"presented_frames": 24},
+        {"presented_frames": 48},
+        {"presented_frames": 5},  # element replaced, counter restarted
+        {"presented_frames": 29},
+    ]
+    ts = [100.0, 101.0, 102.0, 103.0, 104.0]
+    fps, basis = qoe.presented_frame_rate(st, ts, 0)
+    # 48 presented before the reset, 24 after, over 4 s
+    assert fps == 18.0
+    assert "reset" in basis
+
+
+def test_decoded_fps_survives_a_counter_reset_like_presented_does():
+    """A player that swaps its video element restarts BOTH counters. Only the
+    presented one was reset-tolerant, so on one run decoded came out lower than
+    presented -- 20.57 against 22.04 -- which cannot happen, since a frame must
+    be decoded before it can be presented."""
+    rows = []
+    for i, (ct, tf, pf) in enumerate(
+        [(0.0, 0, 0), (1.0, 24, 24), (2.0, 48, 48), (3.0, 5, 5), (4.0, 29, 29)]
+    ):
+        rows.append(
+            {
+                "timestamp": 100.0 + i,
+                "stats": {
+                    "current_time_secs": ct,
+                    "total_video_frames": tf,
+                    "presented_frames": pf,
+                    "buffer_ahead_secs": 5.0,
+                },
+            }
+        )
+    out = qoe.summarize(rows, "youtube")
+    dec = out.get("frame_rate_fps")
+    ren = (out.get("uniform") or {}).get("rendered_fps")
+    assert dec is not None and ren is not None
+    # both see 48 + 24 = 72 frames across the same window
+    assert abs(dec - ren) < 0.01, (dec, ren)

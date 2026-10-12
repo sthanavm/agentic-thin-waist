@@ -2260,11 +2260,23 @@ def run_job(
                                 try:
                                     _t = time.monotonic()
                                     cdp_tick += 1
+                                    # Also drain on the LAST iteration.
+                                    # Without it, a segment appended in the
+                                    # final second is counted in MSE and not
+                                    # in CDP: measured, the ratio sat at
+                                    # 1.0008 for the whole run and fell to
+                                    # 0.9661 on the final sample alone,
+                                    # breaching a floor the reference cannot
+                                    # physically breach.
+                                    _last_iter = (
+                                        time.monotonic() + sample_interval_seconds
+                                        >= deadline
+                                    )
                                     # No `or cdp_tick == 1` here: the backlog
                                     # is drained before the loop, and draining
                                     # again on the first sample would put that
                                     # cost straight back inside the window.
-                                    if cdp_tick % CDP_DRAIN_EVERY == 0:
+                                    if cdp_tick % CDP_DRAIN_EVERY == 0 or _last_iter:
                                         drain_performance_log(driver, cdp_ledger)
                                     sample["stats"].update(
                                         cdp_ledger.totals(cdp_suffixes)

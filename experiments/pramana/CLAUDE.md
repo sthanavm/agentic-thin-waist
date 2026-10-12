@@ -184,6 +184,36 @@ results are the ones measured while the machine was quiet. Every sample now
 records the machine's load alongside the measurement, so this confound is
 visible in the data instead of invisible.
 
+**The sampler, before and after.** The old sampler did its work and then slept
+a flat second, so the time between readings was the work plus a second rather
+than a second, and anything slow pushed the whole series later. It also asked
+the browser two separate questions each time, one for the page address and one
+for the statistics, and only the second was timed — which is why a forty-second
+reading once looked like a five-second one. The new sampler sleeps to the next
+tick on a fixed clock, asks one question instead of two, times every phase, and
+puts a ten-second ceiling on a single reading so one stuck call cannot swallow
+most of a run. On a quiet machine the result is a reading every 1.01 seconds,
+which is as close to exact as this is going to get.
+
+**The shared machine, and why it is recorded now.** The measurements sit on a
+two-core box that we share. Another project keeps about a hundred and sixty
+browser processes alive on it; when they are busy the queue of work waiting for
+a core runs far past what two cores can serve, and our reading of the page —
+which has to wait its turn — can stall for tens of seconds. With no collector
+of ours running at all, the machine already sits at about three.
+
+This is not only a nuisance for the sampling rate. It changes the result. The
+same YouTube cell at 3 Mbps gives 720p with no rebuffering when the machine is
+quiet, and 480p with several rebuffers when it is not. Treating those as the
+same measurement would be wrong.
+
+So a run now waits for the machine to settle before it starts, and will not
+begin until the load has stayed low for three unbroken minutes. If it never
+settles within twenty minutes the run goes ahead anyway and is labelled a
+high-load run — kept, clearly marked, and never quietly mixed in with the rest.
+Every run records what the load actually was while it ran, so this is visible
+in the data rather than something a reader has to guess at.
+
 **Reading the bitrate chart.** The per-interval line spikes well above the
 link speed — over 40 Mbps on a 6 Mbps link — because a player fetches a whole
 segment at once and hands it to the buffer in one go. That is not throughput

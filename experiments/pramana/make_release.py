@@ -81,6 +81,11 @@ def num(v):
 
 def height_of(s):
     """Frame height. The populated field is `resolution` ("854x480")."""
+    # Same preference order as shared/qoe.py `_height_of`, so the chart and the
+    # metric are derived from one series rather than two that can disagree.
+    v = num(s.get("video_height"))
+    if v and v > 0:
+        return int(v)
     r = s.get("resolution")
     if isinstance(r, str) and "x" in r:
         try:
@@ -447,6 +452,19 @@ def build_run(run_dir: Path, out_root: Path, meta_env: dict):
     ax.set_xlim(0, max(relt) if relt else 1)
     save(f, d / "buffer.png")
 
+    # The summary derives switches and fps from the first sample where
+    # playback actually advanced, not from sample 0. Charts drawn from sample 0
+    # therefore cover a WIDER window, and comparing the two without saying so
+    # has produced three spurious failures already. Compute the same start here
+    # and compare like with like.
+    _cur = [num(s_.get("current_time_secs")) for s_ in st]
+    first_adv = 0
+    for _i in range(1, len(_cur)):
+        a_, b_ = _cur[_i - 1], _cur[_i]
+        if a_ is not None and b_ is not None and (b_ - a_) > 0.02:
+            first_adv = _i
+            break
+
     res = [height_of(s) for s in st]
     f, ax = fig(
         "Video Resolution — %s @ %g Mbps, %g ms" % (H.display_name(app), cap, lat),
@@ -574,6 +592,19 @@ def build_run(run_dir: Path, out_root: Path, meta_env: dict):
             )
             drawn += 1
         prev_h = h
+    # Count steps the way the summary does: start inside its window with no
+    # prior value, so a change AT the boundary is not counted against a sample
+    # the summary never saw. Carrying prev_h in from sample 0 produced an
+    # off-by-one (3 against a switch_count of 2).
+    drawn_in_window = 0
+    prev_h = None
+    for i in range(first_adv, len(res)):
+        h = res[i]
+        if h is None or h <= 0:
+            continue
+        if prev_h is not None and h != prev_h:
+            drawn_in_window += 1
+        prev_h = h
     sc = u.get("switch_count")
     ax.text(
         0.01,
@@ -649,19 +680,28 @@ def build_run(run_dir: Path, out_root: Path, meta_env: dict):
     chk("W1", sc is not None, "switch_count=%s, events carry t and direction" % sc)
     chk(
         "W2",
-        (sc is not None and drawn <= sc),
-        "resolution steps drawn %d <= switch_count %s" % (drawn, sc),
+        (sc is not None and drawn_in_window <= sc),
+        "resolution steps in summary window %d <= switch_count %s (chart draws "
+        "%d over the wider window)" % (drawn_in_window, sc, drawn),
     )
 
     rfps = num(u.get("rendered_fps"))
     chk("F1", (rfps is not None and rfps > 0), "rendered_fps=%s" % rfps)
     dec = num(summ.get("frame_rate_fps"))
+    # A missing decoded figure is no reference, not a failure. THRESHOLDS.md
+    # says an N/A check neither passes nor fails.
     chk(
         "F2",
-        (rfps is not None and dec is not None and rfps <= dec * F_OVERSHOOT),
-        "rendered %s vs decoded %s (x%.2f)" % (rfps, dec, F_OVERSHOOT),
+        None if dec is None else (rfps is not None and rfps <= dec * F_OVERSHOOT),
+        (
+            "no decoded fps to compare against"
+            if dec is None
+            else "rendered %s vs decoded %s (x%.2f)" % (rfps, dec, F_OVERSHOOT)
+        ),
     )
-    pv = [(relt[i], pres[i]) for i in range(len(pres)) if pres[i] is not None]
+    pv = [
+        (relt[i], pres[i]) for i in range(first_adv, len(pres)) if pres[i] is not None
+    ]
     if rfps is not None and len(pv) >= 2 and pv[-1][0] > pv[0][0]:
         acc, prv = 0.0, pv[0][1]
         for _, v in pv[1:]:

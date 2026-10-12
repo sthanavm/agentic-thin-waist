@@ -304,20 +304,38 @@ def presented_frame_rate(
     pf = [(t, v) for t, v in pf if v is not None]
     if len(pf) < 2:
         return None, "unavailable (requestVideoFrameCallback not supported here)"
-    (t0, f0), (t1, f1) = pf[0], pf[-1]
+    t0, t1 = pf[0][0], pf[-1][0]
     if t1 <= t0:
         return None, "unavailable (no time elapsed between samples)"
-    if f1 <= f0:
-        # `<` alone let f1 == f0 == 0 through and produced a measured-looking
-        # 0.0 fps. Measured on Tubi: the callback never fired while
-        # totalVideoFrames still climbed 39 -> 4335, so the element WAS
+    # Sum POSITIVE deltas and re-baseline on a reset, the same way the rebuffer
+    # detector treats a counter going backwards. A player that swaps its video
+    # element restarts the counter mid-run: measured on YouTube at 1.5 Mbps,
+    # decoded frames ran 997 -> 16. Taking last-minus-first across that reset
+    # gives a negative rate; refusing outright throws away a run that did
+    # render. Accumulating segments reports what was actually presented.
+    total = 0.0
+    resets = 0
+    prev = pf[0][1]
+    for _, v in pf[1:]:
+        if v >= prev:
+            total += v - prev
+        else:
+            resets += 1  # element replaced; count from the new baseline
+        prev = v
+    if total <= 0:
+        # `<` alone would let a counter that never moved through and produce a
+        # measured-looking 0.0 fps. Measured on Tubi: the callback never fired
+        # while totalVideoFrames still climbed 39 -> 4335, so the element WAS
         # rendering and "0 frames per second" would have been simply false.
         # Absence of a counter is not a rate of zero.
         return None, (
             "unavailable (presented-frame counter never advanced; the callback "
             "did not fire on the element that played)"
         )
-    return round((f1 - f0) / (t1 - t0), 2), "requestVideoFrameCallback.presentedFrames"
+    basis = "requestVideoFrameCallback.presentedFrames"
+    if resets:
+        basis += " [%d counter reset(s); positive deltas summed]" % resets
+    return round(total / (t1 - t0), 2), basis
 
 
 def switch_events(
@@ -514,12 +532,35 @@ def _summarize_html5(
 
     fps = None
     fps_basis = "none"
-    first_tf = _first_num(st, "total_video_frames", start=first_advance_idx)
-    if first_tf is not None and total_frames is not None and total_frames > first_tf:
-        span = ts[-1] - ts[first_advance_idx]
-        if span > 1.0:
-            fps = round((total_frames - first_tf) / span, 2)
+    # Sum POSITIVE deltas and re-baseline on a reset, exactly as
+    # presented_frame_rate does. Last-minus-first silently undercounts when the
+    # player swaps its video element and the decoded counter restarts, and the
+    # two metrics disagreeing is observable: on one run it produced a rendered
+    # rate of 22.04 against a decoded rate of 20.57, which is impossible -- a
+    # frame cannot be presented without being decoded.
+    _tf = [
+        (ts[i], _num(st[i].get("total_video_frames")))
+        for i in range(first_advance_idx, len(st))
+    ]
+    _tf = [(t, v) for t, v in _tf if v is not None]
+    if len(_tf) >= 2:
+        span = _tf[-1][0] - _tf[0][0]
+        decoded_total = 0.0
+        decoded_resets = 0
+        _prev = _tf[0][1]
+        for _, v in _tf[1:]:
+            if v >= _prev:
+                decoded_total += v - _prev
+            else:
+                decoded_resets += 1
+            _prev = v
+        if span > 1.0 and decoded_total > 0:
+            fps = round(decoded_total / span, 2)
             fps_basis = "total_video_frames_delta"
+            if decoded_resets:
+                fps_basis += " [%d counter reset(s); positive deltas summed]" % (
+                    decoded_resets
+                )
 
     # ── bitrate: real or null, never a stand-in ──────────────────────────────
     bitrate, bitrate_basis = _derive_bitrate(st, ts, first_advance_idx, spec)
