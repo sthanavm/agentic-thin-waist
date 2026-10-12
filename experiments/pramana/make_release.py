@@ -13,6 +13,7 @@ Every check here is the one written in validation/THRESHOLDS.md BEFORE these
 runs were started. Nothing is widened or re-labelled after the fact: a failing
 check is reported as FAILED.
 """
+
 from __future__ import annotations
 
 import csv
@@ -210,7 +211,12 @@ def build_run(run_dir: Path, out_root: Path, meta_env: dict, app: str | None = N
     lat = float(cfg.get("latency_ms") or 0)
     aqm = cfg.get("aqm") or "pfifo"
     trial = cfg.get("trial")
-    name = "%s_%gMbps_%gms_%s_trial%s" % (app, cap, lat, aqm, trial)
+    # A concurrent run must not take the same folder name as the solo run of
+    # the same app and cap -- they are different measurements (a shared link
+    # versus the app alone) and one would silently overwrite the other.
+    others = [a for a in run_apps if a != app]
+    share = ("_with_" + "+".join(others)) if others else ""
+    name = "%s_%gMbps_%gms_%s%s_trial%s" % (app, cap, lat, aqm, share, trial)
     d = out_root / app / name
     d.mkdir(parents=True, exist_ok=True)
 
@@ -256,7 +262,15 @@ def build_run(run_dir: Path, out_root: Path, meta_env: dict, app: str | None = N
     pcap = run_dir / "capture.pcap"
     thr, at = {}, None
     if pcap.is_file():
-        at = H.attribute_capture(pcap, [app], cap)
+        # Attribute with EVERY app in the run, not just this one.
+        #
+        # Passing a single app lets the attributor adopt an unnamed flow into
+        # whichever app it was given, so building each app separately claimed
+        # the SAME traffic twice: on this capture the same 20.30 MB from
+        # 198.189.66.13 was adopted to youtube in one pass and to vimeo in the
+        # next. With all apps present it has to choose between them, and the
+        # per-app IP sets stay disjoint as the attributor intends.
+        at = H.attribute_capture(pcap, list(run_apps) or [app], cap)
         t0 = at.t0_epoch or w0
         lo = max(0, int(math.floor(w0 - t0)))
         hi = max(lo + 1, int(math.ceil(w1 - t0)))
@@ -934,6 +948,9 @@ def build_run(run_dir: Path, out_root: Path, meta_env: dict, app: str | None = N
         "lat": lat,
         "aqm": aqm,
         "trial": trial,
+        "apps": list(run_apps) or [app],
+        "n_samples": len(rows),
+        "window_epoch": [w0, w1],
         "verdict": verdict,
         "metrics": metrics,
         "checks": checks,
@@ -994,11 +1011,21 @@ def write_readme(out_root: Path, runs: list, meta_env: dict):
     nfail = sum(1 for r in runs for v in r["checks"].values() if v[0] == "FAIL")
     npass = sum(1 for r in runs for v in r["checks"].values() if v[0] == "PASS")
     nna = sum(1 for r in runs for v in r["checks"].values() if v[0] == "N/A")
+    # A concurrent cell yields one folder per app out of a single capture, so
+    # folders, cells and captures are three different counts.
+    solo = [r for r in runs if len(r.get("apps") or [r["app"]]) <= 1]
+    conc = [r for r in runs if len(r.get("apps") or [r["app"]]) > 1]
+    n_solo = len({(r["app"], r["cap"]) for r in solo})
+    n_conc = len({(tuple(sorted(r["apps"])), r["cap"]) for r in conc})
+    n_caps = n_solo + n_conc
     L = [
         "# Streaming QoE results — YouTube and Vimeo (Step A)",
         "",
         "One extraction method and one schema on both apps, with no per-site",
-        "APIs. Every run is a single app; no run and no chart mixes the two.",
+        "APIs. Solo runs carry one app each. The concurrent cell runs both",
+        "apps at once over a single shared cap; each app still gets its own",
+        "folder, its own charts and its own per-app pcap, drawn only from the",
+        "traffic attributed to it, and the two apps' IP sets are disjoint.",
         "Every chart is drawn from the per-second samples by `make_release.py`,",
         "and the numbers it shows are asserted against `summary.json` during the",
         "build, so a chart that disagreed fails the build rather than shipping.",
@@ -1030,13 +1057,45 @@ def write_readme(out_root: Path, runs: list, meta_env: dict):
         "| apps | %s |" % ", ".join(sorted({r["app"] for r in runs})),
         "| bandwidth | %s Mbps |"
         % ", ".join("%g" % c for c in sorted({r["cap"] for r in runs})),
-        "| latency | 50 ms (project baseline for solo runs) |",
+        "| latency | 50 ms (project baseline) |",
         "| AQM / CCA / loss | pfifo / cubic / 0 % |",
         "| duration | 180 s |",
-        "| cells | %d (one run per app x bandwidth) — **%d run(s) total** |"
-        % (len({(r["app"], r["cap"]) for r in runs}), len(runs)),
+        "| solo cells | %d (one run per app x bandwidth) |" % n_solo,
+        "| concurrent cells | %d (both apps sharing one cap) |" % n_conc,
+        "| run folders | **%d** from **%d** capture(s) |" % (len(runs), n_caps),
         "",
         "Latency and AQM sweeps are Step B and are not in this branch.",
+    ]
+    if conc:
+        L += [
+            "",
+            "### The concurrent cell: what is and is not synchronised",
+            "",
+            "A barrier holds both apps until each has a ready player, so",
+            "neither spends its window waiting for the other to load. It does",
+            "**not** give them an identical sampling window: after the barrier",
+            "each app independently waits for media-ready, triggers play and",
+            "drains its own CDP backlog, and the player can still reload under",
+            "contention. Measured on this cell:",
+            "",
+            "| app | samples | window | first sample vs earliest |",
+            "|---|---|---|---|",
+        ]
+        t0 = min(r["window_epoch"][0] for r in conc)
+        for r in sorted(conc, key=lambda r: r["window_epoch"][0]):
+            w0, w1 = r["window_epoch"]
+            L.append(
+                "| %s | %d | %.1f s | %+.1f s |"
+                % (r["app"], r["n_samples"], w1 - w0, w0 - t0)
+            )
+        L += [
+            "",
+            "Each app's own metrics are computed over its own window. The",
+            "shared-cap check does not assume equal windows: it sums the apps",
+            "on a common 1 s grid. Compare the two apps to each other only",
+            "with that difference in mind.",
+        ]
+    L += [
         "",
         "## Status: app x metric",
         "",
@@ -1120,6 +1179,8 @@ def write_readme(out_root: Path, runs: list, meta_env: dict):
         "| W1,W2 | switches timestamped with direction; chart agrees with count | drawn <= switch_count |",
         "| F1,F2,F3 | rendered rate positive, <= decoded, chart equals summary | <= decoded x 1.05 |",
         "| J1,J2 | throughput within the shaped cap, peak and mean | peak <= cap x 1.05; mean <= cap |",
+        "| | on a concurrent cell both apps are summed on a 1 s grid first, "
+        "so neither can hide behind the other | same bars, applied to the sum |",
         "| J3,J4 | a pcap per run and per app; download and upload plotted separately | files present |",
         "| J5,J6,J7 | fixed 0-11 Mbps line charts clipped to playback; playback verdict; chart numbers equal summary | — |",
         "",
@@ -1129,7 +1190,8 @@ def write_readme(out_root: Path, runs: list, meta_env: dict):
         "## Run folder layout",
         "",
         "```",
-        "<app>/<app>_<bw>Mbps_<lat>ms_<aqm>_trial<N>/",
+        "<app>/<app>_<bw>Mbps_<lat>ms_<aqm>_trial<N>/              solo",
+        "<app>/<app>_<bw>Mbps_<lat>ms_<aqm>_with_<other>_trial<N>/   concurrent",
         "  samples.json   raw per-second samples, schema and interval",
         "  summary.json   the five metrics, run metadata, byte references, checks",
         "  download_throughput.png   upload_throughput.png   (separate, 0-11 Mbps)",
@@ -1146,7 +1208,8 @@ def write_readme(out_root: Path, runs: list, meta_env: dict):
         "",
         "```bash",
         "cd experiments/pramana",
-        "DUR=180 python run_matrix.py                 # the 12 runs in the table",
+        "DUR=180 python run_matrix.py                 # the solo cells",
+        "DUR=180 python run_concurrent.py             # the concurrent cell",
         "python make_release.py results_release <run_dir> [<run_dir> ...]",
         "```",
         "",
@@ -1155,6 +1218,16 @@ def write_readme(out_root: Path, runs: list, meta_env: dict):
         "",
         "Built from commit `%s`, Chrome `%s`, on `%s`."
         % (meta_env.get("commit"), meta_env.get("chrome"), meta_env.get("vm")),
+        "",
+        "The collector deployed on the VM when these runs were collected is",
+        "byte-identical (sha256) to this commit's",
+        "`selenium_video_qoe/collect.py`, so the stamp above is checked, not",
+        "assumed. One caveat: that file was last written partway through the",
+        "collection session, after the three vimeo solo runs and before the",
+        "youtube solo runs and the concurrent cell. Every run in this release",
+        "carries the same per-sample instrumentation (`loop_ms`, `host_load1`),",
+        "so none predates the instrumented collector, but whether the three",
+        "vimeo solo runs used a byte-identical file is **unknown**.",
     ]
     (out_root / "README.md").write_text("\n".join(L) + "\n")
 

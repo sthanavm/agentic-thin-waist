@@ -1,7 +1,10 @@
 # Streaming QoE results — YouTube and Vimeo (Step A)
 
 One extraction method and one schema on both apps, with no per-site
-APIs. Every run is a single app; no run and no chart mixes the two.
+APIs. Solo runs carry one app each. The concurrent cell runs both
+apps at once over a single shared cap; each app still gets its own
+folder, its own charts and its own per-app pcap, drawn only from the
+traffic attributed to it, and the two apps' IP sets are disjoint.
 Every chart is drawn from the per-second samples by `make_release.py`,
 and the numbers it shows are asserted against `summary.json` during the
 build, so a chart that disagreed fails the build rather than shipping.
@@ -32,22 +35,43 @@ for the whole app.
 |---|---|
 | apps | vimeo, youtube |
 | bandwidth | 1, 3, 6 Mbps |
-| latency | 50 ms (project baseline for solo runs) |
+| latency | 50 ms (project baseline) |
 | AQM / CCA / loss | pfifo / cubic / 0 % |
 | duration | 180 s |
-| cells | 6 (one run per app x bandwidth) — **6 run(s) total** |
+| solo cells | 6 (one run per app x bandwidth) |
+| concurrent cells | 1 (both apps sharing one cap) |
+| run folders | **8** from **7** capture(s) |
 
 Latency and AQM sweeps are Step B and are not in this branch.
+
+### The concurrent cell: what is and is not synchronised
+
+A barrier holds both apps until each has a ready player, so
+neither spends its window waiting for the other to load. It does
+**not** give them an identical sampling window: after the barrier
+each app independently waits for media-ready, triggers play and
+drains its own CDP backlog, and the player can still reload under
+contention. Measured on this cell:
+
+| app | samples | window | first sample vs earliest |
+|---|---|---|---|
+| vimeo | 180 | 178.8 s | +0.0 s |
+| youtube | 160 | 161.1 s | +18.9 s |
+
+Each app's own metrics are computed over its own window. The
+shared-cap check does not assume equal windows: it sums the apps
+on a common 1 s grid. Compare the two apps to each other only
+with that difference in mind.
 
 ## Status: app x metric
 
 | metric | Vimeo | Youtube |
 |---|---|---|
-| 1 startup delay | **VERIFIED**<br><sub>3/3 run(s), all checks passed</sub> | **VERIFIED**<br><sub>3/3 run(s), all checks passed</sub> |
-| 2 buffer rebuffering | **VERIFIED**<br><sub>3/3 run(s), all checks passed (B4: no reference)</sub> | **VERIFIED**<br><sub>3/3 run(s), all checks passed</sub> |
-| 3 delivered bitrate | **VERIFIED**<br><sub>3/3 run(s), all checks passed</sub> | **VERIFIED**<br><sub>3/3 run(s), all checks passed</sub> |
-| 4 switching | **VERIFIED**<br><sub>3/3 run(s), all checks passed</sub> | **VERIFIED**<br><sub>3/3 run(s), all checks passed</sub> |
-| 5 frame rate | **VERIFIED**<br><sub>3/3 run(s), all checks passed</sub> | **VERIFIED**<br><sub>3/3 run(s), all checks passed</sub> |
+| 1 startup delay | **VERIFIED**<br><sub>4/4 run(s), all checks passed</sub> | **VERIFIED**<br><sub>4/4 run(s), all checks passed</sub> |
+| 2 buffer rebuffering | **VERIFIED**<br><sub>4/4 run(s), all checks passed (B4: no reference)</sub> | **FAILED**<br><sub>1 check failure(s): B1</sub> |
+| 3 delivered bitrate | **VERIFIED**<br><sub>4/4 run(s), all checks passed</sub> | **VERIFIED**<br><sub>4/4 run(s), all checks passed</sub> |
+| 4 switching | **VERIFIED**<br><sub>4/4 run(s), all checks passed</sub> | **VERIFIED**<br><sub>4/4 run(s), all checks passed</sub> |
+| 5 frame rate | **VERIFIED**<br><sub>4/4 run(s), all checks passed</sub> | **VERIFIED**<br><sub>4/4 run(s), all checks passed</sub> |
 
 Dropped frames are carried as raw counts only; throughput is not a QoE
 metric and appears only in its own two charts and the cap check.
@@ -56,11 +80,15 @@ metric and appears only in its own two charts and the cap check.
 
 | | count |
 |---|---|
-| PASS | 135 |
-| **FAIL** | **0** |
-| no reference (N/A) | 3 |
+| PASS | 179 |
+| **FAIL** | **1** |
+| no reference (N/A) | 4 |
 
-No check failed.
+### Every failing check
+
+| run | check | detail |
+|---|---|---|
+| youtube_6Mbps_50ms_pfifo_with_vimeo_trial1 | **B1** | max gap 2.00 s vs 2.0 s bar (mean 1.01 s) |
 
 ## Per-run results
 
@@ -69,8 +97,10 @@ No check failed.
 | vimeo_1Mbps_50ms_pfifo_trial1 | OK | 240p | 10458.0 | 0 | 0.2958 | 0.2156 | 2 | 23.97 |
 | vimeo_3Mbps_50ms_pfifo_trial1 | OK | 540p | 4294.0 | 1 | 1.1049 | 0.2156 | 4 | 23.88 |
 | vimeo_6Mbps_50ms_pfifo_trial1 | OK | 720p | 2772.0 | 0 | 2.3043 | 0.196 | 4 | 23.93 |
+| vimeo_6Mbps_50ms_pfifo_with_youtube_trial1 | OK | 540p | 7009.0 | 1 | 1.3596 | 0.196 | 5 | 22.64 |
 | youtube_1Mbps_50ms_pfifo_trial1 | OK | 720p | 20701.0 | 0 | 0.5475 | 0.1253 | 2 | 25.0 |
 | youtube_3Mbps_50ms_pfifo_trial1 | OK | 720p | 7800.0 | 0 | 0.5977 | 0.1179 | 0 | 25.0 |
+| youtube_6Mbps_50ms_pfifo_with_vimeo_trial1 | OK | 480p | 6484.0 | 3 | 0.3785 | 0.1308 | 1 | 24.81 |
 | youtube_6Mbps_50ms_pfifo_trial1 | OK | 480p | 5274.0 | 0 | 0.3168 | 0.1103 | 0 | 24.99 |
 
 ## The checks every run had to pass
@@ -87,6 +117,7 @@ No check failed.
 | W1,W2 | switches timestamped with direction; chart agrees with count | drawn <= switch_count |
 | F1,F2,F3 | rendered rate positive, <= decoded, chart equals summary | <= decoded x 1.05 |
 | J1,J2 | throughput within the shaped cap, peak and mean | peak <= cap x 1.05; mean <= cap |
+| | on a concurrent cell both apps are summed on a 1 s grid first, so neither can hide behind the other | same bars, applied to the sum |
 | J3,J4 | a pcap per run and per app; download and upload plotted separately | files present |
 | J5,J6,J7 | fixed 0-11 Mbps line charts clipped to playback; playback verdict; chart numbers equal summary | — |
 
@@ -96,7 +127,8 @@ measured value for every one of them.
 ## Run folder layout
 
 ```
-<app>/<app>_<bw>Mbps_<lat>ms_<aqm>_trial<N>/
+<app>/<app>_<bw>Mbps_<lat>ms_<aqm>_trial<N>/              solo
+<app>/<app>_<bw>Mbps_<lat>ms_<aqm>_with_<other>_trial<N>/   concurrent
   samples.json   raw per-second samples, schema and interval
   summary.json   the five metrics, run metadata, byte references, checks
   download_throughput.png   upload_throughput.png   (separate, 0-11 Mbps)
@@ -113,11 +145,22 @@ listed with size and SHA-256 in `pcap_manifest.csv`.
 
 ```bash
 cd experiments/pramana
-DUR=180 python run_matrix.py                 # the 12 runs in the table
+DUR=180 python run_matrix.py                 # the solo cells
+DUR=180 python run_concurrent.py             # the concurrent cell
 python make_release.py results_release <run_dir> [<run_dir> ...]
 ```
 
 Repo commit, Chrome version, VM name and the shaping parameters for each
 run are in that run's `summary.json` under `run_metadata`.
 
-Built from commit `a21de74`, Chrome `Google Chrome 154.0.8037.57`, on `docker-vm-4`.
+Built from commit `f62f493`, Chrome `Google Chrome 154.0.8037.57`, on `docker-vm-4`.
+
+The collector deployed on the VM when these runs were collected is
+byte-identical (sha256) to this commit's
+`selenium_video_qoe/collect.py`, so the stamp above is checked, not
+assumed. One caveat: that file was last written partway through the
+collection session, after the three vimeo solo runs and before the
+youtube solo runs and the concurrent cell. Every run in this release
+carries the same per-sample instrumentation (`loop_ms`, `host_load1`),
+so none predates the instrumented collector, but whether the three
+vimeo solo runs used a byte-identical file is **unknown**.
