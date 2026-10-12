@@ -190,3 +190,56 @@ results table and is **not** compared against gated runs without saying so.
 
 It does not make a failing check pass. B1 and every other check are evaluated
 exactly as written above, on gated and high-load runs alike.
+
+---
+
+# Addendum: vm-4 process audit, 2026-10-12T02:44Z
+
+A cleanup of stale Chrome processes on vm-4 was planned. **There was nothing to
+clean**, and the audit corrected an earlier claim of mine. Recorded here because
+later runs would otherwise be described as being on a "cleaned host", which
+would be false.
+
+Full inventory in `vm4_process_inventory.csv` (PID, parent, age, CPU, memory,
+container for every Chrome-family process).
+
+## What was found
+
+| | |
+|---|---|
+| `chrome` (live) | **0** |
+| `chromedriver` | **0** |
+| `chrome-headless` | 159 — **all zombies** (state `Z` / `Z<`) |
+| `Xvfb` | 1, inside `substrate-worker` |
+| loadavg at audit | **2.36** |
+| zombie total | 1,873, against `pid_max` 4,194,304, with 228 live processes |
+
+A zombie is a process that has already exited and is waiting for its parent to
+collect its exit status. It holds no CPU, no memory and no file handles, and it
+is not runnable, so it does not contribute to load average. `SIGKILL` on one
+returns "Operation not permitted" and the entry remains — demonstrated during
+the audit.
+
+Their parent is `substrate.main_local` inside `substrate-worker`, which is not
+reaping children. The only way to clear them is to restart that container.
+**Not done**: load was 2.36, nowhere near high, so the condition for escalating
+to a restart was not met, and `substrate-worker` is shared.
+
+## A correction to earlier reporting
+
+An earlier note in this project attributed roughly 75 % CPU to "159 Chrome
+processes". That figure was wrong. It came from summing the `%CPU` column,
+which for a zombie reports the process's **lifetime average at the moment it
+died**, not any current consumption. Those processes were not competing for CPU
+during any run.
+
+The host contention measured during earlier runs was real — run queue 9-18 on
+2 cores with 0 % idle — but it came from the collector's own Chrome plus live
+work inside `substrate-worker`, not from the zombies.
+
+## Consequence for the runs that follow
+
+Runs after this audit are **not** on a "cleaned" host; nothing was changed. They
+are simply on a host that was quieter at the time, which each run records for
+itself in `run_metadata.host`. Earlier busy-host runs are kept and labelled so
+the two can be compared rather than conflated.
