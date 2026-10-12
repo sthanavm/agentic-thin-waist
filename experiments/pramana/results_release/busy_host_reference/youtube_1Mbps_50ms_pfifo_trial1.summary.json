@@ -1,0 +1,206 @@
+{
+ "run": "youtube_1Mbps_50ms_pfifo_trial1",
+ "app": "youtube",
+ "verdict": "OK",
+ "run_metadata": {
+  "repo_commit": "57e9133",
+  "chrome_version": "Google Chrome 154.0.8037.57",
+  "vm": "docker-vm-4",
+  "run_dir_on_vm": "/home/student/sthanav-agentic-thin-waist/experiments/pramana/results/busy_host_runs/youtube_1mbps_50ms_0pct_pfifo_cubic_solo_t1_a8d0f8b671",
+  "shaping": {
+   "bandwidth_mbps": 1.0,
+   "latency_ms": 50.0,
+   "aqm": "pfifo",
+   "loss_pct": 0.0,
+   "cca": "cubic",
+   "duration_s": 180
+  },
+  "sampling_interval_s": 1.0,
+  "measured_element_box": "1461x822",
+  "host": {
+   "host_load_gate": "passed",
+   "host_load_gate_wait_s": 165.0,
+   "load1_at_start": 2.79,
+   "chrome_procs_at_start": 159,
+   "gate_rule": {
+    "max_load1": 4.0,
+    "hold_s": 180,
+    "timeout_s": 1200
+   }
+  },
+  "n_samples": 180,
+  "window_epoch": [
+   1791762409.8220477,
+   1791762588.7880423
+  ]
+ },
+ "metrics": {
+  "1_startup_delay": {
+   "startup_delay_ms": 17697.0,
+   "initial_buffering_ms": 2053.0,
+   "basis": "requestVideoFrameCallback first presentationTime"
+  },
+  "2_buffer_rebuffering": {
+   "buffer_level_secs": {
+    "mean": 74.7643,
+    "min": 7.1769870000000004,
+    "max": 120.87721,
+    "basis": "video.buffered end - currentTime, sampled once per interval"
+   },
+   "rebuffer_events": 1,
+   "rebuffer_duration_ms": 12132.0,
+   "basis": "media events (waiting -> playing), initial buffering excluded [1 initial span(s), 2053ms, reported as startup]"
+  },
+  "3_delivered_bitrate": {
+   "video_mbps": 0.19,
+   "audio_mbps": 0.132,
+   "mse_video_bytes": 5074939.0,
+   "mse_audio_bytes": 3433384.0,
+   "basis": "mse_appended_bytes(video sourcebuffer)"
+  },
+  "4_switching": {
+   "switch_count": 2,
+   "switch_events": [
+    {
+     "t": 32.99,
+     "from_p": 144,
+     "to_p": 240,
+     "direction": "up",
+     "signal": "decoded_height"
+    },
+    {
+     "t": 56.99,
+     "from_p": 240,
+     "to_p": 360,
+     "direction": "up",
+     "signal": "decoded_height"
+    }
+   ],
+   "basis": "decoded_height + sourcebuffer mime history"
+  },
+  "5_frame_rate": {
+   "rendered_fps": 22.36,
+   "decoded_fps": 23.49,
+   "basis": "requestVideoFrameCallback.presentedFrames"
+  }
+ },
+ "raw_only": {
+  "dropped_video_frames": 423.0,
+  "decoded_video_frames": 4636.0,
+  "presented_video_frames": 4347.0
+ },
+ "throughput_mbps_not_a_qoe_metric": {
+  "download": {
+   "peak_mbps": 1.0129,
+   "mean_mbps": 0.3512
+  },
+  "upload": {
+   "peak_mbps": 0.0475,
+   "mean_mbps": 0.0106
+  }
+ },
+ "byte_references": {
+  "cdp_received_bytes": 8518567,
+  "cdp_finished_bytes_diagnostic": 8275190,
+  "cdp_open_at_end_bytes_diagnostic": 243789
+ },
+ "codec": {
+  "declared_mime": "video/mp4; codecs=\"av01.0.04M.08\"",
+  "decoding": "av01.0.04M.08",
+  "init_video_configs": 4
+ },
+ "checks": {
+  "S1": [
+   "PASS",
+   "startup_delay_ms=17697.0"
+  ],
+  "S2": [
+   "PASS",
+   "17697.0 < 180000.0 ms"
+  ],
+  "J1": [
+   "PASS",
+   "peak 1.0129 vs cap 1 (+5% bin tolerance)"
+  ],
+  "J2": [
+   "PASS",
+   "mean 0.3512 vs cap 1"
+  ],
+  "S3": [
+   "PASS",
+   "navStart->frame 18323 = pkt_page +8294 + pkt->frame 10029 (residual 0.0 ms)"
+  ],
+  "B1": [
+   "PASS",
+   "max gap 1.09 s vs 2.0 s bar (mean 1.00 s)"
+  ],
+  "B2": [
+   "PASS",
+   "buffer min=7.1769870000000004"
+  ],
+  "B3": [
+   "PASS",
+   "rebuffer_events=1"
+  ],
+  "B4": [
+   "PASS",
+   "MAE 0.216 s, r 0.9999, n=180"
+  ],
+  "R1": [
+   "PASS",
+   "cdp_received/MSE = 1.00120, band [1.00, 1.15]"
+  ],
+  "R2": [
+   "PASS",
+   "video=0.19 audio=0.132"
+  ],
+  "R3": [
+   "PASS",
+   "mse_video_bytes=5074939.0"
+  ],
+  "J8": [
+   "PASS",
+   "chart video line 0.1900 vs appended-over-window 0.1891 Mbps"
+  ],
+  "W1": [
+   "PASS",
+   "switch_count=2, events carry t and direction"
+  ],
+  "W2": [
+   "PASS",
+   "resolution steps in summary window 2 <= switch_count 2 (chart draws 3 over the wider window)"
+  ],
+  "F1": [
+   "PASS",
+   "rendered_fps=22.36"
+  ],
+  "F2": [
+   "PASS",
+   "rendered 22.36 vs decoded 23.49 (x1.05)"
+  ],
+  "F3": [
+   "PASS",
+   "chart time-weighted 22.360 vs summary 22.360"
+  ],
+  "J6": [
+   "PASS",
+   "verdict=OK"
+  ],
+  "J4": [
+   "PASS",
+   "separate download and upload PNGs present"
+  ],
+  "J5": [
+   "PASS",
+   "y-axis fixed 0-11 Mbps, line style, clipped to playback window"
+  ],
+  "J7": [
+   "PASS",
+   "chart buffer max 120.877 vs summary 120.877"
+  ],
+  "J3": [
+   "PASS",
+   "youtube_1Mbps_50ms_pfifo_trial1.youtube.pcap (14722 pkts) + capture.pcap"
+  ]
+ }
+}

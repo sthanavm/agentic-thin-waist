@@ -43,7 +43,7 @@ Latency and AQM sweeps are Step B and are not in this branch.
 | metric | Vimeo | Youtube |
 |---|---|---|
 | 1 startup delay | **VERIFIED**<br><sub>6/6 run(s), all checks passed</sub> | **VERIFIED**<br><sub>6/6 run(s), all checks passed</sub> |
-| 2 buffer rebuffering | **VERIFIED**<br><sub>6/6 run(s), all checks passed (B4: no reference)</sub> | **FAILED**<br><sub>4 check failure(s): B1</sub> |
+| 2 buffer rebuffering | **VERIFIED**<br><sub>6/6 run(s), all checks passed (B4: no reference)</sub> | **FAILED**<br><sub>1 check failure(s): B1</sub> |
 | 3 delivered bitrate | **VERIFIED**<br><sub>6/6 run(s), all checks passed</sub> | **VERIFIED**<br><sub>6/6 run(s), all checks passed</sub> |
 | 4 switching | **VERIFIED**<br><sub>6/6 run(s), all checks passed</sub> | **VERIFIED**<br><sub>6/6 run(s), all checks passed</sub> |
 | 5 frame rate | **VERIFIED**<br><sub>6/6 run(s), all checks passed</sub> | **VERIFIED**<br><sub>6/6 run(s), all checks passed</sub> |
@@ -55,35 +55,32 @@ metric and appears only in its own two charts and the cap check.
 
 | | count |
 |---|---|
-| PASS | 266 |
-| **FAIL** | **4** |
+| PASS | 269 |
+| **FAIL** | **1** |
 | no reference (N/A) | 6 |
 
 ### Every failing check
 
 | run | check | detail |
 |---|---|---|
-| youtube_3Mbps_50ms_pfifo_trial1 | **B1** | max gap 23.09 s vs 2.0 s bar (mean 1.17 s) |
-| youtube_3Mbps_50ms_pfifo_trial2 | **B1** | max gap 3.00 s vs 2.0 s bar (mean 1.02 s) |
-| youtube_6Mbps_50ms_pfifo_trial1 | **B1** | max gap 22.00 s vs 2.0 s bar (mean 1.18 s) |
-| youtube_6Mbps_50ms_pfifo_trial2 | **B1** | max gap 2.00 s vs 2.0 s bar (mean 1.02 s) |
+| youtube_3Mbps_50ms_pfifo_trial2 | **B1** | max gap 2.01 s vs 2.0 s bar (mean 1.01 s) |
 
 ## Per-run results
 
 | run | verdict | res | startup (ms) | rebuffers | video Mbps | audio Mbps | switches | fps |
 |---|---|---|---|---|---|---|---|---|
-| vimeo_1Mbps_50ms_pfifo_trial1 | OK | 240p | 11724.0 | 0 | 0.2325 | 0.196 | 2 | 23.33 |
-| vimeo_1Mbps_50ms_pfifo_trial2 | OK | 240p | 11326.0 | 0 | 0.2325 | 0.196 | 2 | 23.54 |
-| vimeo_3Mbps_50ms_pfifo_trial1 | OK | 240p | 4843.0 | 0 | 0.3428 | 0.1895 | 5 | 23.43 |
-| vimeo_3Mbps_50ms_pfifo_trial2 | OK | 240p | 4954.0 | 0 | 0.2478 | 0.196 | 1 | 23.0 |
-| vimeo_6Mbps_50ms_pfifo_trial1 | OK | 720p | 3466.0 | 0 | 2.3329 | 0.196 | 4 | 22.79 |
-| vimeo_6Mbps_50ms_pfifo_trial2 | OK | 540p | 4495.0 | 1 | 1.5967 | 0.196 | 6 | 22.45 |
-| youtube_1Mbps_50ms_pfifo_trial1 | OK | 360p | 17697.0 | 1 | 0.19 | 0.132 | 2 | 22.36 |
-| youtube_1Mbps_50ms_pfifo_trial2 | OK | 360p | 22120.0 | 1 | 0.2111 | 0.111 | 2 | 24.58 |
-| youtube_3Mbps_50ms_pfifo_trial1 | OK | 480p | 9194.0 | 3 | 0.8359 | 0.2018 | 2 | 23.58 |
-| youtube_3Mbps_50ms_pfifo_trial2 | OK | 480p | 9033.0 | 0 | 0.2873 | 0.0956 | 0 | 24.58 |
-| youtube_6Mbps_50ms_pfifo_trial1 | OK | 480p | 11753.0 | 3 | 0.3889 | 0.1395 | 1 | 22.04 |
-| youtube_6Mbps_50ms_pfifo_trial2 | OK | 480p | 5945.0 | 0 | 0.3467 | 0.0996 | 0 | 24.52 |
+| vimeo_1Mbps_50ms_pfifo_trial1 | OK | 240p | 10458.0 | 0 | 0.2958 | 0.2156 | 2 | 23.97 |
+| vimeo_1Mbps_50ms_pfifo_trial2 | OK | 240p | 11160.0 | 0 | 0.2325 | 0.196 | 3 | 23.97 |
+| vimeo_3Mbps_50ms_pfifo_trial1 | OK | 540p | 4294.0 | 1 | 1.1049 | 0.2156 | 4 | 23.88 |
+| vimeo_3Mbps_50ms_pfifo_trial2 | OK | 540p | 4512.0 | 0 | 1.0476 | 0.2026 | 4 | 23.96 |
+| vimeo_6Mbps_50ms_pfifo_trial1 | OK | 720p | 2772.0 | 0 | 2.3043 | 0.196 | 4 | 23.93 |
+| vimeo_6Mbps_50ms_pfifo_trial2 | OK | 720p | 2870.0 | 0 | 2.2959 | 0.196 | 4 | 23.89 |
+| youtube_1Mbps_50ms_pfifo_trial1 | OK | 360p | 20810.0 | 0 | 0.2072 | 0.1305 | 2 | 24.99 |
+| youtube_1Mbps_50ms_pfifo_trial2 | OK | 360p | 19463.0 | 1 | 0.2154 | 0.1332 | 2 | 25.0 |
+| youtube_3Mbps_50ms_pfifo_trial1 | OK | 720p | 7852.0 | 1 | 0.5203 | 0.1047 | 0 | 24.78 |
+| youtube_3Mbps_50ms_pfifo_trial2 | OK | 720p | 7857.0 | 0 | 0.5167 | 0.1 | 0 | 24.97 |
+| youtube_6Mbps_50ms_pfifo_trial1 | OK | 720p | 5078.0 | 1 | 0.5884 | 0.1032 | 0 | 24.94 |
+| youtube_6Mbps_50ms_pfifo_trial2 | OK | 480p | 5441.0 | 0 | 0.298 | 0.1033 | 0 | 25.0 |
 
 ## Run folder layout
 
@@ -112,4 +109,4 @@ python make_release.py results_release <run_dir> [<run_dir> ...]
 Repo commit, Chrome version, VM name and the shaping parameters for each
 run are in that run's `summary.json` under `run_metadata`.
 
-Built from commit `14c746a`, Chrome `Google Chrome 154.0.8037.57`, on `docker-vm-4`.
+Built from commit `57e9133`, Chrome `Google Chrome 154.0.8037.57`, on `docker-vm-4`.

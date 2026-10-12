@@ -214,6 +214,38 @@ high-load run — kept, clearly marked, and never quietly mixed in with the rest
 Every run records what the load actually was while it ran, so this is visible
 in the data rather than something a reader has to guess at.
 
+**The machine was never clogged with Chrome.** We spent a while blaming a
+hundred and sixty stray browser processes on the shared machine for the
+sampling stalls, and planned to clean them up. An audit showed there was
+nothing to clean: every one of them had already exited and was simply waiting
+for its parent to collect it. Processes in that state hold no processor time,
+no memory and no file handles, and they do not count towards the machine's
+load; trying to kill one is refused, because it is already dead. An earlier
+note of ours put seventy-five percent of the processor on them, which was
+wrong — that figure came from adding up each one's lifetime average at the
+moment it died, not anything it was using. The congestion we measured was real,
+but it came from our own browser and from live work by the other project on the
+machine. Nothing was changed, so later runs are not on a "cleaned" machine, and
+we do not describe them that way.
+
+**What actually fixed the sampling.** Once the sampler itself was corrected —
+a fixed clock instead of sleeping a flat second after the work, one question to
+the browser per reading instead of two, a ceiling on a single reading, and a
+final collection of byte counts so a segment arriving in the last second is not
+missed — the readings came back at almost exactly one second. Eleven of the
+twelve cells now hold the cadence. The one that does not misses by a hundredth
+of a second, on YouTube at 3 Mbps, and is reported as a failure rather than
+rounded into a pass.
+
+**Nothing was lost in the gaps.** We checked whether the stalls had swallowed
+any rebuffering or quality switches. They had not. Rebuffering is recorded from
+the page's own event log, which runs from the moment the page loads and does
+not depend on our reading rhythm, so stalls that happened inside a gap were
+still counted. No quality change straddled a gap either. One run looked like it
+might have lost a switch, but it had no gaps at all — the difference came from
+two renditions sharing the same picture height, which a height-based count
+cannot see by design.
+
 **Reading the bitrate chart.** The per-interval line spikes well above the
 link speed — over 40 Mbps on a 6 Mbps link — because a player fetches a whole
 segment at once and hands it to the buffer in one go. That is not throughput
