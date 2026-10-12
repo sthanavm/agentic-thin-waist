@@ -3,7 +3,7 @@
  "app": "vimeo",
  "verdict": "OK",
  "run_metadata": {
-  "repo_commit": "57e9133",
+  "repo_commit": "536adf0",
   "chrome_version": "Google Chrome 154.0.8037.57",
   "vm": "docker-vm-4",
   "run_dir_on_vm": "/home/student/sthanav-agentic-thin-waist/experiments/pramana/results/pramana_runs/vimeo_6mbps_50ms_0pct_pfifo_cubic_solo_t2_894efd7c42",

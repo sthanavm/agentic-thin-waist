@@ -43,7 +43,7 @@ Latency and AQM sweeps are Step B and are not in this branch.
 | metric | Vimeo | Youtube |
 |---|---|---|
 | 1 startup delay | **VERIFIED**<br><sub>6/6 run(s), all checks passed</sub> | **VERIFIED**<br><sub>6/6 run(s), all checks passed</sub> |
-| 2 buffer rebuffering | **VERIFIED**<br><sub>6/6 run(s), all checks passed (B4: no reference)</sub> | **FAILED**<br><sub>1 check failure(s): B1</sub> |
+| 2 buffer rebuffering | **VERIFIED**<br><sub>6/6 run(s), all checks passed (B4: no reference)</sub> | **VERIFIED**<br><sub>6/6 run(s), all checks passed</sub> |
 | 3 delivered bitrate | **VERIFIED**<br><sub>6/6 run(s), all checks passed</sub> | **VERIFIED**<br><sub>6/6 run(s), all checks passed</sub> |
 | 4 switching | **VERIFIED**<br><sub>6/6 run(s), all checks passed</sub> | **VERIFIED**<br><sub>6/6 run(s), all checks passed</sub> |
 | 5 frame rate | **VERIFIED**<br><sub>6/6 run(s), all checks passed</sub> | **VERIFIED**<br><sub>6/6 run(s), all checks passed</sub> |
@@ -55,15 +55,11 @@ metric and appears only in its own two charts and the cap check.
 
 | | count |
 |---|---|
-| PASS | 269 |
-| **FAIL** | **1** |
+| PASS | 270 |
+| **FAIL** | **0** |
 | no reference (N/A) | 6 |
 
-### Every failing check
-
-| run | check | detail |
-|---|---|---|
-| youtube_3Mbps_50ms_pfifo_trial2 | **B1** | max gap 2.01 s vs 2.0 s bar (mean 1.01 s) |
+No check failed.
 
 ## Per-run results
 
@@ -75,12 +71,12 @@ metric and appears only in its own two charts and the cap check.
 | vimeo_3Mbps_50ms_pfifo_trial2 | OK | 540p | 4512.0 | 0 | 1.0476 | 0.2026 | 4 | 23.96 |
 | vimeo_6Mbps_50ms_pfifo_trial1 | OK | 720p | 2772.0 | 0 | 2.3043 | 0.196 | 4 | 23.93 |
 | vimeo_6Mbps_50ms_pfifo_trial2 | OK | 720p | 2870.0 | 0 | 2.2959 | 0.196 | 4 | 23.89 |
-| youtube_1Mbps_50ms_pfifo_trial1 | OK | 360p | 20810.0 | 0 | 0.2072 | 0.1305 | 2 | 24.99 |
-| youtube_1Mbps_50ms_pfifo_trial2 | OK | 360p | 19463.0 | 1 | 0.2154 | 0.1332 | 2 | 25.0 |
-| youtube_3Mbps_50ms_pfifo_trial1 | OK | 720p | 7852.0 | 1 | 0.5203 | 0.1047 | 0 | 24.78 |
-| youtube_3Mbps_50ms_pfifo_trial2 | OK | 720p | 7857.0 | 0 | 0.5167 | 0.1 | 0 | 24.97 |
-| youtube_6Mbps_50ms_pfifo_trial1 | OK | 720p | 5078.0 | 1 | 0.5884 | 0.1032 | 0 | 24.94 |
-| youtube_6Mbps_50ms_pfifo_trial2 | OK | 480p | 5441.0 | 0 | 0.298 | 0.1033 | 0 | 25.0 |
+| youtube_1Mbps_50ms_pfifo_trial1 | OK | 720p | 20701.0 | 0 | 0.5475 | 0.1253 | 2 | 25.0 |
+| youtube_1Mbps_50ms_pfifo_trial2 | OK | 360p | 18113.0 | 0 | 0.184 | 0.1257 | 3 | 25.0 |
+| youtube_3Mbps_50ms_pfifo_trial1 | OK | 720p | 7800.0 | 0 | 0.5977 | 0.1179 | 0 | 25.0 |
+| youtube_3Mbps_50ms_pfifo_trial2 | OK | 480p | 7718.0 | 0 | 0.2876 | 0.1027 | 0 | 24.99 |
+| youtube_6Mbps_50ms_pfifo_trial1 | OK | 480p | 5274.0 | 0 | 0.3168 | 0.1103 | 0 | 24.99 |
+| youtube_6Mbps_50ms_pfifo_trial2 | OK | 720p | 5349.0 | 0 | 0.5504 | 0.1027 | 0 | 24.95 |
 
 ## Run folder layout
 
@@ -109,4 +105,4 @@ python make_release.py results_release <run_dir> [<run_dir> ...]
 Repo commit, Chrome version, VM name and the shaping parameters for each
 run are in that run's `summary.json` under `run_metadata`.
 
-Built from commit `57e9133`, Chrome `Google Chrome 154.0.8037.57`, on `docker-vm-4`.
+Built from commit `536adf0`, Chrome `Google Chrome 154.0.8037.57`, on `docker-vm-4`.

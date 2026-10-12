@@ -2329,9 +2329,25 @@ def run_job(
                 next_tick = loop_t0 + tick_index * sample_interval_seconds
                 now = time.monotonic()
                 if next_tick <= now:
-                    missed = int((now - next_tick) // sample_interval_seconds) + 1
-                    tick_index += missed
-                    next_tick = loop_t0 + tick_index * sample_interval_seconds
+                    # Behind the grid. Take the next sample IMMEDIATELY rather
+                    # than waiting for the next future tick.
+                    #
+                    # The `+ 1` that used to be here forced next_tick strictly
+                    # into the future, which skipped a whole sample period for
+                    # any overrun at all. Measured on YouTube at 3 Mbps: one
+                    # iteration took 1,242 ms during the page's startup burst
+                    # and the skip turned that into a 2.014 s gap -- two ticks
+                    # -- and one sample that was never taken. Firing now caps
+                    # the gap at the overrun itself and loses no period.
+                    #
+                    # Dropping only whole elapsed intervals keeps the grid
+                    # aligned, so lateness does not accumulate across a 180 s
+                    # run, and a long stall still cannot make the loop spin:
+                    # it lands on the first tick at or before now.
+                    missed = int((now - next_tick) // sample_interval_seconds)
+                    if missed:
+                        tick_index += missed
+                        next_tick = loop_t0 + tick_index * sample_interval_seconds
                 time.sleep(max(0.0, next_tick - now))
     finally:
         try:

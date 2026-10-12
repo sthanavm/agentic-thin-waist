@@ -246,6 +246,33 @@ might have lost a switch, but it had no gaps at all — the difference came from
 two renditions sharing the same picture height, which a height-based count
 cannot see by design.
 
+**The last stubborn hundredth of a second.** One cell kept missing the
+once-a-second cadence by a whisker — two and a bit seconds against a two second
+limit. Looking at where the gap actually fell, it was five seconds into the run,
+right in YouTube's noisy start-up, and the reading before it had taken about one
+and a quarter seconds.
+
+The cause turned out to be our own scheduler, not the page. When a reading
+overran its slot, the scheduler waited for the *next* slot instead of taking the
+reading straight away. So a reading that ran a quarter of a second long did not
+cost a quarter of a second — it cost a whole extra slot, and one reading was
+never taken at all. Any overrun at all, however small, produced a gap of
+exactly two slots.
+
+Now, when a reading overruns, the next one is taken immediately and the rhythm
+picks up from there. A slow reading costs only the time it actually took, and
+no reading is skipped. Nothing changes when readings are quick, which is almost
+always: the typical one takes about sixty milliseconds.
+
+Six fresh runs of the troublesome cell, each waiting for the machine to settle
+first, all held the cadence. Three of them had readings that overran — about
+1.3 to 1.5 seconds — and under the old scheduler each of those would have
+become a two-second gap and failed. We did not touch the two-second limit.
+
+Vimeo was left alone deliberately: its readings never once overran a slot (the
+slowest was under half a second), so the change cannot have altered anything
+there, and re-running it would have added nothing.
+
 **Reading the bitrate chart.** The per-interval line spikes well above the
 link speed — over 40 Mbps on a 6 Mbps link — because a player fetches a whole
 segment at once and hands it to the buffer in one go. That is not throughput
