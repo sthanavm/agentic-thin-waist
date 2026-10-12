@@ -44,6 +44,42 @@ for the whole app.
 
 Latency and AQM sweeps are Step B and are not in this branch.
 
+### B1 across repeats of the concurrent cell
+
+The concurrent cell was run **4 times**. B1 is the sampling-cadence
+bar: every inter-sample gap at most 2x the 1.0 s interval. The bar
+was not changed.
+
+| trial | app | samples | B1 | max gap | slowest stats call | script timeouts | load1 mean | load1 at gate |
+|---|---|---|---|---|---|---|---|---|
+| t1 | youtube | 160 | **FAIL** | 2.000 s | 1967.3 ms | 0 | 9.37 | 2.84 |
+| t1 | vimeo | 180 | PASS | 1.059 s | 495.4 ms | 0 | 9.09 | 2.84 |
+| t2 | youtube | 152 | **FAIL** | 14.048 s | 14023.6 ms | 0 | 10.75 | 2.87 |
+| t2 | vimeo | 180 | PASS | 1.113 s | 491.1 ms | 0 | 10.50 | 2.87 |
+| t3 | youtube | 156 | **FAIL** | 20.001 s | 3841.1 ms | 1 | 10.32 | 2.84 |
+| t3 | vimeo | 180 | PASS | 1.043 s | 831.7 ms | 0 | 10.20 | 2.84 |
+| t4 | youtube | 152 | **FAIL** | 24.462 s | 2653.7 ms | 1 | 10.88 | 2.52 |
+| t4 | vimeo | 180 | PASS | 1.044 s | 543.5 ms | 0 | 10.60 | 2.52 |
+
+**YouTube fails B1 on 4 of 4 repeats; Vimeo fails 0 of 4.**
+
+The single run in this release is the *mildest* of them (2.00 s
+against the 2.0 s bar). The repeats reach 24.462 s, so the failure is
+not a borderline one and must not be read as such. In the worst
+cases a single reading of the page blocked for 14-24 s; the
+10 s script timeout either returned late or did not stop it, that
+sample carried no statistics, and the player's clock reset to 0
+afterwards. Vimeo, on the same host in the same window, never
+exceeded 832 ms.
+
+The load gate cannot prevent this: it passed at 2.52-2.87 before
+every run, and the load that accompanies the failure (mean 9.4-10.9)
+is produced by the run itself, two browsers on two vCPUs. Whether
+that contention *causes* the stall is **not established** - the
+repeats show it reproduces, not why.
+
+Per-trial numbers are in `concurrent_b1_trials.csv`.
+
 ### The concurrent cell: what is and is not synchronised
 
 A barrier holds both apps until each has a ready player, so

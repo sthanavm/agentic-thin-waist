@@ -1066,6 +1066,69 @@ def write_readme(out_root: Path, runs: list, meta_env: dict):
         "",
         "Latency and AQM sweeps are Step B and are not in this branch.",
     ]
+    # Repeats of the concurrent cell, if their evidence file is present. The
+    # release itself keeps one run per scenario, but a cadence failure seen
+    # once says nothing about whether it reproduces, so the repeats are
+    # reported here from their own measurements.
+    trials_csv = out_root / "concurrent_b1_trials.csv"
+    if trials_csv.exists():
+        tl = [r.split(",") for r in trials_csv.read_text().strip().split("\n")]
+        hdr, body = tl[0], tl[1:]
+        yt = [r for r in body if r[1] == "youtube"]
+        vm = [r for r in body if r[1] == "vimeo"]
+        L += [
+            "",
+            "### B1 across repeats of the concurrent cell",
+            "",
+            "The concurrent cell was run **%d times**. B1 is the sampling-cadence"
+            % len(set(r[0] for r in body)),
+            "bar: every inter-sample gap at most 2x the 1.0 s interval. The bar",
+            "was not changed.",
+            "",
+            "| trial | app | samples | B1 | max gap | slowest stats call | script timeouts | load1 mean | load1 at gate |",
+            "|---|---|---|---|---|---|---|---|---|",
+        ]
+        for r in body:
+            L.append(
+                "| %s | %s | %s | %s | %s s | %s ms | %s | %s | %s |"
+                % (
+                    r[0],
+                    r[1],
+                    r[2],
+                    ("**%s**" % r[3]) if r[3] == "FAIL" else r[3],
+                    r[4],
+                    r[6],
+                    r[8],
+                    r[9],
+                    r[11],
+                )
+            )
+        nf_y = sum(1 for r in yt if r[3] == "FAIL")
+        nf_v = sum(1 for r in vm if r[3] == "FAIL")
+        L += [
+            "",
+            "**YouTube fails B1 on %d of %d repeats; Vimeo fails %d of %d.**"
+            % (nf_y, len(yt), nf_v, len(vm)),
+            "",
+            "The single run in this release is the *mildest* of them (2.00 s",
+            "against the 2.0 s bar). The repeats reach %s s, so the failure is"
+            % max(r[4] for r in yt),
+            "not a borderline one and must not be read as such. In the worst",
+            "cases a single reading of the page blocked for 14-24 s; the",
+            "10 s script timeout either returned late or did not stop it, that",
+            "sample carried no statistics, and the player's clock reset to 0",
+            "afterwards. Vimeo, on the same host in the same window, never",
+            "exceeded 832 ms.",
+            "",
+            "The load gate cannot prevent this: it passed at 2.52-2.87 before",
+            "every run, and the load that accompanies the failure (mean 9.4-10.9)",
+            "is produced by the run itself, two browsers on two vCPUs. Whether",
+            "that contention *causes* the stall is **not established** - the",
+            "repeats show it reproduces, not why.",
+            "",
+            "Per-trial numbers are in `concurrent_b1_trials.csv`.",
+        ]
+    L += []
     if conc:
         L += [
             "",
