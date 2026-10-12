@@ -200,8 +200,9 @@ clean**, and the audit corrected an earlier claim of mine. Recorded here because
 later runs would otherwise be described as being on a "cleaned host", which
 would be false.
 
-Full inventory in `vm4_process_inventory.csv` (PID, parent, age, CPU, memory,
-container for every Chrome-family process).
+The full per-process inventory (PID, parent, age, CPU, memory, container) was
+taken and checked at the time but is not carried in this branch, which holds
+only what is needed to see and reproduce the runs.
 
 ## What was found
 

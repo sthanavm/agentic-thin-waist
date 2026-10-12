@@ -1,7 +1,0 @@
-trial,max_gap_s,b1,gaps_over_2s,work_max_ms,work_p50_ms,samples,load1_median,gate
-31,1.015,PASS,0,764,56,179,7.4,passed
-32,1.417,PASS,0,1415,56,180,6.2,passed
-33,1.018,PASS,0,895,52,180,7.1,passed
-34,1.318,PASS,0,1317,53,174,5.4,passed
-35,1.493,PASS,0,1491,61,180,5.5,passed
-36,1.013,PASS,0,702,60,180,6.1,passed
