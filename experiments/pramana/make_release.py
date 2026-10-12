@@ -195,10 +195,17 @@ def host_conditions(run_dir: Path, st: list) -> dict:
     return out
 
 
-def build_run(run_dir: Path, out_root: Path, meta_env: dict):
+def build_run(run_dir: Path, out_root: Path, meta_env: dict, app: str | None = None):
+    """Build one app's folder from a run.
+
+    `app` is explicit because a run may carry several. Taking apps[0] silently
+    dropped every app after the first on a concurrent run, with no warning.
+    """
     rec = json.loads((run_dir / "record.json").read_text())
     cfg = rec.get("config") or {}
-    app = (cfg.get("apps") or [None])[0]
+    run_apps = cfg.get("apps") or []
+    if app is None:
+        app = run_apps[0] if run_apps else None
     cap = float(cfg.get("bandwidth_mbps") or 0)
     lat = float(cfg.get("latency_ms") or 0)
     aqm = cfg.get("aqm") or "pfifo"
@@ -285,17 +292,47 @@ def build_run(run_dir: Path, out_root: Path, meta_env: dict):
             ax.set_xlim(0, max(secs) if secs else 1)
             ax.legend(fontsize=8)
             save(f, d / fname)
-        dl = thr.get("download", {})
+        # The cap is shared by every app on the link, so it must be checked
+        # against their SUM on a common 1-second grid. Checking one app's
+        # series against the whole cap would let a genuine shared-cap breach
+        # pass whenever no single app exceeded it on its own.
+        all_series = [
+            [s_[i] if 0 <= i < len(s_) else 0.0 for i in range(lo, hi)]
+            for s_ in (
+                (
+                    (
+                        at.traffic(a_, "download").mbps
+                        if at.traffic(a_, "download")
+                        else []
+                    )
+                    or []
+                )
+                for a_ in run_apps
+            )
+        ]
+        summed = [sum(col) for col in zip(*all_series)] if all_series else []
+        sum_peak = round(max(summed), 4) if summed else 0.0
+        sum_mean = round(sum(summed) / len(summed), 4) if summed else 0.0
+        scope = (
+            "this app alone"
+            if len(run_apps) <= 1
+            else "sum of %d apps (%s)" % (len(run_apps), ", ".join(run_apps))
+        )
         chk(
             "J1",
-            dl.get("peak_mbps", 0) <= cap * J_PEAK_TOL,
-            "peak %.4f vs cap %g (+5%% bin tolerance)" % (dl.get("peak_mbps", 0), cap),
+            sum_peak <= cap * J_PEAK_TOL,
+            "peak %.4f vs cap %g (+5%% bin tolerance), %s" % (sum_peak, cap, scope),
         )
         chk(
             "J2",
-            dl.get("mean_mbps", 0) <= cap,
-            "mean %.4f vs cap %g" % (dl.get("mean_mbps", 0), cap),
+            sum_mean <= cap,
+            "mean %.4f vs cap %g, %s" % (sum_mean, cap, scope),
         )
+        thr["link_shared"] = {
+            "peak_mbps": sum_peak,
+            "mean_mbps": sum_mean,
+            "apps": list(run_apps),
+        }
     else:
         chk("J1", None, "no pcap")
         chk("J2", None, "no pcap")
@@ -966,8 +1003,9 @@ def write_readme(out_root: Path, runs: list, meta_env: dict):
         "and the numbers it shows are asserted against `summary.json` during the",
         "build, so a chart that disagreed fails the build rather than shipping.",
         "",
-        "Bands and procedure were committed in",
-        "`validation/THRESHOLDS.md` **before any of these runs started**.",
+        "The bands and the procedure below were fixed and committed **before**",
+        "any of these runs were started, so they could not be chosen to fit the",
+        "results. No band was widened and no run was excluded afterwards.",
         "",
         "## What VERIFIED means here",
         "",
@@ -989,12 +1027,14 @@ def write_readme(out_root: Path, runs: list, meta_env: dict):
         "",
         "| | |",
         "|---|---|",
-        "| apps | YouTube, Vimeo (one app per run) |",
-        "| bandwidth | 1, 3, 6 Mbps |",
+        "| apps | %s |" % ", ".join(sorted({r["app"] for r in runs})),
+        "| bandwidth | %s Mbps |"
+        % ", ".join("%g" % c for c in sorted({r["cap"] for r in runs})),
         "| latency | 50 ms (project baseline for solo runs) |",
         "| AQM / CCA / loss | pfifo / cubic / 0 % |",
         "| duration | 180 s |",
-        "| trials | 2 per cell — **%d runs total** |" % len(runs),
+        "| cells | %d (one run per app x bandwidth) — **%d run(s) total** |"
+        % (len({(r["app"], r["cap"]) for r in runs}), len(runs)),
         "",
         "Latency and AQM sweeps are Step B and are not in this branch.",
         "",
@@ -1066,6 +1106,26 @@ def write_readme(out_root: Path, runs: list, meta_env: dict):
         )
     L += [
         "",
+        "## The checks every run had to pass",
+        "",
+        "| id | what it checks | bar |",
+        "|---|---|---|",
+        "| S1,S2 | startup produced, positive, inside the session | 0 < startup < duration |",
+        "| S3 | the three startup quantities add up on one clock | residual <= 50 ms |",
+        "| B1 | sampling cadence | every gap <= 2x the 1.0 s interval |",
+        "| B2,B3 | buffer level physical; rebuffer count produced | buffer >= 0 |",
+        "| B4 | buffer agrees with YouTube's own figure (YouTube only) | MAE <= 1.0 s, r >= 0.90 |",
+        "| R1 | delivered bytes vs Chrome's Network domain | cdp_received / appended in [1.00, 1.15] |",
+        "| R2,R3 | video and audio reported separately, video non-zero | both non-null |",
+        "| W1,W2 | switches timestamped with direction; chart agrees with count | drawn <= switch_count |",
+        "| F1,F2,F3 | rendered rate positive, <= decoded, chart equals summary | <= decoded x 1.05 |",
+        "| J1,J2 | throughput within the shaped cap, peak and mean | peak <= cap x 1.05; mean <= cap |",
+        "| J3,J4 | a pcap per run and per app; download and upload plotted separately | files present |",
+        "| J5,J6,J7 | fixed 0-11 Mbps line charts clipped to playback; playback verdict; chart numbers equal summary | — |",
+        "",
+        "Each run's `summary.json` carries its own `checks` block with the",
+        "measured value for every one of them.",
+        "",
         "## Run folder layout",
         "",
         "```",
@@ -1114,15 +1174,20 @@ def main():
         if not (rd / "record.json").exists():
             print("skip (no record.json): %s" % rd)
             continue
-        try:
-            r = build_run(rd, out_root, meta_env)
-        except Exception as exc:  # noqa: BLE001
-            import traceback
+        rec_apps = (
+            json.loads((rd / "record.json").read_text()).get("config") or {}
+        ).get("apps") or [None]
+        for _app in rec_apps:
+            try:
+                r = build_run(rd, out_root, meta_env, app=_app)
+            except Exception as exc:  # noqa: BLE001
+                import traceback
 
-            print("ERROR %s: %s" % (rd.name, exc))
-            traceback.print_exc()
-            continue
-        if r:
+                print("ERROR %s (%s): %s" % (rd.name, _app, exc))
+                traceback.print_exc()
+                continue
+            if not r:
+                continue
             runs.append(r)
             nf = sum(1 for v in r["checks"].values() if v[0] == "FAIL")
             print(

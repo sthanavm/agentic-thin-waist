@@ -3,10 +3,10 @@
  "app": "youtube",
  "verdict": "OK",
  "run_metadata": {
-  "repo_commit": "536adf0",
+  "repo_commit": "a21de74",
   "chrome_version": "Google Chrome 154.0.8037.57",
   "vm": "docker-vm-4",
-  "run_dir_on_vm": "/home/student/sthanav-agentic-thin-waist/experiments/pramana/results/pramana_runs/youtube_1mbps_50ms_0pct_pfifo_cubic_solo_t1_2112ce0635",
+  "run_dir_on_vm": "/Users/jenilprajapati/SNL-Lab-Codebases/pramana-data/2026-10-12-final-stepa/results/pramana_runs/youtube_1mbps_50ms_0pct_pfifo_cubic_solo_t1_2112ce0635",
   "shaping": {
    "bandwidth_mbps": 1.0,
    "latency_ms": 50.0,
@@ -96,6 +96,13 @@
   "upload": {
    "peak_mbps": 0.0504,
    "mean_mbps": 0.0213
+  },
+  "link_shared": {
+   "peak_mbps": 1.0129,
+   "mean_mbps": 0.7149,
+   "apps": [
+    "youtube"
+   ]
   }
  },
  "byte_references": {
@@ -119,11 +126,11 @@
   ],
   "J1": [
    "PASS",
-   "peak 1.0129 vs cap 1 (+5% bin tolerance)"
+   "peak 1.0129 vs cap 1 (+5% bin tolerance), this app alone"
   ],
   "J2": [
    "PASS",
-   "mean 0.7149 vs cap 1"
+   "mean 0.7149 vs cap 1, this app alone"
   ],
   "S3": [
    "PASS",
