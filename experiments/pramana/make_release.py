@@ -685,6 +685,43 @@ def build_run(run_dir: Path, out_root: Path, meta_env: dict, app: str | None = N
         "Presented frames / s",
     )
     ax.plot(relt, fps_series, color="#00838F", **LINE)
+    # A sample whose own iteration ran longer than the sampling interval has its
+    # timestamp taken before the page read and its frame counter after it, so
+    # frames rendered during that iteration are credited to the interval before
+    # the one they belong to. That shows up as a spike on this sample and a dip
+    # on the next. It is a pairing artifact: across the pair the rate is
+    # unchanged. Mark those samples rather than smooth them away.
+    interval_ms = float(u.get("sampling_interval_s") or 1.0) * 1000.0
+    skew = [
+        i
+        for i, r in enumerate(rows)
+        if (r.get("loop_ms") or {}).get("total_work") is not None
+        and r["loop_ms"]["total_work"] > interval_ms
+    ]
+    if skew:
+        ax.plot(
+            [relt[i] for i in skew],
+            [fps_series[i] for i in skew],
+            "o",
+            ms=6,
+            mfc="none",
+            mec="#C62828",
+            mew=1.4,
+            label="read lagged its timestamp (%d)" % len(skew),
+        )
+        worst = max(skew, key=lambda i: rows[i]["loop_ms"]["total_work"])
+        ax.text(
+            0.01,
+            0.97,
+            "circled: the page read finished up to %.1f s after the sample's own\n"
+            "timestamp, so frames land in the neighbouring interval. The spike and\n"
+            "the dip beside it are that artifact, not a change in rendering."
+            % (rows[worst]["loop_ms"]["total_work"] / 1000.0),
+            transform=ax.transAxes,
+            va="top",
+            fontsize=8,
+            color="#C62828",
+        )
     if u.get("rendered_fps"):
         ax.axhline(
             u["rendered_fps"],
@@ -694,6 +731,7 @@ def build_run(run_dir: Path, out_root: Path, meta_env: dict, app: str | None = N
             alpha=0.7,
             label="run mean %.2f" % u["rendered_fps"],
         )
+    if skew or u.get("rendered_fps"):
         ax.legend(fontsize=8)
     ax.set_ylim(bottom=0)
     ax.set_xlim(0, max(relt) if relt else 1)
