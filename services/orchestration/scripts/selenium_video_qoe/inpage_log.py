@@ -91,6 +91,36 @@ INPAGE_LOGGER_JS = """
     try { requestAnimationFrame(loop); } catch (_) {}
   })();
 
+  // Long tasks. A freeze that contains a long task means the thread was
+  // RUNNING something; a freeze with none means no JS task was on the thread
+  // at all. That distinction is the point: it separates "the page is busy"
+  // from "the page is not being scheduled". Note a task that is descheduled
+  // mid-flight still accumulates wall-clock duration, so a long entry is not
+  // by itself proof of work -- it is read together with the host-side CPU
+  // probe, which says whether the process got any CPU during the window.
+  try {
+    var po = new PerformanceObserver(function (list) {
+      list.getEntries().forEach(function (en) {
+        try {
+          var a = (en.attribution && en.attribution[0]) || {};
+          if (buf.length < MAX) {
+            buf.push({
+              i: ++seq,
+              t: Math.round(en.startTime * 10) / 10,
+              k: 'longtask',
+              d: Math.round(en.duration * 10) / 10,
+              n: en.name || null,
+              ct: a.containerType || null,
+              cs: a.containerSrc || null
+            });
+          }
+        } catch (_) {}
+      });
+    });
+    po.observe({ entryTypes: ['longtask'] });
+    window.__pramana_longtask = 1;
+  } catch (e) { window.__pramana_longtask = 0; }
+
   // Player events, which carry their own meaning and are not sampled.
   try {
     var v0 = document.querySelector('video');
@@ -318,8 +348,19 @@ def stall_report(
                     "across_reads": i == 1 and prev_t is not None,
                 }
             )
+    longs = sorted(
+        (
+            {"at_page_ms": e.get("t"), "dur_ms": e.get("d"), "name": e.get("n")}
+            for e in events
+            if e.get("k") == "longtask" and isinstance(e.get("d"), (int, float))
+        ),
+        key=lambda x: -x["dur_ms"],
+    )
     return {
         "ticks": len(ticks),
+        "longtasks": len(longs),
+        "longest_task_ms": round(longs[0]["dur_ms"], 1) if longs else 0.0,
+        "top_longtasks": longs[:5],
         "page_span_ms": round(ticks[-1] - ticks[0], 1) if len(ticks) > 1 else 0.0,
         "max_gap_ms": round(
             max((g["gap_ms"] for g in gaps), default=float(tick_ms)), 1

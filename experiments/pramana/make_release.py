@@ -1224,6 +1224,74 @@ def write_readme(out_root: Path, runs: list, meta_env: dict):
             "in-page sampler and are diagnostic; they are not part of the",
             "measurement set above.",
         ]
+    fz = out_root / "freeze_conditions.csv"
+    if fz.exists():
+        import csv as _csv
+
+        rows = list(_csv.DictReader(fz.open()))
+        L += [
+            "",
+            "### Why the YouTube page freezes",
+            "",
+            "Four conditions, each able to come out either way. A freeze is a",
+            "gap in the page's own 200 ms timer of more than 2 s.",
+            "",
+            "| condition | what it tests | app | B1 | page-clock gap | longest task | renderer CPU during it | froze |",
+            "|---|---|---|---|---|---|---|---|",
+        ]
+        for r in rows:
+            L.append(
+                "| %s | %s | %s | %s | %s s | %s ms | %s ms/s | %s |"
+                % (
+                    r["condition"],
+                    r["what_it_tests"],
+                    r["app"],
+                    ("**%s**" % r["b1"]) if r["b1"] == "FAIL" else r["b1"],
+                    r["page_clock_gap_s"],
+                    r["longest_task_ms"],
+                    r["renderer_cpu_ms_per_s_during_freeze"] or "-",
+                    ("**yes**" if r["froze"] == "yes" else "no"),
+                )
+            )
+        L += [
+            "",
+            "**It is CPU starvation, and nothing to do with Vimeo.**",
+            "",
+            "- *YouTube alone does not freeze*: worst gap 0.65 s, longest task",
+            "  267 ms. So contention is necessary.",
+            "- *CPU load alone is enough*: two spinner processes, no second",
+            "  browser and no shared link, reproduce it in full - an 18.65 s",
+            "  freeze. That rules out any explanation that needs Vimeo, a",
+            "  second browser, or the shared cap.",
+            "- *A different second app still freezes it* (4.77 s beside Twitch),",
+            "  which agrees.",
+            "- *One core each does not fix it* (16.61 s). Pinning was the",
+            "  obvious remedy and it failed, so the problem is not two browsers",
+            "  colliding on one core.",
+            "",
+            "**Starved, not busy.** A 13.5 s long task is recorded during the",
+            "freeze, which on its own might suggest the page was working hard.",
+            "The CPU probe says otherwise: the renderer got **202.8 ms of CPU",
+            "per wall second** during that freeze, against **478.7 ms/s** in the",
+            "unloaded solo run - about 40 % of its normal rate, on a 2 vCPU host",
+            "where all of Chrome together held only ~400 of 2000 ms/s while the",
+            "spinners took the rest. A task holding the thread for 13.5 s while",
+            "receiving a fifth of a core is a task being descheduled, not one",
+            "computing. Long-task duration is wall-clock and cannot tell these",
+            "apart by itself; the CPU figure is what separates them.",
+            "",
+            "Why YouTube and not Vimeo: YouTube's renderer wants appreciably",
+            "more CPU (478.7 ms/s unloaded), so it is the one that starves first",
+            "when the host is oversubscribed. Vimeo passed B1 in every condition",
+            "here, including the pinned run.",
+            "",
+            "This is a property of the 2 vCPU measurement host, not of YouTube's",
+            "delivery. It limits what a concurrent cell on this host can measure;",
+            "it is **not** a finding about the network or the service.",
+            "",
+            "Per-condition numbers are in `freeze_conditions.csv`. Reproduce with",
+            "`run_freeze_tests.py <condition>`, which also runs `cpu_probe.py`.",
+        ]
     L += []
     if conc:
         L += [

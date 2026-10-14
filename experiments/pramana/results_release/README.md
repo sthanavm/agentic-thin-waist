@@ -121,6 +121,57 @@ Per-trial numbers are in `inpage_trials.csv`. These runs used the
 in-page sampler and are diagnostic; they are not part of the
 measurement set above.
 
+### Why the YouTube page freezes
+
+Four conditions, each able to come out either way. A freeze is a
+gap in the page's own 200 ms timer of more than 2 s.
+
+| condition | what it tests | app | B1 | page-clock gap | longest task | renderer CPU during it | froze |
+|---|---|---|---|---|---|---|---|
+| solo | youtube alone | youtube | PASS | 0.645 s | 267 ms | 478.7 ms/s | no |
+| cpuload | youtube + 2 CPU burners (no 2nd browser) | youtube | **FAIL** | 18.654 s | 13548 ms | 202.8 ms/s | **yes** |
+| twitch | youtube + twitch | twitch | **FAIL** | 1.637 s | 1375 ms | 415.1 ms/s | no |
+| twitch | youtube + twitch | youtube | **FAIL** | 4.773 s | 3824 ms | 356.2 ms/s | **yes** |
+| pinned | youtube + vimeo (one core each) | vimeo | PASS | 0.758 s | 646 ms | 500.8 ms/s | no |
+| pinned | youtube + vimeo (one core each) | youtube | **FAIL** | 16.612 s | 14494 ms | 381.6 ms/s | **yes** |
+
+**It is CPU starvation, and nothing to do with Vimeo.**
+
+- *YouTube alone does not freeze*: worst gap 0.65 s, longest task
+  267 ms. So contention is necessary.
+- *CPU load alone is enough*: two spinner processes, no second
+  browser and no shared link, reproduce it in full - an 18.65 s
+  freeze. That rules out any explanation that needs Vimeo, a
+  second browser, or the shared cap.
+- *A different second app still freezes it* (4.77 s beside Twitch),
+  which agrees.
+- *One core each does not fix it* (16.61 s). Pinning was the
+  obvious remedy and it failed, so the problem is not two browsers
+  colliding on one core.
+
+**Starved, not busy.** A 13.5 s long task is recorded during the
+freeze, which on its own might suggest the page was working hard.
+The CPU probe says otherwise: the renderer got **202.8 ms of CPU
+per wall second** during that freeze, against **478.7 ms/s** in the
+unloaded solo run - about 40 % of its normal rate, on a 2 vCPU host
+where all of Chrome together held only ~400 of 2000 ms/s while the
+spinners took the rest. A task holding the thread for 13.5 s while
+receiving a fifth of a core is a task being descheduled, not one
+computing. Long-task duration is wall-clock and cannot tell these
+apart by itself; the CPU figure is what separates them.
+
+Why YouTube and not Vimeo: YouTube's renderer wants appreciably
+more CPU (478.7 ms/s unloaded), so it is the one that starves first
+when the host is oversubscribed. Vimeo passed B1 in every condition
+here, including the pinned run.
+
+This is a property of the 2 vCPU measurement host, not of YouTube's
+delivery. It limits what a concurrent cell on this host can measure;
+it is **not** a finding about the network or the service.
+
+Per-condition numbers are in `freeze_conditions.csv`. Reproduce with
+`run_freeze_tests.py <condition>`, which also runs `cpu_probe.py`.
+
 ### The concurrent cell: what is and is not synchronised
 
 A barrier holds both apps until each has a ready player, so
