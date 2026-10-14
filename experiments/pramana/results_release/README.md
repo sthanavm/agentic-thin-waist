@@ -80,6 +80,47 @@ repeats show it reproduces, not why.
 
 Per-trial numbers are in `concurrent_b1_trials.csv`.
 
+### Was the page blocked, or only our reading of it?
+
+The sampler above asks the page for its state once a second. When
+that read blocks, it cannot say whether the page stalled or only
+the read did -- the reading that would tell us is the one that
+failed. So the page was made to log itself: a timer appends an
+entry every 200 ms, read over a separate CDP connection with its
+own deadline. `performance.now()` keeps advancing while a thread
+is blocked, so a timestamp proves nothing; a **missing entry**
+does, because a blocked thread cannot run the timer.
+
+| trial | app | B1 | sampler gap | page-clock gap | page stalls | page blocked |
+|---|---|---|---|---|---|---|
+| t5 | youtube | **FAIL** | 26.121 s | 16.730 s | 13 | **yes** |
+| t5 | vimeo | PASS | 1.074 s | 0.667 s | 1 | no |
+| t6 | youtube | **FAIL** | 23.062 s | 15.861 s | 15 | **yes** |
+| t6 | vimeo | PASS | 1.051 s | 0.682 s | 1 | no |
+| t7 | youtube | **FAIL** | 25.640 s | 16.961 s | 21 | **yes** |
+| t7 | vimeo | PASS | 1.370 s | 0.993 s | 1 | no |
+
+**The YouTube page itself blocks.** Its own timer misses for
+15.9-17.0 s, three runs out of three. Vimeo's never misses by
+more than 1.0 s. So the cadence failure is not an artifact of how
+we read the page: the page's main thread genuinely stops.
+
+It does not account for all of it. The sampler's gap is 23.1-26.1 s
+against a page block of 15.9-17.0 s, and the block falls inside the
+gap in every run, so roughly 7-9 s is the read path on top of a
+page that had already stopped. What blocks the page is still
+**unknown** - this says where the time goes, not why.
+
+The separate connection's deadline was never exercised here (0 read
+timeouts in all six). The WebDriver read still runs first in each
+iteration, so it absorbs the stall before the in-page read is
+issued; the deadline was shown to hold on a synthetic 8 s block by
+`test_inpage_timeout.py`, not on these runs.
+
+Per-trial numbers are in `inpage_trials.csv`. These runs used the
+in-page sampler and are diagnostic; they are not part of the
+measurement set above.
+
 ### The concurrent cell: what is and is not synchronised
 
 A barrier holds both apps until each has a ready player, so

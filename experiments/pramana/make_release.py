@@ -1166,6 +1166,64 @@ def write_readme(out_root: Path, runs: list, meta_env: dict):
             "",
             "Per-trial numbers are in `concurrent_b1_trials.csv`.",
         ]
+    # A second sampler was built to answer the question the first one cannot:
+    # was the page blocked, or only our reading of it? Its results live beside
+    # the release because they settle a claim the release makes.
+    ip_csv = out_root / "inpage_trials.csv"
+    if ip_csv.exists():
+        rows = [r.split(",") for r in ip_csv.read_text().strip().split("\n")][1:]
+        L += [
+            "",
+            "### Was the page blocked, or only our reading of it?",
+            "",
+            "The sampler above asks the page for its state once a second. When",
+            "that read blocks, it cannot say whether the page stalled or only",
+            "the read did -- the reading that would tell us is the one that",
+            "failed. So the page was made to log itself: a timer appends an",
+            "entry every 200 ms, read over a separate CDP connection with its",
+            "own deadline. `performance.now()` keeps advancing while a thread",
+            "is blocked, so a timestamp proves nothing; a **missing entry**",
+            "does, because a blocked thread cannot run the timer.",
+            "",
+            "| trial | app | B1 | sampler gap | page-clock gap | page stalls | page blocked |",
+            "|---|---|---|---|---|---|---|",
+        ]
+        for r in rows:
+            L.append(
+                "| %s | %s | %s | %s s | %s s | %s | %s |"
+                % (
+                    r[0],
+                    r[1],
+                    ("**%s**" % r[3]) if r[3] == "FAIL" else r[3],
+                    r[4],
+                    r[6],
+                    r[7],
+                    ("**yes**" if r[8] == "yes" else "no"),
+                )
+            )
+        L += [
+            "",
+            "**The YouTube page itself blocks.** Its own timer misses for",
+            "15.9-17.0 s, three runs out of three. Vimeo's never misses by",
+            "more than 1.0 s. So the cadence failure is not an artifact of how",
+            "we read the page: the page's main thread genuinely stops.",
+            "",
+            "It does not account for all of it. The sampler's gap is 23.1-26.1 s",
+            "against a page block of 15.9-17.0 s, and the block falls inside the",
+            "gap in every run, so roughly 7-9 s is the read path on top of a",
+            "page that had already stopped. What blocks the page is still",
+            "**unknown** - this says where the time goes, not why.",
+            "",
+            "The separate connection's deadline was never exercised here (0 read",
+            "timeouts in all six). The WebDriver read still runs first in each",
+            "iteration, so it absorbs the stall before the in-page read is",
+            "issued; the deadline was shown to hold on a synthetic 8 s block by",
+            "`test_inpage_timeout.py`, not on these runs.",
+            "",
+            "Per-trial numbers are in `inpage_trials.csv`. These runs used the",
+            "in-page sampler and are diagnostic; they are not part of the",
+            "measurement set above.",
+        ]
     L += []
     if conc:
         L += [

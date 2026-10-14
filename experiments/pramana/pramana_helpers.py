@@ -1156,6 +1156,14 @@ def run_qoe_collectors(
         "--volume",
         f"{qoe_dir}:/out",
     ]
+    # The alternative in-page sampler is selected by the environment, and the
+    # collector reads that INSIDE the container, so the flag has to cross the
+    # boundary. Without this the run looks normal and simply produces no
+    # in-page log, which is indistinguishable from the sampler failing.
+    for _k in ("PRAMANA_INPAGE_LOG", "PRAMANA_INPAGE_DEADLINE_S"):
+        _v = os.environ.get(_k)
+        if _v is not None:
+            args += ["--env", f"{_k}={_v}"]
     # Dev override: run a host copy of collect.py inside the published image.
     # Lets a collector change be exercised without rebuilding a ~2GB image —
     # useful on a host that has no room to hold two copies of it at once.
@@ -1169,7 +1177,7 @@ def run_qoe_collectors(
         # import time, with the override silently to blame. Mount each sibling
         # the collector actually imports, so a source override behaves like a
         # rebuilt image.
-        for sibling in ("cdp_bytes.py",):
+        for sibling in ("cdp_bytes.py", "inpage_log.py"):
             sp = src.parent / sibling
             if sp.exists():
                 args += ["--volume", f"{sp}:/app/{sibling}:ro"]

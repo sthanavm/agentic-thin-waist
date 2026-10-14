@@ -1,0 +1,7 @@
+trial,app,samples,b1,max_sampler_gap_s,page_ticks,max_page_clock_gap_s,page_stalls,page_blocked,inpage_reads,inpage_read_timeouts,load1_at_gate
+t5,youtube,150,FAIL,26.121,704,16.730,13,yes,150,0,3.11
+t5,vimeo,180,PASS,1.074,887,0.667,1,no,180,0,3.11
+t6,youtube,152,FAIL,23.062,720,15.861,15,yes,152,0,2.81
+t6,vimeo,180,PASS,1.051,891,0.682,1,no,180,0,2.81
+t7,youtube,146,FAIL,25.640,670,16.961,21,yes,146,0,3.05
+t7,vimeo,180,PASS,1.370,882,0.993,1,no,180,0,3.05

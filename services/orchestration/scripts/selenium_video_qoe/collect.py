@@ -60,6 +60,11 @@ except ImportError:  # running from a different cwd inside the image
     sys.path.insert(0, str(Path(__file__).resolve().parent))
     from cdp_bytes import CdpByteLedger, drain_performance_log
 
+try:
+    import inpage_log as INPAGE
+except ImportError:  # optional; the flag below stays off without it
+    INPAGE = None
+
 # Runs in the page. Detects YouTube vs. a generic <video> element (Vimeo
 # falls into the generic branch - that's exactly what worked in PR #6).
 MEDIA_HOOK_JS = r"""
@@ -1486,6 +1491,12 @@ CDP_DRAIN_EVERY = 5
 # is applied: this limits the damage from a starved renderer without masking it.
 SCRIPT_TIMEOUT_S = 10
 
+# The alternative sampler: the page logs itself and we read that log over a CDP
+# connection of our own, with a deadline this loop controls. Off by default, so
+# a run behaves exactly as before unless it is asked for. See inpage_log.py.
+INPAGE_ENABLED = os.environ.get("PRAMANA_INPAGE_LOG") == "1"
+INPAGE_READ_DEADLINE_S = float(os.environ.get("PRAMANA_INPAGE_DEADLINE_S", "2"))
+
 
 # Makes a codec family look unsupported so an adaptive player never selects it.
 # Needed because a player's ladder is bounded by what it believes it can decode,
@@ -1987,6 +1998,11 @@ def run_job(
     video_url = job["url"]
     display_num = str(job["display_num"])
     out_path = Path(job["out_path"])
+    # In-page log state. Defined here rather than beside the setup so that every
+    # path reaching the writer at the end of this function finds them bound.
+    inpage = None
+    inpage_events = []
+    inpage_stats = {"reads": 0, "timeouts": 0, "errors": 0}
     duration_seconds = float(job["duration_seconds"])
     sample_interval_seconds = float(job.get("sample_interval_seconds", 1.0))
     # Hosts whose bytes are the media for this app. Explicit per app rather
@@ -2194,6 +2210,30 @@ def run_job(
             driver.set_script_timeout(SCRIPT_TIMEOUT_S)
         except Exception as exc:  # noqa: BLE001
             print(f"[{app}] could not set script timeout: {exc}")
+        if INPAGE_ENABLED and INPAGE is not None and not is_webrtc:
+            try:
+                addr = (driver.capabilities.get("goog:chromeOptions") or {}).get(
+                    "debuggerAddress"
+                )
+                if not addr:
+                    raise RuntimeError("no debuggerAddress in capabilities")
+                # Survive a navigation, and cover the page already open.
+                try:
+                    driver.execute_cdp_cmd(
+                        "Page.addScriptToEvaluateOnNewDocument",
+                        {"source": INPAGE.INPAGE_LOGGER_JS},
+                    )
+                except Exception:
+                    pass
+                inpage = INPAGE.CdpChannel(
+                    INPAGE.page_ws_url(addr, match=app)
+                ).connect()
+                inpage.evaluate(INPAGE.INPAGE_LOGGER_JS, 5.0)
+                print(f"[{app}] in-page log installed via {addr}")
+            except Exception as exc:  # noqa: BLE001
+                print(f"[{app}] in-page log unavailable: {exc}")
+                inpage = None
+
         loop_t0 = time.monotonic()
         tick_index = 0
         try:
@@ -2303,6 +2343,36 @@ def run_job(
                         sample["host_load1"] = float(_lf.read().split()[0])
                 except Exception:
                     pass
+                # Read the page's own log on its own connection. Bounded by a
+                # deadline this loop sets, so unlike the WebDriver read it
+                # cannot stretch the sampling interval: a read that does not
+                # answer is recorded as a timeout and the loop moves on.
+                if inpage is not None:
+                    _t_ip = time.monotonic()
+                    try:
+                        got = inpage.read(INPAGE_READ_DEADLINE_S)
+                        inpage_stats["reads"] += 1
+                        n_new = 0
+                        if got and got.get("events"):
+                            inpage_events.extend(got["events"])
+                            n_new = len(got["events"])
+                        sample["inpage"] = {
+                            "ok": True,
+                            "new_events": n_new,
+                            "ms": round((time.monotonic() - _t_ip) * 1000.0, 1),
+                        }
+                    except Exception as exc:  # noqa: BLE001
+                        is_to = INPAGE is not None and isinstance(
+                            exc, INPAGE.CdpTimeout
+                        )
+                        inpage_stats["timeouts" if is_to else "errors"] += 1
+                        sample["inpage"] = {
+                            "ok": False,
+                            "timeout": bool(is_to),
+                            "ms": round((time.monotonic() - _t_ip) * 1000.0, 1),
+                            "error": str(exc)[:120],
+                        }
+
                 sample["loop_ms"] = {
                     "script": round(_ms_script, 1),
                     "cdp": round(_ms_cdp, 1),
@@ -2376,6 +2446,43 @@ def run_job(
     advanced = bool(times) and max(times) > times[0]
     final_resolution = resolutions[-1] if resolutions else None
     progress_label = "frames_decoded" if is_webrtc else "current_time_secs"
+    if INPAGE_ENABLED and INPAGE is not None:
+        try:
+            # One last read, so events recorded after the final sample are not
+            # lost, then the stall report over the whole run.
+            if inpage is not None:
+                try:
+                    got = inpage.read(INPAGE_READ_DEADLINE_S)
+                    if got and got.get("events"):
+                        inpage_events.extend(got["events"])
+                except Exception:
+                    pass
+                inpage.close()
+            rep = INPAGE.stall_report(inpage_events)
+            ip_path = out_path.parent / (
+                out_path.stem.replace("_stats", "") + "_inpage.json"
+            )
+            with open(ip_path, "w") as fh:
+                json.dump(
+                    {
+                        "app": app,
+                        "tick_ms": INPAGE.INPAGE_TICK_MS,
+                        "read_deadline_s": INPAGE_READ_DEADLINE_S,
+                        "reads": inpage_stats,
+                        "stall_report": rep,
+                        "events": inpage_events,
+                    },
+                    fh,
+                )
+            print(
+                f"[{app}] in-page log: {rep['ticks']} ticks, max page-clock gap "
+                f"{rep['max_gap_ms']:.0f} ms, {len(rep['stalls'])} stall(s); "
+                f"reads ok={inpage_stats['reads']} timeout={inpage_stats['timeouts']} "
+                f"err={inpage_stats['errors']} -> {ip_path}"
+            )
+        except Exception as exc:  # noqa: BLE001
+            print(f"[{app}] could not write in-page log: {exc}")
+
     print(
         f"[{app}] summary: {len(samples)} samples written to {out_path} | "
         f"{progress_label} range=[{min(times) if times else None}, "
