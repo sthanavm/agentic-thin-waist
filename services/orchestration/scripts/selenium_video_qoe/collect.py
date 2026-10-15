@@ -1495,6 +1495,13 @@ SCRIPT_TIMEOUT_S = 10
 # connection of our own, with a deadline this loop controls. Off by default, so
 # a run behaves exactly as before unless it is asked for. See inpage_log.py.
 INPAGE_ENABLED = os.environ.get("PRAMANA_INPAGE_LOG") == "1"
+
+# Strips this collector back to what a plain sampler does: read the <video>
+# element and, on YouTube, stats-for-nerds, once a second. No MSE/rVFC hooks,
+# no stream probe, no CDP byte ledger, no in-page log. Used to ask whether our
+# own instrumentation is what makes the page freeze; it removes the byte and
+# frame metrics, so a run under this flag is a diagnostic, not a measurement.
+MINIMAL_SAMPLER = os.environ.get("PRAMANA_MINIMAL_SAMPLER") == "1"
 INPAGE_READ_DEADLINE_S = float(os.environ.get("PRAMANA_INPAGE_DEADLINE_S", "2"))
 
 
@@ -2014,7 +2021,7 @@ def run_job(
         "tubi": ("tubitv.com", "adrise.tv", "cloudfront.net"),
     }
     cdp_suffixes = _CDP_HOSTS.get(app, ())
-    cdp_ledger = CdpByteLedger() if cdp_suffixes else None
+    cdp_ledger = CdpByteLedger() if (cdp_suffixes and not MINIMAL_SAMPLER) else None
     cdp_tick = 0
     user_data_dir = job.get("user_data_dir")
     guest_name = str(job.get("guest_name", "NetGent QoE Collector"))
@@ -2060,8 +2067,13 @@ def run_job(
         # *correct* ABR choice - so the rendition was capped by our viewport, not
         # by the shaped link. Setting the rect after launch makes the window the
         # size we actually asked for.
-        install_media_hook(driver)
-        install_stream_probe(driver, not job.get("disable_stream_probe"), app)
+        if MINIMAL_SAMPLER:
+            print(
+                f"[{app}] MINIMAL sampler: media hook, stream probe and CDP ledger OFF"
+            )
+        else:
+            install_media_hook(driver)
+            install_stream_probe(driver, not job.get("disable_stream_probe"), app)
         install_vendor_merge_flag(driver, bool(job.get("merge_vendor_stats", False)))
         install_codec_block(driver, list(job.get("block_codecs") or []))
         # A per-app viewport cap bounds the top of an adaptive ladder: the
@@ -2210,7 +2222,12 @@ def run_job(
             driver.set_script_timeout(SCRIPT_TIMEOUT_S)
         except Exception as exc:  # noqa: BLE001
             print(f"[{app}] could not set script timeout: {exc}")
-        if INPAGE_ENABLED and INPAGE is not None and not is_webrtc:
+        if (
+            INPAGE_ENABLED
+            and INPAGE is not None
+            and not is_webrtc
+            and not MINIMAL_SAMPLER
+        ):
             try:
                 addr = (driver.capabilities.get("goog:chromeOptions") or {}).get(
                     "debuggerAddress"

@@ -172,6 +172,53 @@ it is **not** a finding about the network or the service.
 Per-condition numbers are in `freeze_conditions.csv`. Reproduce with
 `run_freeze_tests.py <condition>`, which also runs `cpu_probe.py`.
 
+### Is the freeze ours, or was it always there?
+
+Four samplers, three trials each, same cell and same gate. If our
+instrumentation caused the freeze, removing it should remove the
+freeze.
+
+| sampler | what it is | YouTube B1 | YouTube max gap | Vimeo B1 |
+|---|---|---|---|---|
+| A | current full extractor (control) | 3/3 FAIL | 19.2-27.1 s | 0/3 FAIL |
+| B | uniform hooks + CDP drain + in-page log OFF | 3/3 FAIL | 15.2-25.7 s | 0/3 FAIL |
+| C | collector at 4ada635 (before uniform QoE hooks) | 3/3 FAIL | 18.9-26.6 s | 1/3 FAIL |
+| D | Jaber approach: plain video + stats-for-nerds at 2 s | 3/3 FAIL | 19.6-22.3 s | 0/3 FAIL |
+
+**YouTube fails in 12 of 12 runs, under every sampler.** Removing
+our hooks (B), going back to a collector written before the uniform
+QoE hooks existed (C), and sampling a different way entirely at 2 s
+(D) all freeze just as badly. **The instrumentation is not the
+cause.** Vimeo passed in all but one run throughout.
+
+Renderer CPU during the longest gap was 136-448 ms per wall second
+in every condition, well under one core, with host load1 8.1-13.0 -
+the same starvation signature as the `cpuload` test above.
+
+**And it predates all of it.** Recomputing B1 on 63 archived
+YouTube+Vimeo concurrent series from 2026-09-26, none of which
+carry our per-sample instrumentation:
+
+| app | B1 FAIL | worst gap | run length |
+|---|---|---|---|
+| youtube | **17/63** | 9.15 s | 34-120 s |
+| vimeo | 1/63 | 2.54 s | same |
+
+The same YouTube-only asymmetry, already there in September.
+
+What did change is the size. Archived gaps top out at 9.15 s;
+the runs above reach 15-27 s. That is **not** run length: every
+freeze above happens inside the first 60 s, which is the length
+of a typical archived run, and truncating the new runs to 60 s
+leaves the gaps unchanged. It is **not** our instrumentation,
+for the reason in the table. The remaining candidate is the host
+being more heavily loaded now than in September, which is
+consistent with load1 8-13 during these runs but **cannot be
+confirmed**: the archived runs recorded no host load, so there
+is nothing to compare against. That part stays open.
+
+Numbers in `freeze_origin.csv` and `archived_concurrent_b1.csv`.
+
 ### The concurrent cell: what is and is not synchronised
 
 A barrier holds both apps until each has a ready player, so

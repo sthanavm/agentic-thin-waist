@@ -1292,6 +1292,101 @@ def write_readme(out_root: Path, runs: list, meta_env: dict):
             "Per-condition numbers are in `freeze_conditions.csv`. Reproduce with",
             "`run_freeze_tests.py <condition>`, which also runs `cpu_probe.py`.",
         ]
+    fo = out_root / "freeze_origin.csv"
+    ar = out_root / "archived_concurrent_b1.csv"
+    if fo.exists():
+        import csv as _csv
+        import statistics as _st
+
+        rows = list(_csv.DictReader(fo.open()))
+        yt = [r for r in rows if r["app"] == "youtube"]
+        vm = [r for r in rows if r["app"] == "vimeo"]
+        L += [
+            "",
+            "### Is the freeze ours, or was it always there?",
+            "",
+            "Four samplers, three trials each, same cell and same gate. If our",
+            "instrumentation caused the freeze, removing it should remove the",
+            "freeze.",
+            "",
+            "| sampler | what it is | YouTube B1 | YouTube max gap | Vimeo B1 |",
+            "|---|---|---|---|---|",
+        ]
+        for c in ("A", "B", "C", "D"):
+            y = [r for r in yt if r["condition"] == c]
+            v = [r for r in vm if r["condition"] == c]
+            if not y:
+                continue
+            L.append(
+                "| %s | %s | %d/%d FAIL | %.1f-%.1f s | %d/%d FAIL |"
+                % (
+                    c,
+                    y[0]["sampler"],
+                    sum(1 for r in y if r["b1"] == "FAIL"),
+                    len(y),
+                    min(float(r["max_gap_s"]) for r in y),
+                    max(float(r["max_gap_s"]) for r in y),
+                    sum(1 for r in v if r["b1"] == "FAIL"),
+                    len(v),
+                )
+            )
+        nf = sum(1 for r in yt if r["b1"] == "FAIL")
+        L += [
+            "",
+            "**YouTube fails in %d of %d runs, under every sampler.** Removing"
+            % (nf, len(yt)),
+            "our hooks (B), going back to a collector written before the uniform",
+            "QoE hooks existed (C), and sampling a different way entirely at 2 s",
+            "(D) all freeze just as badly. **The instrumentation is not the",
+            "cause.** Vimeo passed in all but one run throughout.",
+            "",
+            "Renderer CPU during the longest gap was 136-448 ms per wall second",
+            "in every condition, well under one core, with host load1 8.1-13.0 -",
+            "the same starvation signature as the `cpuload` test above.",
+        ]
+        if ar.exists():
+            arows = list(_csv.DictReader(ar.open()))
+            ay = [r for r in arows if r["app"] == "youtube"]
+            av = [r for r in arows if r["app"] == "vimeo"]
+            L += [
+                "",
+                "**And it predates all of it.** Recomputing B1 on %d archived"
+                % len(ay),
+                "YouTube+Vimeo concurrent series from 2026-09-26, none of which",
+                "carry our per-sample instrumentation:",
+                "",
+                "| app | B1 FAIL | worst gap | run length |",
+                "|---|---|---|---|",
+                "| youtube | **%d/%d** | %.2f s | %.0f-%.0f s |"
+                % (
+                    sum(1 for r in ay if r["b1"] == "FAIL"),
+                    len(ay),
+                    max(float(r["max_gap_s"]) for r in ay),
+                    min(float(r["span_s"]) for r in ay),
+                    max(float(r["span_s"]) for r in ay),
+                ),
+                "| vimeo | %d/%d | %.2f s | same |"
+                % (
+                    sum(1 for r in av if r["b1"] == "FAIL"),
+                    len(av),
+                    max(float(r["max_gap_s"]) for r in av),
+                ),
+                "",
+                "The same YouTube-only asymmetry, already there in September.",
+                "",
+                "What did change is the size. Archived gaps top out at 9.15 s;",
+                "the runs above reach 15-27 s. That is **not** run length: every",
+                "freeze above happens inside the first 60 s, which is the length",
+                "of a typical archived run, and truncating the new runs to 60 s",
+                "leaves the gaps unchanged. It is **not** our instrumentation,",
+                "for the reason in the table. The remaining candidate is the host",
+                "being more heavily loaded now than in September, which is",
+                "consistent with load1 8-13 during these runs but **cannot be",
+                "confirmed**: the archived runs recorded no host load, so there",
+                "is nothing to compare against. That part stays open.",
+                "",
+                "Numbers in `freeze_origin.csv` and `archived_concurrent_b1.csv`.",
+            ]
     L += []
     if conc:
         L += [

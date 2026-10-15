@@ -146,6 +146,12 @@ STRICT_SHAPING = True  # raise on shaping-verification failure
 # expired 5.4s before the collector's last sample, losing the tail of the call.
 # Conferencing joins can need manual admission, so this is overridable per run.
 CAPTURE_OVERHEAD_S = int(os.environ.get("PRAMANA_CAPTURE_OVERHEAD_S", "45"))
+
+# How often every player signal is read. 1.0 s is the project default and what
+# every committed result used; it is overridable only so a diagnostic can
+# imitate a different sampler's rate. The B1 bar is defined against this value,
+# so a run that changes it is not comparable with the release set.
+SAMPLE_INTERVAL_S = float(os.environ.get("PRAMANA_SAMPLE_INTERVAL_S", "1.0"))
 # Skip the per-app capture split and plot rendering during the run, leaving them
 # to `replot_run(run_dir)` afterwards. Measured at 465-574s per cell on a 2-vCPU
 # host, that work is the dominant cost of a cell and needs no live meeting, so
@@ -775,7 +781,7 @@ def build_collector_jobs(
                 "display_num": display,
                 "out_path": f"/out/{app}_stats.jsonl",
                 "duration_seconds": cfg.duration_s,
-                "sample_interval_seconds": 1.0,
+                "sample_interval_seconds": SAMPLE_INTERVAL_S,
                 # needs_peer apps may require a human to admit the guest,
                 # so they get the same generous budget as the bot peer.
                 # Zoom is an HTML5-kind app that still needs a guest-join
@@ -1160,7 +1166,12 @@ def run_qoe_collectors(
     # collector reads that INSIDE the container, so the flag has to cross the
     # boundary. Without this the run looks normal and simply produces no
     # in-page log, which is indistinguishable from the sampler failing.
-    for _k in ("PRAMANA_INPAGE_LOG", "PRAMANA_INPAGE_DEADLINE_S"):
+    for _k in (
+        "PRAMANA_INPAGE_LOG",
+        "PRAMANA_INPAGE_DEADLINE_S",
+        "PRAMANA_MINIMAL_SAMPLER",
+        "PRAMANA_SAMPLE_INTERVAL_S",
+    ):
         _v = os.environ.get(_k)
         if _v is not None:
             args += ["--env", f"{_k}={_v}"]
@@ -3834,7 +3845,7 @@ def run_direct(cfg: ExperimentConfig) -> dict[str, Any]:
         "app_ladder_pinned": sorted((cfg.app_window or {}).keys()),
         # The rate every player signal was read at. A buffer or bitrate series
         # cannot be compared across apps or runs without it.
-        "sampling_interval_s": 1.0,
+        "sampling_interval_s": SAMPLE_INTERVAL_S,
         "merge_vendor_stats": bool(cfg.merge_vendor_stats),
         # Codec families hidden per app for this run. A run with a codec family
         # removed must never be pooled with one that had it available: the
