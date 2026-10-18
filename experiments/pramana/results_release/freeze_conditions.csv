@@ -1,0 +1,7 @@
+condition,what_it_tests,app,b1,sampler_gap_s,page_clock_gap_s,page_stalls,longtasks,longest_task_ms,renderer_cpu_ms_per_s_during_freeze,froze
+solo,youtube alone,youtube,PASS,1.203,0.645,1,37,267,478.7,no
+cpuload,youtube + 2 CPU burners (no 2nd browser),youtube,FAIL,28.940,18.654,26,235,13548,202.8,yes
+twitch,youtube + twitch,twitch,FAIL,2.801,1.637,11,198,1375,415.1,no
+twitch,youtube + twitch,youtube,FAIL,9.609,4.773,19,214,3824,356.2,yes
+pinned,youtube + vimeo (one core each),vimeo,PASS,1.097,0.758,3,232,646,500.8,no
+pinned,youtube + vimeo (one core each),youtube,FAIL,26.502,16.612,14,125,14494,381.6,yes
