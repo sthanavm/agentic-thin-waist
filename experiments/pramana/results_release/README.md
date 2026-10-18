@@ -35,14 +35,40 @@ for the whole app.
 |---|---|
 | apps | vimeo, youtube |
 | bandwidth | 1, 3, 6 Mbps |
-| latency | 50 ms (project baseline) |
+| latency | 20, 50, 150 ms (baseline 50 ms) |
 | AQM / CCA / loss | pfifo / cubic / 0 % |
 | duration | 180 s |
 | solo cells | 6 (one run per app x bandwidth) |
 | concurrent cells | 1 (both apps sharing one cap) |
-| run folders | **8** from **7** capture(s) |
+| run folders | **18** from **7** capture(s) |
 
-Latency and AQM sweeps are Step B and are not in this branch.
+The AQM sweep is a later pass and is not in this branch.
+
+### Step B, first pass: the latency sweep
+
+Solo runs only, 6 Mbps, at 20, 50 and 150 ms, two trials per cell.
+The plan and every band were pre-registered in
+`validation/THRESHOLDS.md` and committed **before** any of it was
+collected. The 2.0 s cadence bar was not changed.
+
+**The 50 ms cells replace the earlier Step A 6 Mbps / 50 ms solo
+runs.** They measure the same cell; the Step B pair is newer and was
+collected in the same session as the rest of the sweep, so the sweep
+is internally consistent. The Step A originals are not deleted - they
+are archived off-repo with their checksums, and their numbers remain
+in the earlier published release.
+
+**Only trial 1 of each cell is carried in this repo.** Trial 2 is
+archived, and its numbers are in `sweep_matrix.csv`, which marks every
+row with whether the folder is in the repo or archived. Charts and
+`samples.json` are kept in full for the runs that are here.
+
+Shaping was checked twice: the substrate reported the latency it
+applied (within 10 % on all 12 runs, the pre-registered L1 band), and
+independently the round-trip times measured from the captures sit at
+23, 53 and 153 ms for the three settings - the configured delay plus
+about 3 ms of real path. The second check matters because the first is
+the shaper reporting on itself.
 
 ### B1 across repeats of the concurrent cell
 
@@ -242,11 +268,11 @@ with that difference in mind.
 
 | metric | Vimeo | Youtube |
 |---|---|---|
-| 1 startup delay | **VERIFIED**<br><sub>4/4 run(s), all checks passed</sub> | **VERIFIED**<br><sub>4/4 run(s), all checks passed</sub> |
-| 2 buffer rebuffering | **VERIFIED**<br><sub>4/4 run(s), all checks passed (B4: no reference)</sub> | **FAILED**<br><sub>1 check failure(s): B1</sub> |
-| 3 delivered bitrate | **VERIFIED**<br><sub>4/4 run(s), all checks passed</sub> | **VERIFIED**<br><sub>4/4 run(s), all checks passed</sub> |
-| 4 switching | **VERIFIED**<br><sub>4/4 run(s), all checks passed</sub> | **VERIFIED**<br><sub>4/4 run(s), all checks passed</sub> |
-| 5 frame rate | **VERIFIED**<br><sub>4/4 run(s), all checks passed</sub> | **VERIFIED**<br><sub>4/4 run(s), all checks passed</sub> |
+| 1 startup delay | **VERIFIED**<br><sub>9/9 run(s), all checks passed</sub> | **VERIFIED**<br><sub>9/9 run(s), all checks passed</sub> |
+| 2 buffer rebuffering | **VERIFIED**<br><sub>9/9 run(s), all checks passed (B4: no reference)</sub> | **FAILED**<br><sub>1 check failure(s): B1</sub> |
+| 3 delivered bitrate | **VERIFIED**<br><sub>9/9 run(s), all checks passed</sub> | **VERIFIED**<br><sub>9/9 run(s), all checks passed</sub> |
+| 4 switching | **VERIFIED**<br><sub>9/9 run(s), all checks passed</sub> | **VERIFIED**<br><sub>9/9 run(s), all checks passed</sub> |
+| 5 frame rate | **VERIFIED**<br><sub>9/9 run(s), all checks passed</sub> | **VERIFIED**<br><sub>9/9 run(s), all checks passed</sub> |
 
 Dropped frames are carried as raw counts only; throughput is not a QoE
 metric and appears only in its own two charts and the cap check.
@@ -255,9 +281,9 @@ metric and appears only in its own two charts and the cap check.
 
 | | count |
 |---|---|
-| PASS | 179 |
+| PASS | 404 |
 | **FAIL** | **1** |
-| no reference (N/A) | 4 |
+| no reference (N/A) | 9 |
 
 ### Every failing check
 
@@ -271,12 +297,22 @@ metric and appears only in its own two charts and the cap check.
 |---|---|---|---|---|---|---|---|---|
 | vimeo_1Mbps_50ms_pfifo_trial1 | OK | 240p | 10458.0 | 0 | 0.2958 | 0.2156 | 2 | 23.97 |
 | vimeo_3Mbps_50ms_pfifo_trial1 | OK | 540p | 4294.0 | 1 | 1.1049 | 0.2156 | 4 | 23.88 |
-| vimeo_6Mbps_50ms_pfifo_trial1 | OK | 720p | 2772.0 | 0 | 2.3043 | 0.196 | 4 | 23.93 |
 | vimeo_6Mbps_50ms_pfifo_with_youtube_trial1 | OK | 540p | 7009.0 | 1 | 1.3596 | 0.196 | 5 | 22.64 |
+| vimeo_6Mbps_20ms_pfifo_trial1 | OK | 720p | 2471.0 | 0 | 2.3117 | 0.1895 | 5 | 23.95 |
+| vimeo_6Mbps_50ms_pfifo_trial1 | OK | 720p | 2924.0 | 0 | 2.2529 | 0.196 | 4 | 23.97 |
+| vimeo_6Mbps_150ms_pfifo_trial1 | OK | 720p | 3922.0 | 0 | 2.3231 | 0.196 | 4 | 23.97 |
+| vimeo_6Mbps_20ms_pfifo_trial2 | OK | 720p | 2671.0 | 0 | 2.2958 | 0.2026 | 4 | 23.96 |
+| vimeo_6Mbps_50ms_pfifo_trial2 | OK | 720p | 2412.0 | 0 | 2.2958 | 0.2025 | 4 | 23.95 |
+| vimeo_6Mbps_150ms_pfifo_trial2 | OK | 720p | 4248.0 | 0 | 2.2958 | 0.2026 | 4 | 23.98 |
 | youtube_1Mbps_50ms_pfifo_trial1 | OK | 720p | 20701.0 | 0 | 0.5475 | 0.1253 | 2 | 25.0 |
 | youtube_3Mbps_50ms_pfifo_trial1 | OK | 720p | 7800.0 | 0 | 0.5977 | 0.1179 | 0 | 25.0 |
 | youtube_6Mbps_50ms_pfifo_with_vimeo_trial1 | OK | 480p | 6484.0 | 3 | 0.3785 | 0.1308 | 1 | 24.81 |
-| youtube_6Mbps_50ms_pfifo_trial1 | OK | 480p | 5274.0 | 0 | 0.3168 | 0.1103 | 0 | 24.99 |
+| youtube_6Mbps_20ms_pfifo_trial1 | OK | 720p | 4635.0 | 0 | 0.6193 | 0.1173 | 0 | 24.98 |
+| youtube_6Mbps_50ms_pfifo_trial1 | OK | 720p | 4734.0 | 0 | 0.5985 | 0.1173 | 0 | 25.0 |
+| youtube_6Mbps_150ms_pfifo_trial1 | OK | 480p | 5409.0 | 0 | 0.3332 | 0.1173 | 0 | 25.0 |
+| youtube_6Mbps_20ms_pfifo_trial2 | OK | 720p | 4340.0 | 0 | 0.5736 | 0.1105 | 0 | 24.96 |
+| youtube_6Mbps_50ms_pfifo_trial2 | OK | 720p | 4595.0 | 0 | 0.6023 | 0.1174 | 0 | 25.0 |
+| youtube_6Mbps_150ms_pfifo_trial2 | OK | 480p | 5154.0 | 0 | 0.3332 | 0.1102 | 0 | 25.0 |
 
 ## The checks every run had to pass
 
@@ -328,7 +364,7 @@ python make_release.py results_release <run_dir> [<run_dir> ...]
 Repo commit, Chrome version, VM name and the shaping parameters for each
 run are in that run's `summary.json` under `run_metadata`.
 
-Built from commit `f62f493`, Chrome `Google Chrome 154.0.8037.57`, on `docker-vm-4`.
+Built from commit `f0eb92a`, Chrome `Google Chrome 154.0.8037.57`, on `docker-vm-4`.
 
 The collector deployed on the VM when these runs were collected is
 byte-identical (sha256) to this commit's

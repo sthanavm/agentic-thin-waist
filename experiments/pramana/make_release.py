@@ -217,6 +217,30 @@ def build_run(run_dir: Path, out_root: Path, meta_env: dict, app: str | None = N
     others = [a for a in run_apps if a != app]
     share = ("_with_" + "+".join(others)) if others else ""
     name = "%s_%gMbps_%gms_%s%s_trial%s" % (app, cap, lat, aqm, share, trial)
+    # Two runs with the same app, cap, latency, AQM and trial produce the same
+    # folder name even when they are different measurements taken on different
+    # days -- Step A's 6 Mbps/50 ms solo and Step B's 50 ms baseline trial 1
+    # collide exactly. Silently overwriting one with the other replaces
+    # committed, released data without a trace, so refuse instead and make the
+    # caller decide which measurement the folder is supposed to hold.
+    _target = out_root / app / name
+    _existing = _target / "summary.json"
+    if _existing.exists():
+        try:
+            _prev = json.loads(_existing.read_text())
+            _prev_src = (_prev.get("run_metadata") or {}).get("run_dir_on_vm")
+        except Exception:
+            _prev_src = None
+        if _prev_src and _prev_src != str(run_dir):
+            raise SystemExit(
+                "REFUSING to overwrite %s\n"
+                "  already built from: %s\n"
+                "  now asked to build from: %s\n"
+                "These are different runs with the same cell identity. Decide "
+                "which one the release should carry, or give one a distinct "
+                "name; do not let a rebuild silently replace the other."
+                % (name, _prev_src, run_dir)
+            )
     d = out_root / app / name
     d.mkdir(parents=True, exist_ok=True)
 
@@ -1044,6 +1068,76 @@ def metric_status(runs, app, metric):
     return "VERIFIED", note
 
 
+def write_sweep_matrix(out_root: Path, runs: list) -> None:
+    """One row per run: the cell it belongs to, its metrics, and its verdict.
+
+    The README prose says what happened; this is the same thing in a form that
+    can be sorted and diffed. Every column comes from that run's summary.json,
+    so the matrix cannot drift from the per-run files.
+    """
+    # Runs whose numbers belong in the matrix but whose folders are not carried
+    # in the repo (archived instead, to keep the tree small). Named explicitly
+    # so the matrix says which rows a reader can open and which they cannot.
+    archive_only = {
+        n.strip()
+        for n in (os.environ.get("PRAMANA_ARCHIVE_ONLY_NAMES") or "").split(",")
+        if n.strip()
+    }
+    cols = [
+        # The folder name first: app/cap/latency/aqm/trial alone do not
+        # identify a row -- a solo run and a concurrent run can agree on all
+        # five -- so without this two different runs look like duplicates.
+        "run",
+        "app",
+        "bandwidth_mbps",
+        "latency_ms",
+        "aqm",
+        "trial",
+        "verdict",
+        "in_repo",
+        "resolution_p",
+        "startup_delay_ms",
+        "rebuffer_events",
+        "video_mbps",
+        "audio_mbps",
+        "switch_count",
+        "rendered_fps",
+        "checks_pass",
+        "checks_fail",
+        "failed_check_ids",
+    ]
+    lines = [",".join(cols)]
+    for r in sorted(runs, key=lambda r: (r["app"], r["cap"], r["lat"], r["trial"])):
+        m = r["metrics"]
+        failed = sorted(k for k, v in r["checks"].items() if v[0] == "FAIL")
+        lines.append(
+            ",".join(
+                str(x)
+                for x in [
+                    r["name"],
+                    r["app"],
+                    "%g" % r["cap"],
+                    "%g" % r["lat"],
+                    r["aqm"],
+                    r["trial"],
+                    r["verdict"],
+                    "no (archived)" if r["name"] in archive_only else "yes",
+                    r.get("res_p") or "",
+                    m["1_startup_delay"]["startup_delay_ms"],
+                    m["2_buffer_rebuffering"]["rebuffer_events"],
+                    m["3_delivered_bitrate"]["video_mbps"],
+                    m["3_delivered_bitrate"]["audio_mbps"],
+                    m["4_switching"]["switch_count"],
+                    m["5_frame_rate"]["rendered_fps"],
+                    sum(1 for v in r["checks"].values() if v[0] == "PASS"),
+                    len(failed),
+                    ('"%s"' % " ".join(failed)) if failed else "",
+                ]
+            )
+        )
+    (out_root / "sweep_matrix.csv").write_text("\n".join(lines) + "\n")
+
+
 def write_readme(out_root: Path, runs: list, meta_env: dict):
     apps = sorted({r["app"] for r in runs})
     nfail = sum(1 for r in runs for v in r["checks"].values() if v[0] == "FAIL")
@@ -1095,14 +1189,41 @@ def write_readme(out_root: Path, runs: list, meta_env: dict):
         "| apps | %s |" % ", ".join(sorted({r["app"] for r in runs})),
         "| bandwidth | %s Mbps |"
         % ", ".join("%g" % c for c in sorted({r["cap"] for r in runs})),
-        "| latency | 50 ms (project baseline) |",
+        "| latency | %s ms (baseline 50 ms) |"
+        % ", ".join("%g" % x for x in sorted({r["lat"] for r in runs})),
         "| AQM / CCA / loss | pfifo / cubic / 0 % |",
         "| duration | 180 s |",
         "| solo cells | %d (one run per app x bandwidth) |" % n_solo,
         "| concurrent cells | %d (both apps sharing one cap) |" % n_conc,
         "| run folders | **%d** from **%d** capture(s) |" % (len(runs), n_caps),
         "",
-        "Latency and AQM sweeps are Step B and are not in this branch.",
+        "The AQM sweep is a later pass and is not in this branch.",
+        "",
+        "### Step B, first pass: the latency sweep",
+        "",
+        "Solo runs only, 6 Mbps, at 20, 50 and 150 ms, two trials per cell.",
+        "The plan and every band were pre-registered in",
+        "`validation/THRESHOLDS.md` and committed **before** any of it was",
+        "collected. The 2.0 s cadence bar was not changed.",
+        "",
+        "**The 50 ms cells replace the earlier Step A 6 Mbps / 50 ms solo",
+        "runs.** They measure the same cell; the Step B pair is newer and was",
+        "collected in the same session as the rest of the sweep, so the sweep",
+        "is internally consistent. The Step A originals are not deleted - they",
+        "are archived off-repo with their checksums, and their numbers remain",
+        "in the earlier published release.",
+        "",
+        "**Only trial 1 of each cell is carried in this repo.** Trial 2 is",
+        "archived, and its numbers are in `sweep_matrix.csv`, which marks every",
+        "row with whether the folder is in the repo or archived. Charts and",
+        "`samples.json` are kept in full for the runs that are here.",
+        "",
+        "Shaping was checked twice: the substrate reported the latency it",
+        "applied (within 10 % on all 12 runs, the pre-registered L1 band), and",
+        "independently the round-trip times measured from the captures sit at",
+        "23, 53 and 153 ms for the three settings - the configured delay plus",
+        "about 3 ms of real path. The second check matters because the first is",
+        "the shaper reporting on itself.",
     ]
     # Repeats of the concurrent cell, if their evidence file is present. The
     # release itself keeps one run per scenario, but a cadence failure seen
@@ -1606,6 +1727,7 @@ def main():
         w.writeheader()
         for r in rows:
             w.writerow(r)
+    write_sweep_matrix(out_root, runs)
     write_readme(out_root, runs, meta_env)
     nfail = sum(1 for r in runs for v in r["checks"].values() if v[0] == "FAIL")
     print("\n%d runs built; %d check failure(s)" % (len(runs), nfail))

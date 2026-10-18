@@ -1502,6 +1502,13 @@ INPAGE_ENABLED = os.environ.get("PRAMANA_INPAGE_LOG") == "1"
 # own instrumentation is what makes the page freeze; it removes the byte and
 # frame metrics, so a run under this flag is a diagnostic, not a measurement.
 MINIMAL_SAMPLER = os.environ.get("PRAMANA_MINIMAL_SAMPLER") == "1"
+
+# V8 CPU profile for the whole run, written beside the stats. Costs sampling
+# overhead, so a profiled run is a diagnostic and is never pooled with the
+# measurement set. Only meaningful alongside the in-page log, which supplies
+# the freeze window the profile is read against.
+TRACE_ENABLED = os.environ.get("PRAMANA_TRACE") == "1"
+TRACE_INTERVAL_US = int(os.environ.get("PRAMANA_TRACE_INTERVAL_US", "200"))
 INPAGE_READ_DEADLINE_S = float(os.environ.get("PRAMANA_INPAGE_DEADLINE_S", "2"))
 
 
@@ -2005,6 +2012,7 @@ def run_job(
     video_url = job["url"]
     display_num = str(job["display_num"])
     out_path = Path(job["out_path"])
+    profiler = None
     # In-page log state. Defined here rather than beside the setup so that every
     # path reaching the writer at the end of this function finds them bound.
     inpage = None
@@ -2100,6 +2108,13 @@ def run_job(
         if is_webrtc:
             install_webrtc_hook(driver)
             driver.set_script_timeout(15)
+        _delay = float(job.get("start_delay_s") or 0.0)
+        if _delay > 0:
+            # Held before navigation, not before play: the point of the
+            # start-order test is that the other app has the host to itself
+            # while this one has not even loaded.
+            print(f"[{app}] start_delay_s={_delay:.0f}: holding before navigation")
+            time.sleep(_delay)
         print(f"[{app}] navigating to {video_url}")
         driver.set_page_load_timeout(45)
         try:
@@ -2247,6 +2262,17 @@ def run_job(
                 ).connect()
                 inpage.evaluate(INPAGE.INPAGE_LOGGER_JS, 5.0)
                 print(f"[{app}] in-page log installed via {addr}")
+                if TRACE_ENABLED:
+                    try:
+                        profiler = INPAGE.V8Profiler(inpage, TRACE_INTERVAL_US)
+                        profiler.start()
+                        print(
+                            f"[{app}] V8 profiler started "
+                            f"({TRACE_INTERVAL_US} us sampling)"
+                        )
+                    except Exception as exc:  # noqa: BLE001
+                        print(f"[{app}] profiler unavailable: {exc}")
+                        profiler = None
             except Exception as exc:  # noqa: BLE001
                 print(f"[{app}] in-page log unavailable: {exc}")
                 inpage = None
@@ -2437,6 +2463,34 @@ def run_job(
                         next_tick = loop_t0 + tick_index * sample_interval_seconds
                 time.sleep(max(0.0, next_tick - now))
     finally:
+        # Anything fetched over our own CDP channel must be collected while the
+        # browser is still alive. driver.quit() below tears down the devtools
+        # endpoint, and a profile asked for afterwards comes back as a refused
+        # connection -- losing the whole run's profile.
+        if profiler is not None:
+            try:
+                _prof = profiler.stop()
+                if _prof is not None:
+                    _pp = out_path.parent / (
+                        out_path.stem.replace("_stats", "") + "_profile.json"
+                    )
+                    with open(_pp, "w") as _pfh:
+                        json.dump(_prof, _pfh)
+                    print(
+                        f"[{app}] V8 profile: {len(_prof.get('nodes') or [])} nodes, "
+                        f"{len(_prof.get('samples') or [])} samples -> {_pp}"
+                    )
+            except Exception as exc:  # noqa: BLE001
+                print(f"[{app}] could not write V8 profile: {exc}")
+            finally:
+                profiler = None
+        if inpage is not None:
+            try:
+                _got = inpage.read(INPAGE_READ_DEADLINE_S)
+                if _got and _got.get("events"):
+                    inpage_events.extend(_got["events"])
+            except Exception:
+                pass
         try:
             driver.quit()
         except Exception as exc:  # noqa: BLE001
@@ -2474,6 +2528,25 @@ def run_job(
                         inpage_events.extend(got["events"])
                 except Exception:
                     pass
+            # The profile must be collected BEFORE the channel is closed: it is
+            # fetched over that same connection, and closing first loses the
+            # whole run's profile to a refused reconnect.
+            if profiler is not None:
+                try:
+                    prof = profiler.stop()
+                    if prof is not None:
+                        pp = out_path.parent / (
+                            out_path.stem.replace("_stats", "") + "_profile.json"
+                        )
+                        with open(pp, "w") as pfh:
+                            json.dump(prof, pfh)
+                        print(
+                            f"[{app}] V8 profile: {len(prof.get('nodes') or [])} nodes, "
+                            f"{len(prof.get('samples') or [])} samples -> {pp}"
+                        )
+                except Exception as exc:  # noqa: BLE001
+                    print(f"[{app}] could not write V8 profile: {exc}")
+            if inpage is not None:
                 inpage.close()
             rep = INPAGE.stall_report(inpage_events)
             ip_path = out_path.parent / (

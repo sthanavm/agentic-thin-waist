@@ -152,6 +152,21 @@ CAPTURE_OVERHEAD_S = int(os.environ.get("PRAMANA_CAPTURE_OVERHEAD_S", "45"))
 # imitate a different sampler's rate. The B1 bar is defined against this value,
 # so a run that changes it is not comparable with the release set.
 SAMPLE_INTERVAL_S = float(os.environ.get("PRAMANA_SAMPLE_INTERVAL_S", "1.0"))
+
+
+def _start_delays() -> dict:
+    """Per-app hold before navigation, as {"vimeo": 60}.
+
+    Read when the job is built, NOT at import: a driver that sets the variable
+    after importing this module would otherwise be silently ignored, and the
+    run would look normal while testing nothing.
+    """
+    try:
+        return json.loads(os.environ.get("PRAMANA_START_DELAY_S") or "{}")
+    except ValueError:
+        return {}
+
+
 # Skip the per-app capture split and plot rendering during the run, leaving them
 # to `replot_run(run_dir)` afterwards. Measured at 465-574s per cell on a 2-vCPU
 # host, that work is the dominant cost of a cell and needs no live meeting, so
@@ -782,6 +797,7 @@ def build_collector_jobs(
                 "out_path": f"/out/{app}_stats.jsonl",
                 "duration_seconds": cfg.duration_s,
                 "sample_interval_seconds": SAMPLE_INTERVAL_S,
+                "start_delay_s": float(_start_delays().get(app, 0) or 0),
                 # needs_peer apps may require a human to admit the guest,
                 # so they get the same generous budget as the bot peer.
                 # Zoom is an HTML5-kind app that still needs a guest-join
@@ -1171,6 +1187,8 @@ def run_qoe_collectors(
         "PRAMANA_INPAGE_DEADLINE_S",
         "PRAMANA_MINIMAL_SAMPLER",
         "PRAMANA_SAMPLE_INTERVAL_S",
+        "PRAMANA_TRACE",
+        "PRAMANA_TRACE_INTERVAL_US",
     ):
         _v = os.environ.get(_k)
         if _v is not None:

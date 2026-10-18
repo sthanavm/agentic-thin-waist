@@ -61,6 +61,11 @@ INPAGE_LOGGER_JS = """
   function rec(kind) {
     try {
       var e = { i: ++seq, t: Math.round(now() * 10) / 10, k: kind, r: raf };
+      try {
+        // YouTube marks an ad on the player container; harmless elsewhere.
+        var mp = document.getElementById('movie_player');
+        if (mp) { e.ad = mp.classList.contains('ad-showing') ? 1 : 0; }
+      } catch (_) {}
       var v = document.querySelector('video');
       if (v) {
         e.ct = v.currentTime;
@@ -145,6 +150,28 @@ INPAGE_LOGGER_JS = """
   // was blocked. Instead the reader passes the last sequence number it holds:
   // only that acknowledges delivery. Entries at or below it are dropped,
   // everything above is returned and kept until a later read acknowledges it.
+  // Decoder capability: powerEfficient is the browser's own word for
+  // hardware-backed decode. Asked once, asynchronously, and recorded as an
+  // entry so it travels with the log rather than needing a separate read.
+  try {
+    if (navigator.mediaCapabilities && navigator.mediaCapabilities.decodingInfo) {
+      ['video/mp4; codecs="avc1.4d401f"',
+       'video/webm; codecs="vp9"',
+       'video/mp4; codecs="av01.0.05M.08"'].forEach(function (ct) {
+        navigator.mediaCapabilities.decodingInfo({
+          type: 'media-source',
+          video: { contentType: ct, width: 854, height: 480, bitrate: 1000000, framerate: 30 }
+        }).then(function (r) {
+          try {
+            buf.push({ i: ++seq, t: Math.round(now() * 10) / 10, k: 'codecinfo',
+                       ct: ct, sup: r.supported ? 1 : 0,
+                       smooth: r.smooth ? 1 : 0, pe: r.powerEfficient ? 1 : 0 });
+          } catch (_) {}
+        }).catch(function () {});
+      });
+    }
+  } catch (_) {}
+
   window.__pramana_log = {
     read: function (from) {
       from = from || 0;
@@ -291,6 +318,80 @@ class CdpChannel:
                 + [e["i"] for e in got["events"] if isinstance(e.get("i"), int)]
             )
         return got
+
+
+class V8Profiler:
+    """V8's sampling CPU profiler, driven over our own CDP channel.
+
+    Chosen over a full devtools.timeline trace because the question is "which
+    functions burned the main thread", and a sampling profile answers that
+    directly and cheaply: each sample names the running function, and V8 emits
+    distinct synthetic nodes for the garbage collector, idle and program time,
+    so GC is separable from script without parsing a trace stream.
+
+    What it cannot see: work that never enters V8. Layout, paint and media
+    decode appear as "(program)" or simply as absent samples, so this says
+    "script vs GC vs neither", not "layout vs decode". That limit is reported
+    rather than papered over.
+
+    Sampling costs something, so a profiled run is a diagnostic and must not be
+    pooled with unprofiled measurements.
+    """
+
+    def __init__(self, channel: "CdpChannel", interval_us: int = 200):
+        self.ch = channel
+        self.interval_us = interval_us
+        self.started = False
+        self.t0_wall = None
+        self.t0_page_ms = None
+
+    def _cmd(self, method, params=None, timeout_s=10.0):
+        import time as _t
+
+        with self.ch._lock:
+            if self.ch._ws is None:
+                self.ch.connect()
+            self.ch._id += 1
+            want = self.ch._id
+            self.ch._ws.send(
+                json.dumps({"id": want, "method": method, "params": params or {}})
+            )
+            deadline = _t.monotonic() + timeout_s
+            while _t.monotonic() < deadline:
+                self.ch._ws.settimeout(max(0.05, deadline - _t.monotonic()))
+                try:
+                    got = json.loads(self.ch._ws.recv())
+                except Exception:
+                    break
+                if got.get("id") == want:
+                    return got.get("result")
+            raise CdpTimeout("no reply to %s" % method)
+
+    def start(self):
+        self._cmd("Profiler.enable")
+        self._cmd("Profiler.setSamplingInterval", {"interval": self.interval_us})
+        # Anchor the profile to both clocks so a freeze window expressed in page
+        # time can be located in the profile afterwards.
+        self.t0_wall = time.time()
+        try:
+            self.t0_page_ms = float(self.ch.evaluate("performance.now()", 5.0) or 0)
+        except Exception:
+            self.t0_page_ms = None
+        self._cmd("Profiler.start")
+        self.started = True
+
+    def stop(self):
+        if not self.started:
+            return None
+        prof = self._cmd("Profiler.stop", timeout_s=60.0)
+        self.started = False
+        out = (prof or {}).get("profile")
+        if out is not None:
+            out["_anchor"] = {
+                "wall_at_start": self.t0_wall,
+                "page_ms_at_start": self.t0_page_ms,
+            }
+        return out
 
 
 def page_ws_url(debugger_address: str, match: str = None, timeout_s: float = 5.0):
