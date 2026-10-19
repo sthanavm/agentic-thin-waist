@@ -180,9 +180,24 @@ measured value for every one of them.
 
 ## pcaps
 
-Not committed. Each run has a full `capture.pcap` and a per-app pcap
-containing only packets to or from IPs attributed to that app; both are
-listed with size and SHA-256 in `pcap_manifest.csv`.
+Each run has a full `capture.pcap` and a per-app pcap containing only
+packets to or from IPs attributed to that app. Both are listed with
+size and SHA-256 in `pcap_manifest.csv`.
+
+**What is in this repository:** the per-app captures for the release
+runs, under `pcaps/`, one per app per run, each at or under 95 MB.
+The whole-capture files are deliberately **not** committed -- they
+would duplicate the per-app splits at several times the size.
+
+**What is not:** any per-app capture over 95 MB. At the time of
+writing that is `vimeo_10Mbps_50ms_pfifo_trial541.vimeo.pcap`
+(111.2 MB). It is listed in `pcap_manifest.csv` with its checksum and
+ships in the `RELEASE_FOR_JABER/` folder alongside this tree instead.
+
+The committed captures were scanned before commit: no HTTP basic or
+bearer headers, no password, api-key or secret assignments, no AWS or
+GitHub token shapes, no private keys, and no cleartext HTTP requests.
+Both players run over TLS on 443.
 
 ## Reproducing
 
