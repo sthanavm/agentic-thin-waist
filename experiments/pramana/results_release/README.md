@@ -33,14 +33,14 @@ for the whole app.
 
 | | |
 |---|---|
-| apps | twitch, vimeo, youtube |
+| apps | vimeo, youtube |
 | bandwidth | 1, 3, 6, 10 Mbps |
 | latency | 20, 50, 150 ms (baseline 50 ms) |
 | AQM / CCA / loss | pfifo / cubic / 0 % |
 | duration | 180 s |
 | solo cells | 8 (one run per app x bandwidth) |
-| concurrent cells | 3 (both apps sharing one cap) |
-| run folders | **19** from **11** capture(s) |
+| concurrent cells | 2 (both apps sharing one cap) |
+| run folders | **16** from **10** capture(s) |
 
 The AQM sweep is a later pass and is not in this branch.
 
@@ -85,9 +85,6 @@ contention. Measured on this cell:
 | youtube | 180 | 179.0 s | +1.6 s |
 | vimeo | 180 | 179.0 s | +7317.1 s |
 | youtube | 180 | 179.0 s | +7317.4 s |
-| vimeo | 180 | 179.0 s | +8963.7 s |
-| youtube | 180 | 179.0 s | +8964.1 s |
-| twitch | 180 | 179.0 s | +8964.1 s |
 
 Each app's own metrics are computed over its own window. The
 shared-cap check does not assume equal windows: it sums the apps
@@ -96,13 +93,13 @@ with that difference in mind.
 
 ## Status: app x metric
 
-| metric | Twitch | Vimeo | Youtube |
-|---|---|---|---|
-| 1 startup delay | **VERIFIED**<br><sub>1/1 run(s), all checks passed</sub> | **VERIFIED**<br><sub>9/9 run(s), all checks passed</sub> | **VERIFIED**<br><sub>9/9 run(s), all checks passed</sub> |
-| 2 buffer rebuffering | **VERIFIED**<br><sub>1/1 run(s), all checks passed (B4: no reference)</sub> | **VERIFIED**<br><sub>9/9 run(s), all checks passed (B4: no reference)</sub> | **VERIFIED**<br><sub>9/9 run(s), all checks passed</sub> |
-| 3 delivered bitrate | **UNKNOWN**<br><sub>produced on 0 of 1 run(s)</sub> | **VERIFIED**<br><sub>9/9 run(s), all checks passed</sub> | **VERIFIED**<br><sub>9/9 run(s), all checks passed</sub> |
-| 4 switching | **VERIFIED**<br><sub>1/1 run(s), all checks passed</sub> | **VERIFIED**<br><sub>9/9 run(s), all checks passed</sub> | **VERIFIED**<br><sub>9/9 run(s), all checks passed</sub> |
-| 5 frame rate | **VERIFIED**<br><sub>1/1 run(s), all checks passed</sub> | **VERIFIED**<br><sub>9/9 run(s), all checks passed</sub> | **VERIFIED**<br><sub>9/9 run(s), all checks passed</sub> |
+| metric | Vimeo | Youtube |
+|---|---|---|
+| 1 startup delay | **VERIFIED**<br><sub>8/8 run(s), all checks passed</sub> | **VERIFIED**<br><sub>8/8 run(s), all checks passed</sub> |
+| 2 buffer rebuffering | **VERIFIED**<br><sub>8/8 run(s), all checks passed (B4: no reference)</sub> | **VERIFIED**<br><sub>8/8 run(s), all checks passed</sub> |
+| 3 delivered bitrate | **VERIFIED**<br><sub>8/8 run(s), all checks passed</sub> | **VERIFIED**<br><sub>8/8 run(s), all checks passed</sub> |
+| 4 switching | **VERIFIED**<br><sub>8/8 run(s), all checks passed</sub> | **VERIFIED**<br><sub>8/8 run(s), all checks passed</sub> |
+| 5 frame rate | **VERIFIED**<br><sub>8/8 run(s), all checks passed</sub> | **VERIFIED**<br><sub>8/8 run(s), all checks passed</sub> |
 
 Dropped frames are carried as raw counts only; throughput is not a QoE
 metric and appears only in its own two charts and the cap check.
@@ -111,40 +108,32 @@ metric and appears only in its own two charts and the cap check.
 
 | | count |
 |---|---|
-| PASS | 423 |
-| **FAIL** | **2** |
-| no reference (N/A) | 12 |
+| PASS | 360 |
+| **FAIL** | **0** |
+| no reference (N/A) | 8 |
 
-### Every failing check
-
-| run | check | detail |
-|---|---|---|
-| twitch_6Mbps_50ms_pfifo_with_youtube+vimeo_trial531 | **R2** | video=None audio=None |
-| twitch_6Mbps_50ms_pfifo_with_youtube+vimeo_trial531 | **R3** | mse_video_bytes=0.0 |
+No check failed.
 
 ## Per-run results
 
 | run | verdict | res | startup (ms) | rebuffers | video Mbps | audio Mbps | switches | fps |
 |---|---|---|---|---|---|---|---|---|
-| twitch_6Mbps_50ms_pfifo_with_youtube+vimeo_trial531 | OK | 720p | 8738.0 | 0 | None | None | 1 | 29.5 |
-| vimeo_1Mbps_50ms_pfifo_trial611 | OK | 240p | 10528.0 | 0 | 0.2861 | 0.2091 | 2 | 24.01 |
-| vimeo_3Mbps_50ms_pfifo_with_youtube_trial521 | OK | 360p | 6744.0 | 0 | 1.0222 | 0.196 | 4 | 23.99 |
-| vimeo_3Mbps_50ms_pfifo_trial621 | OK | 540p | 4040.0 | 0 | 1.1016 | 0.196 | 3 | 23.99 |
-| vimeo_6Mbps_50ms_pfifo_with_youtube_trial401 | OK | 720p | 3803.0 | 0 | 1.9889 | 0.1895 | 4 | 23.99 |
-| vimeo_6Mbps_50ms_pfifo_with_youtube+twitch_trial531 | OK | 240p | 4450.0 | 0 | 0.395 | 0.196 | 5 | 23.99 |
-| vimeo_6Mbps_50ms_pfifo_trial641 | OK | 720p | 2585.0 | 0 | 2.2958 | 0.196 | 5 | 24.0 |
-| vimeo_6Mbps_20ms_pfifo_trial661 | OK | 720p | 2225.0 | 0 | 2.3382 | 0.196 | 5 | 24.01 |
-| vimeo_6Mbps_150ms_pfifo_trial681 | OK | 720p | 3813.0 | 0 | 2.7937 | 0.2026 | 3 | 24.01 |
-| vimeo_10Mbps_50ms_pfifo_trial541 | OK | 1080p | 2055.0 | 0 | 4.2685 | 0.2026 | 5 | 24.0 |
-| youtube_1Mbps_50ms_pfifo_trial601 | OK | 360p | 18857.0 | 1 | 0.2111 | 0.1333 | 4 | 25.01 |
-| youtube_3Mbps_50ms_pfifo_with_vimeo_trial521 | OK | 480p | 11620.0 | 0 | 0.3058 | 0.1027 | 0 | 25.0 |
-| youtube_3Mbps_50ms_pfifo_trial551 | OK | 720p | 7610.0 | 0 | 0.615 | 0.1173 | 0 | 25.0 |
-| youtube_6Mbps_50ms_pfifo_with_vimeo_trial401 | OK | 480p | 5408.0 | 0 | 0.3607 | 0.1244 | 0 | 25.01 |
-| youtube_6Mbps_50ms_pfifo_with_vimeo+twitch_trial531 | OK | 480p | 11677.0 | 0 | 0.3607 | 0.1244 | 0 | 25.0 |
-| youtube_6Mbps_50ms_pfifo_trial631 | OK | 720p | 4512.0 | 0 | 0.6559 | 0.1244 | 0 | 25.0 |
-| youtube_6Mbps_20ms_pfifo_trial651 | OK | 720p | 4047.0 | 0 | 0.6751 | 0.132 | 0 | 24.98 |
-| youtube_6Mbps_150ms_pfifo_trial671 | OK | 720p | 4618.0 | 0 | 0.6168 | 0.1173 | 0 | 25.0 |
-| youtube_10Mbps_50ms_pfifo_trial541 | OK | 720p | 3179.0 | 0 | 0.6945 | 0.132 | 0 | 24.99 |
+| vimeo_solo_1Mbps_50ms_pfifo | OK | 240p | 10528.0 | 0 | 0.2861 | 0.2091 | 2 | 24.01 |
+| vimeo_with-youtube_3Mbps_50ms_pfifo | OK | 360p | 6744.0 | 0 | 1.0222 | 0.196 | 4 | 23.99 |
+| vimeo_solo_3Mbps_50ms_pfifo | OK | 540p | 4040.0 | 0 | 1.1016 | 0.196 | 3 | 23.99 |
+| vimeo_with-youtube_6Mbps_50ms_pfifo | OK | 720p | 3803.0 | 0 | 1.9889 | 0.1895 | 4 | 23.99 |
+| vimeo_solo_6Mbps_50ms_pfifo | OK | 720p | 2585.0 | 0 | 2.2958 | 0.196 | 5 | 24.0 |
+| vimeo_solo_6Mbps_20ms_pfifo | OK | 720p | 2225.0 | 0 | 2.3382 | 0.196 | 5 | 24.01 |
+| vimeo_solo_6Mbps_150ms_pfifo | OK | 720p | 3813.0 | 0 | 2.7937 | 0.2026 | 3 | 24.01 |
+| vimeo_solo_10Mbps_50ms_pfifo | OK | 1080p | 2055.0 | 0 | 4.2685 | 0.2026 | 5 | 24.0 |
+| youtube_solo_1Mbps_50ms_pfifo | OK | 360p | 18857.0 | 1 | 0.2111 | 0.1333 | 4 | 25.01 |
+| youtube_with-vimeo_3Mbps_50ms_pfifo | OK | 480p | 11620.0 | 0 | 0.3058 | 0.1027 | 0 | 25.0 |
+| youtube_solo_3Mbps_50ms_pfifo | OK | 720p | 7610.0 | 0 | 0.615 | 0.1173 | 0 | 25.0 |
+| youtube_with-vimeo_6Mbps_50ms_pfifo | OK | 480p | 5408.0 | 0 | 0.3607 | 0.1244 | 0 | 25.01 |
+| youtube_solo_6Mbps_50ms_pfifo | OK | 720p | 4512.0 | 0 | 0.6559 | 0.1244 | 0 | 25.0 |
+| youtube_solo_6Mbps_20ms_pfifo | OK | 720p | 4047.0 | 0 | 0.6751 | 0.132 | 0 | 24.98 |
+| youtube_solo_6Mbps_150ms_pfifo | OK | 720p | 4618.0 | 0 | 0.6168 | 0.1173 | 0 | 25.0 |
+| youtube_solo_10Mbps_50ms_pfifo | OK | 720p | 3179.0 | 0 | 0.6945 | 0.132 | 0 | 24.99 |
 
 ## The checks every run had to pass
 

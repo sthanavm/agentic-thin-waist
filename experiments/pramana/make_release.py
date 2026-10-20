@@ -215,8 +215,13 @@ def build_run(run_dir: Path, out_root: Path, meta_env: dict, app: str | None = N
     # the same app and cap -- they are different measurements (a shared link
     # versus the app alone) and one would silently overwrite the other.
     others = [a for a in run_apps if a != app]
-    share = ("_with_" + "+".join(others)) if others else ""
-    name = "%s_%gMbps_%gms_%s%s_trial%s" % (app, cap, lat, aqm, share, trial)
+    # Name the scenario, not the attempt. A folder should say what it is --
+    # which app, alone or beside which others, at what link and queue -- so a
+    # reader never has to decode a trial number that means nothing to them.
+    # One folder per scenario; a second run of the same scenario collides and
+    # is refused below rather than silently overwriting.
+    scope = ("with-" + "+".join(others)) if others else "solo"
+    name = "%s_%s_%gMbps_%gms_%s" % (app, scope, cap, lat, aqm)
     # Two runs with the same app, cap, latency, AQM and trial produce the same
     # folder name even when they are different measurements taken on different
     # days -- Step A's 6 Mbps/50 ms solo and Step B's 50 ms baseline trial 1
