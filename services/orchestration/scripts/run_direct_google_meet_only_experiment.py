@@ -87,10 +87,16 @@ def build_experiment(
     browser_resolution: tuple[int, int],
     meet_url: str,
     latency_ms: int = 100,
+    ctp_name: str = "",
+    ctp_pnat: str = "",
 ) -> dict[str, Any]:
     window_width, window_height = browser_resolution
+    # Empty, not "-noctp": the baseline experiment_id (and therefore its pcap
+    # filename) must stay exactly what it was before CTP support existed, or
+    # every existing dataset/notebook that names it directly breaks.
+    ctp_tag = f"-{ctp_name}" if ctp_name.strip() else ""
     return {
-        "experiment_id": f"google-meet-only-{capacity_mbps}mbps-{latency_ms}ms-pfifo",
+        "experiment_id": f"google-meet-only-{capacity_mbps}mbps-{latency_ms}ms-pfifo{ctp_tag}",
         "applications": list(APPS),
         "execution_mode": "concurrent",
         "capacity_mbps": capacity_mbps,
@@ -103,6 +109,9 @@ def build_experiment(
         "duration_seconds": duration_seconds,
         "browser_resolution": f"{window_width}x{window_height}",
         "google_meet_url": meet_url,
+        "ctp_file": ctp_name or None,
+        "ctp_direction": "download" if ctp_name.strip() else None,
+        "ctp_pnat": ctp_pnat if ctp_name.strip() else None,
     }
 
 
@@ -153,6 +162,36 @@ def start_bot_peer(
         "bot_peer.py",
     )
     return container
+
+
+def start_ctp_replay(
+    container: str, ctp_name: str, ctp_host_dir: str, ctp_pnat: str, seconds: int
+) -> dict[str, Any]:
+    """Replay the download side of one CTP profile through the bottleneck.
+
+    Injected from ns2 on veth3 inside the worker container, so the packets
+    cross the same shaped veth4/veth2 path the Meet downlink uses. The
+    worker's own /replay endpoint is not used here: it demands a matching
+    upload/<name>.pcap and starts both directions, and this run only wants
+    the downlink loaded. --loop=0 repeats the profile for the full window;
+    without it, a measurement longer than one profile (60s) would finish the
+    window partly uncontended.
+    """
+    source = Path(ctp_host_dir) / f"{ctp_name}.pcap"
+    if not source.is_file():
+        raise RuntimeError(f"CTP file does not exist: {source}")
+    command = (
+        f"ip netns exec ns2 tcpreplay-edit -i veth3 "
+        f"--pnat={ctp_pnat} --loop=0 --duration={seconds} "
+        f"/ctpsrc/{ctp_name}.pcap"
+    )
+    docker("exec", "--detach", container, "sh", "-c", command)
+    return {
+        "ctp_file": ctp_name,
+        "ctp_direction": "download",
+        "ctp_pnat": ctp_pnat,
+        "ctp_replay_seconds": seconds,
+    }
 
 
 def read_bot_status(result_dir: Path) -> dict[str, Any] | None:
@@ -319,10 +358,19 @@ def run_one_tier(
     result_subdir: str,
     nest_mbps: bool = True,
     bot_clip_resolution: tuple[int, int] | None = None,
+    ctp_name: str = "",
+    ctp_host_dir: str = "",
+    ctp_pnat: str = "169.231.0.0/16:172.16.1.20",
 ) -> int:
     video_urls = {"google_meet": meet_url}
     experiment = build_experiment(
-        capacity_mbps, duration_seconds, browser_resolution, meet_url, latency_ms
+        capacity_mbps,
+        duration_seconds,
+        browser_resolution,
+        meet_url,
+        latency_ms,
+        ctp_name,
+        ctp_pnat,
     )
     result_dir = result_dir_for(capacity_mbps, result_subdir, nest_mbps)
 
@@ -330,6 +378,7 @@ def run_one_tier(
     for artifact_name in (
         "google_meet_stats.jsonl",
         "bot_status.json",
+        "ctp.json",
         f"{experiment['experiment_id']}.pcap",
         "failure.log",
     ):
@@ -372,6 +421,11 @@ def run_one_tier(
             f"{result_dir}:/out",
             "--volume",
             f"{ctp_temp.name}:/ctp",
+            *(
+                ["--volume", f"{Path(ctp_host_dir).resolve()}:/ctpsrc:ro"]
+                if ctp_name.strip()
+                else []
+            ),
             "--volume",
             f"{REPO_ROOT / 'shared'}:/shared:ro",
             "--volume",
@@ -444,6 +498,26 @@ def run_one_tier(
             },
         )
         capture_id = capture["capture_id"]
+
+        ctp_status: dict[str, Any] = {}
+        if ctp_name.strip():
+            replay_seconds = max(240, duration_seconds + 60)
+            try:
+                ctp_status = start_ctp_replay(
+                    container, ctp_name, ctp_host_dir, ctp_pnat, replay_seconds
+                )
+                ctp_status["ctp_started_ts"] = time.time()
+                print(
+                    f"[{capacity_mbps}mbps]     CTP replay started alongside "
+                    f"the capture: {ctp_name} (download only, "
+                    f"{replay_seconds}s, looped)"
+                )
+            except Exception as exc:  # noqa: BLE001 - a bad replay must not
+                # fail the whole run; it must just not be mistaken for a
+                # clean baseline, so it's recorded and surfaced instead.
+                ctp_status["ctp_error"] = str(exc)
+                print(f"[{capacity_mbps}mbps]     CTP replay could not start: {exc}")
+            write_json(result_dir / "ctp.json", ctp_status)
         time.sleep(1)
 
         print(
@@ -528,6 +602,9 @@ def main(
     result_subdir: str,
     nest_mbps: bool = True,
     bot_clip_resolution: tuple[int, int] | None = None,
+    ctp_name: str = "",
+    ctp_host_dir: str = "",
+    ctp_pnat: str = "169.231.0.0/16:172.16.1.20",
 ) -> int:
     exit_code = 0
     for capacity_mbps in capacities_mbps:
@@ -544,6 +621,9 @@ def main(
                 result_subdir,
                 nest_mbps,
                 bot_clip_resolution,
+                ctp_name,
+                ctp_host_dir,
+                ctp_pnat,
             )
             or exit_code
         )
@@ -643,6 +723,27 @@ def parse_args() -> argparse.Namespace:
         "(e.g. 1080p or WIDTHxHEIGHT); default is the clip generator's own "
         "640x480 default",
     )
+    parser.add_argument(
+        "--ctp-name",
+        default="",
+        help="CTP profile file name, without the .pcap suffix, to replay as "
+        "background cross-traffic through the shaped downlink while Meet "
+        "runs. Leave unset for the no-cross-traffic baseline.",
+    )
+    parser.add_argument(
+        "--ctp-host-dir",
+        default="",
+        help="Directory on this host containing <--ctp-name>.pcap. Required "
+        "if --ctp-name is set.",
+    )
+    parser.add_argument(
+        "--ctp-pnat",
+        default="169.231.0.0/16:172.16.1.20",
+        help="Address rewrite applied to the CTP replay, so the capture can "
+        "be split between application traffic and cross-traffic by "
+        "destination IP (default: %(default)s). Keep it different from the "
+        "application's own address.",
+    )
     return parser.parse_args()
 
 
@@ -650,6 +751,8 @@ if __name__ == "__main__":
     args = parse_args()
     if args.no_nest_mbps and len(args.capacities_mbps) != 1:
         raise SystemExit("--no-nest-mbps requires exactly one --capacities-mbps value")
+    if args.ctp_name.strip() and not args.ctp_host_dir.strip():
+        raise SystemExit("--ctp-host-dir is required when --ctp-name is set")
     raise SystemExit(
         main(
             args.capacities_mbps,
@@ -663,5 +766,8 @@ if __name__ == "__main__":
             args.result_subdir,
             not args.no_nest_mbps,
             args.bot_clip_resolution,
+            args.ctp_name,
+            args.ctp_host_dir,
+            args.ctp_pnat,
         )
     )
