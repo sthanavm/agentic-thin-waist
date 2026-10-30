@@ -1,3 +1,4 @@
+import os
 import pytest
 import subprocess
 from unittest.mock import patch, MagicMock, call
@@ -679,6 +680,59 @@ class TestCaptureEndpoint:
     def test_capture_delete_not_found(self):
         resp = client.delete("/capture/nonexistent-id")
         assert resp.status_code == 404
+
+    @patch("substrate.main._get_interfaces", return_value=["veth2"])
+    @patch("subprocess.Popen")
+    def test_capture_delete_removes_staging_pcap(self, mock_popen, _ifaces):
+        """DELETE must reclaim the staging file, not just stop the process.
+
+        It previously only stopped tcpdump and dropped the session, leaving the
+        pcap in CAPTURE_DIR forever; callers keep their own downloaded copy, so
+        nothing ever reclaimed the worker-side one.
+        """
+        mock_proc = MagicMock()
+        mock_proc.poll.return_value = None
+        mock_popen.return_value = mock_proc
+
+        start_resp = client.post(
+            "/capture",
+            json={
+                "interface": "veth2",
+                "capture_filter": "",
+                "filename": "to_reclaim",
+            },
+        )
+        capture_id = start_resp.json()["capture_id"]
+        pcap_path = main_module.ACTIVE_CAPTURES[capture_id]["pcap_path"]
+
+        # tcpdump is mocked, so stand in for the file it would have written.
+        os.makedirs(os.path.dirname(pcap_path), exist_ok=True)
+        with open(pcap_path, "wb") as fh:
+            fh.write(b"\xd4\xc3\xb2\xa1" + b"\x00" * 60)
+        assert os.path.exists(pcap_path)
+
+        del_resp = client.delete(f"/capture/{capture_id}")
+        assert del_resp.status_code == 200
+        assert del_resp.json()["status"] == "stopped"
+        assert del_resp.json()["pcap_removed"] is True
+        assert not os.path.exists(pcap_path), "staging pcap survived the delete"
+
+    @patch("substrate.main._get_interfaces", return_value=["veth2"])
+    @patch("subprocess.Popen")
+    def test_capture_delete_survives_missing_file(self, mock_popen, _ifaces):
+        """A capture whose file is already gone still deletes cleanly."""
+        mock_proc = MagicMock()
+        mock_proc.poll.return_value = None
+        mock_popen.return_value = mock_proc
+
+        start_resp = client.post(
+            "/capture",
+            json={"interface": "veth2", "capture_filter": "", "filename": "absent"},
+        )
+        capture_id = start_resp.json()["capture_id"]
+        del_resp = client.delete(f"/capture/{capture_id}")
+        assert del_resp.status_code == 200
+        assert del_resp.json()["pcap_removed"] is True
 
 
 # ── /replay endpoint ──────────────────────────────────────────────────────────

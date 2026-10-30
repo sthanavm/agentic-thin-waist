@@ -1151,7 +1151,26 @@ def delete_capture(capture_id: str):
 
     del ACTIVE_CAPTURES[capture_id]
 
-    return {"capture_id": capture_id, "status": "stopped"}
+    # Drop the staging pcap too. Without this the endpoint stops the capture but
+    # leaves its file in CAPTURE_DIR forever: callers download their own copy and
+    # then DELETE, so nothing ever reclaims the worker-side one and the directory
+    # grows without bound (observed at ~4.6 GB across 83 orphaned captures).
+    removed = False
+    pcap_path = session.get("pcap_path")
+    if pcap_path:
+        try:
+            os.remove(pcap_path)
+            removed = True
+        except FileNotFoundError:
+            removed = True  # already gone: the desired end state either way
+        except OSError as exc:  # keep the stop successful even if unlink fails
+            print(f"warning: could not remove staging pcap {pcap_path}: {exc}")
+
+    return {
+        "capture_id": capture_id,
+        "status": "stopped",
+        "pcap_removed": removed,
+    }
 
 
 # =========================
