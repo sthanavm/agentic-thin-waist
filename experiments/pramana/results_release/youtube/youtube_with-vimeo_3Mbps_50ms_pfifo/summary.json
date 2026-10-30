@@ -1,0 +1,202 @@
+{
+ "run": "youtube_with-vimeo_3Mbps_50ms_pfifo",
+ "app": "youtube",
+ "verdict": "OK",
+ "run_metadata": {
+  "repo_commit": "d1f5bf1",
+  "chrome_version": "Google Chrome 154.0.8037.57",
+  "vm": "docker-vm-4 8vCPU 7.9GB Ubuntu-24.04.4",
+  "run_dir_on_vm": "/home/student/sthanav-agentic-thin-waist/experiments/pramana/results/pramana_runs/youtube+vimeo_3mbps_50ms_0pct_pfifo_cubic_concurrent2_t521_26971225ba",
+  "shaping": {
+   "bandwidth_mbps": 3.0,
+   "latency_ms": 50.0,
+   "aqm": "pfifo",
+   "loss_pct": 0.0,
+   "cca": "cubic",
+   "duration_s": 180
+  },
+  "sampling_interval_s": 1.0,
+  "measured_element_box": "1331x749",
+  "host": {},
+  "n_samples": 180,
+  "window_epoch": [
+   1792355161.6090949,
+   1792355340.600244
+  ]
+ },
+ "metrics": {
+  "1_startup_delay": {
+   "startup_delay_ms": 11620.0,
+   "initial_buffering_ms": 1067.0,
+   "basis": "requestVideoFrameCallback first presentationTime"
+  },
+  "2_buffer_rebuffering": {
+   "buffer_level_secs": {
+    "mean": 67.3774,
+    "min": 10.063261000000011,
+    "max": 114.038022,
+    "basis": "video.buffered end - currentTime, sampled once per interval"
+   },
+   "rebuffer_events": 0,
+   "rebuffer_duration_ms": 0,
+   "basis": "media events (waiting -> playing), initial buffering excluded [1 initial span(s), 1067ms, reported as startup]"
+  },
+  "3_delivered_bitrate": {
+   "video_mbps": 0.3058,
+   "audio_mbps": 0.1027,
+   "mse_video_bytes": 9874338.0,
+   "mse_audio_bytes": 3433384.0,
+   "basis": "mse_appended_bytes(video sourcebuffer)",
+   "video_mbps_per_media_second": 0.3601,
+   "media_seconds_appended": 151.2,
+   "window_seconds": 179.0
+  },
+  "4_switching": {
+   "switch_count": 0,
+   "switch_events": [],
+   "basis": "decoded_height + sourcebuffer mime history"
+  },
+  "5_frame_rate": {
+   "rendered_fps": 25.0,
+   "decoded_fps": 25.0,
+   "basis": "requestVideoFrameCallback.presentedFrames"
+  }
+ },
+ "raw_only": {
+  "dropped_video_frames": 12.0,
+  "decoded_video_frames": 5079.0,
+  "presented_video_frames": 5065.0
+ },
+ "throughput_mbps_not_a_qoe_metric": {
+  "download": {
+   "peak_mbps": 2.998,
+   "mean_mbps": 0.4343
+  },
+  "upload": {
+   "peak_mbps": 0.0588,
+   "mean_mbps": 0.0085
+  },
+  "download_active": {
+   "mbps": 1.6618,
+   "seconds": 47,
+   "window_seconds": 180,
+   "idle_floor_mbps": 0.05
+  },
+  "link_shared": {
+   "peak_mbps": 2.998,
+   "mean_mbps": 1.6799,
+   "apps": [
+    "youtube",
+    "vimeo"
+   ]
+  }
+ },
+ "byte_references": {
+  "cdp_received_bytes": 13317335,
+  "cdp_finished_bytes_diagnostic": 13317799,
+  "cdp_open_at_end_bytes_diagnostic": 0
+ },
+ "codec": {
+  "declared_mime": "video/mp4; codecs=\"av01.0.01M.08\"",
+  "decoding": "av01.0.04M.08",
+  "init_video_configs": 1
+ },
+ "checks": {
+  "S1": [
+   "PASS",
+   "startup_delay_ms=11620.0"
+  ],
+  "S2": [
+   "PASS",
+   "11620.0 < 180000.0 ms"
+  ],
+  "J1": [
+   "PASS",
+   "peak 2.9980 vs cap 3 (+5% bin tolerance), sum of 2 apps (youtube, vimeo)"
+  ],
+  "J2": [
+   "PASS",
+   "mean 1.6799 vs cap 3, sum of 2 apps (youtube, vimeo)"
+  ],
+  "S3": [
+   "PASS",
+   "navStart->frame 12761 = pkt_page +315 + pkt->frame 12446 (residual 0.0 ms)"
+  ],
+  "B1": [
+   "PASS",
+   "max gap 1.01 s vs 2.0 s bar (mean 1.00 s)"
+  ],
+  "B2": [
+   "PASS",
+   "buffer min=10.063261000000011"
+  ],
+  "B3": [
+   "PASS",
+   "rebuffer_events=0"
+  ],
+  "B4": [
+   "PASS",
+   "MAE 0.194 s, r 0.9999, n=180"
+  ],
+  "R1": [
+   "PASS",
+   "cdp_received/MSE = 1.00072, band [1.00, 1.15]"
+  ],
+  "R2": [
+   "PASS",
+   "video=0.3058 audio=0.1027"
+  ],
+  "R3": [
+   "PASS",
+   "mse_video_bytes=9874338.0"
+  ],
+  "R4": [
+   "PASS",
+   "pcap media download / cdp_received = 1.060, band [1.00, 1.25] (14122495 B vs 13317335 B)"
+  ],
+  "J8": [
+   "PASS",
+   "chart video line 0.3058 vs appended-over-window 0.3041 Mbps"
+  ],
+  "W1": [
+   "PASS",
+   "switch_count=0, events carry t and direction"
+  ],
+  "W2": [
+   "PASS",
+   "resolution steps in summary window 0 <= switch_count 0 (chart draws 0 over the wider window)"
+  ],
+  "F1": [
+   "PASS",
+   "rendered_fps=25.0"
+  ],
+  "F2": [
+   "PASS",
+   "rendered 25.0 vs decoded 25.0 (x1.05)"
+  ],
+  "F3": [
+   "PASS",
+   "chart time-weighted 25.000 vs summary 25.000"
+  ],
+  "J6": [
+   "PASS",
+   "verdict=OK"
+  ],
+  "J4": [
+   "PASS",
+   "separate download and upload PNGs present"
+  ],
+  "J5": [
+   "PASS",
+   "y-axis fixed 0-11 Mbps, line style, clipped to playback window"
+  ],
+  "J7": [
+   "PASS",
+   "chart buffer max 114.038 vs summary 114.038"
+  ],
+  "J3": [
+   "PASS",
+   "youtube_with-vimeo_3Mbps_50ms_pfifo.youtube.pcap (17608 pkts) + capture.pcap"
+  ]
+ }
+}
