@@ -39,7 +39,7 @@ COPY collect.py .
 # optional (the flag stays off without it) but belongs beside it.
 COPY cdp_bytes.py .
 COPY inpage_log.py .
-# Bot peer for needs_peer apps (meet/zoom) plus the Y4M clip and WAV tone it
+# Bot peer for needs_peer apps (meet/teams/zoom) plus the Y4M clip and WAV tone it
 # publishes as its camera and microphone. Same image as the collector so both
 # share one build and one Chrome. make_test_audio is imported at module level
 # by bot_peer.py, so it is required, not optional.
