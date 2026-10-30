@@ -1067,6 +1067,7 @@ WEBRTC_HOOK_JS = r"""
 # callback. Aggregate every active inbound video RTP stream: a Meet call may
 # change SSRCs or receive more than one remote tile during a run.
 GOOGLE_MEET_STATS_JS = r"""
+const platform = arguments[0] || 'google_meet';
 const done = arguments[arguments.length - 1];
 (async () => {
     const pcs = Array.from(new Set(window.__netgentPeerConnections || []));
@@ -1128,7 +1129,7 @@ const done = arguments[arguments.length - 1];
     const sum = field => active.reduce((total, stream) => total + (stream[field] || 0), 0);
 
     done({
-        platform: 'google_meet',
+        platform: platform,
         source: 'webrtc_inbound_rtp',
         peer_connection_count: pcs.length,
         inbound_video_stream_count: active.length,
@@ -1163,7 +1164,7 @@ const done = arguments[arguments.length - 1];
         inbound_streams: active,
     });
 })().catch(error => done({
-    platform: 'google_meet',
+    platform: platform,
     source: 'webrtc_inbound_rtp',
     error: String(error),
 }));
@@ -1205,6 +1206,56 @@ for (const button of buttons) {
 return {clicked: false};
 """
 
+
+TEAMS_JOIN_JS = r"""
+const guestName = arguments[0];
+const out = {clicked: null, guest_name_entered: false, camera_toggled: false};
+
+for (const b of document.querySelectorAll('button,[role="button"]')) {
+    const l = (b.innerText || b.getAttribute('aria-label') || '').trim().toLowerCase();
+    if (l.includes('continue on this browser') || l.includes('use the web app')
+        || l.includes('continue in this browser') || l === 'continue') {
+        b.click();
+        return {clicked: 'continue_in_browser', guest_name_entered: false, camera_toggled: false};
+    }
+}
+
+const nameInput = Array.from(document.querySelectorAll('input')).find(input => {
+    const label = `${input.placeholder || ''} ${input.getAttribute('aria-label') || ''}`
+        .trim().toLowerCase();
+    return label.includes('name') && !label.includes('pass');
+});
+if (nameInput && guestName && nameInput.value !== guestName) {
+    const setter = Object.getOwnPropertyDescriptor(
+        window.HTMLInputElement.prototype, 'value'
+    ).set;
+    setter.call(nameInput, guestName);
+    nameInput.dispatchEvent(new Event('input', {bubbles: true}));
+    nameInput.dispatchEvent(new Event('change', {bubbles: true}));
+    out.guest_name_entered = true;
+}
+
+for (const b of document.querySelectorAll('button,[role="button"]')) {
+    const l = (b.innerText || b.getAttribute('aria-label') || '').trim().toLowerCase();
+    if (l.includes('turn on') && l.includes('camera')) {
+        b.click();
+        out.camera_toggled = true;
+        break;
+    }
+}
+
+for (const b of document.querySelectorAll('button,[role="button"]')) {
+    const l = (b.innerText || b.getAttribute('aria-label') || '').trim().toLowerCase();
+    if (l === 'join now' || l.includes('join now') || l === 'join meeting'
+        || l.includes('join meeting') || l === 'join') {
+        b.click();
+        out.clicked = l;
+        out.guest_name_entered = out.guest_name_entered || Boolean(nameInput);
+        return out;
+    }
+}
+return out;
+"""
 
 ZOOM_JOIN_JS = r"""
 // Zoom's web client guest flow: type a display name, then press Join. Reached
@@ -1635,12 +1686,22 @@ def install_stream_probe(driver: Any, enabled: bool, app: str = "") -> None:
         print(f"[collector] stream probe unavailable: {type(exc).__name__}", flush=True)
 
 
-def get_google_meet_stats(driver: Any) -> dict[str, Any]:
-    stats = driver.execute_async_script(GOOGLE_MEET_STATS_JS)
+# Both apps negotiate a genuine RTCPeerConnection with real inbound-rtp video
+# stats, so one stats JS and one wait loop serve both - only the join-control
+# DOM differs. Keyed by `app`; any future WebRTC conferencing app needs only
+# its own *_JOIN_JS entry here, not a new stats/wait function.
+WEBRTC_JOIN_JS_BY_APP = {
+    "google_meet": GOOGLE_MEET_JOIN_JS,
+    "teams": TEAMS_JOIN_JS,
+}
+
+
+def get_google_meet_stats(driver: Any, app: str = "google_meet") -> dict[str, Any]:
+    stats = driver.execute_async_script(GOOGLE_MEET_STATS_JS, app)
     if not isinstance(stats, dict):
-        raise RuntimeError(f"Google Meet returned invalid WebRTC stats: {stats!r}")
+        raise RuntimeError(f"{app} returned invalid WebRTC stats: {stats!r}")
     if stats.get("error"):
-        raise RuntimeError(f"Google Meet WebRTC stats failed: {stats['error']}")
+        raise RuntimeError(f"{app} WebRTC stats failed: {stats['error']}")
     return stats
 
 
@@ -1648,24 +1709,26 @@ def wait_for_google_meet_inbound(
     driver: Any,
     timeout_seconds: float,
     guest_name: str,
+    app: str = "google_meet",
 ) -> dict[str, Any]:
-    """Join Meet and require a genuinely advancing remote inbound video RTP stream."""
+    """Join a WebRTC conferencing app and require advancing inbound video RTP."""
+    join_js = WEBRTC_JOIN_JS_BY_APP.get(app, GOOGLE_MEET_JOIN_JS)
     deadline = time.monotonic() + timeout_seconds
     previous: dict[str, Any] | None = None
     latest: dict[str, Any] = {}
 
     while time.monotonic() < deadline:
         try:
-            join_result = driver.execute_script(GOOGLE_MEET_JOIN_JS, guest_name)
+            join_result = driver.execute_script(join_js, guest_name)
             if join_result and join_result.get("clicked"):
-                print(f"[google_meet] clicked Meet join control: {join_result}")
+                print(f"[{app}] clicked join control: {join_result}")
         except Exception as exc:  # noqa: BLE001 - retry while UI settles
-            print(f"[google_meet] join control not ready: {exc}")
+            print(f"[{app}] join control not ready: {exc}")
 
         try:
-            latest = get_google_meet_stats(driver)
-        except Exception as exc:  # noqa: BLE001 - retry while Meet initializes
-            print(f"[google_meet] waiting for WebRTC stats: {exc}")
+            latest = get_google_meet_stats(driver, app)
+        except Exception as exc:  # noqa: BLE001 - retry while the app initializes
+            print(f"[{app}] waiting for WebRTC stats: {exc}")
             time.sleep(1)
             continue
 
@@ -1678,7 +1741,7 @@ def wait_for_google_meet_inbound(
             )
             if bytes_advanced and frames_advanced:
                 print(
-                    "[google_meet] confirmed advancing remote inbound video: "
+                    f"[{app}] confirmed advancing remote inbound video: "
                     f"bytes={latest['bytes_received']} "
                     f"frames={latest['frames_decoded']}"
                 )
@@ -1687,7 +1750,7 @@ def wait_for_google_meet_inbound(
         time.sleep(1)
 
     raise RuntimeError(
-        "Google Meet never produced an advancing inbound video RTP stream. "
+        f"{app} never produced an advancing inbound video RTP stream. "
         "Confirm the profile is logged in, the browser joined the room, and "
         "another participant is publishing video. Local preview video is not accepted. "
         f"Last WebRTC stats: {latest}"
@@ -2140,6 +2203,7 @@ def run_job(
                 driver,
                 meet_join_timeout_seconds,
                 guest_name,
+                app,
             )
             meet_ready_timestamp = time.time()
 
@@ -2294,7 +2358,7 @@ def run_job(
                 sample["url"] = last_known_url
                 try:
                     if is_webrtc:
-                        stats = get_google_meet_stats(driver)
+                        stats = get_google_meet_stats(driver, app)
                         elapsed = (
                             sample["timestamp"] - previous_meet_timestamp
                             if previous_meet_timestamp is not None

@@ -213,6 +213,25 @@ REGISTRY: dict[str, AppSpec] = {
             "network measurement. Without a configured peer the app is SKIPPED."
         ),
     ),
+    "teams": AppSpec(
+        name="teams",
+        kind=WEBRTC,
+        default_url="",  # supply a teams.live.com guest-join link
+        needs_peer=True,
+        live=True,
+        bitrate_source="webrtc_stats",
+        domains=("teams.microsoft.com", "teams.live.com", "skype.com"),
+        plot_directions=("download", "upload"),
+        color="#6264A7",
+        display_name="Microsoft Teams",
+        notes=(
+            "Confirmed (manually, via chrome://webrtc-internals) to use a "
+            "genuine RTCPeerConnection with real inbound-rtp video stats, so "
+            "it shares Google Meet's getStats() path. Needs a remote "
+            "participant publishing video, same as Meet: without a "
+            "configured peer the app is SKIPPED."
+        ),
+    ),
     # A WebRTC peer we run ourselves (webrtc_peer_server.py): it loops a clip
     # and answers one SDP POST. No product UI, no room, no admission - so it is
     # always available and byte-identical between runs. It measures WebRTC

@@ -1,10 +1,10 @@
 #!/usr/bin/env python3
 """A bot peer for conferencing runs: joins a room and publishes a canned clip.
 
-`needs_peer` apps (meet, zoom) produce no inbound media unless somebody else is
-publishing video. With an empty room the only track is the local preview, which
-measures this machine rather than the network, so `shared/qoe.py` refuses it.
-This bot supplies the missing half.
+`needs_peer` apps (meet, teams, zoom) produce no inbound media unless somebody
+else is publishing video. With an empty room the only track is the local
+preview, which measures this machine rather than the network, so
+`shared/qoe.py` refuses it. This bot supplies the missing half.
 
 It deliberately runs on normal Docker networking, NOT inside the shaped
 namespace: its uplink must not be throttled by the same cap as the app under
@@ -28,12 +28,22 @@ sys.path.insert(0, "/app")
 
 from collect import (  # noqa: E402  - /app is only on the path at runtime
     GOOGLE_MEET_JOIN_JS,
+    TEAMS_JOIN_JS,
     ZOOM_JOIN_JS,
     ZOOM_READY_JS,
     ensure_window_size,
     install_webrtc_hook,
     start_display,
 )
+
+# Teams negotiates a genuine RTCPeerConnection, same as Meet, so it needs only
+# its own join-control JS - the outbound-bytes join check below (OUTBOUND_JS)
+# already works for any app in this map. Zoom has no RTCPeerConnection at all
+# and is handled by its own dedicated branch further down.
+JOIN_JS_BY_APP = {
+    "meet": GOOGLE_MEET_JOIN_JS,
+    "teams": TEAMS_JOIN_JS,
+}
 from make_test_clip import write_clip  # noqa: E402
 from make_test_audio import write_tone  # noqa: E402
 
@@ -216,10 +226,11 @@ def main() -> int:
         while time.time() < deadline and not _stop:
             try:
                 # Each platform has its own guest-join DOM; the publishing
-                # check below is identical for both.
-                driver.execute_script(
-                    ZOOM_JOIN_JS if APP == "zoom" else GOOGLE_MEET_JOIN_JS, NAME
+                # check below is identical for every app except Zoom.
+                join_js = ZOOM_JOIN_JS if APP == "zoom" else JOIN_JS_BY_APP.get(
+                    APP, GOOGLE_MEET_JOIN_JS
                 )
+                driver.execute_script(join_js, NAME)
             except Exception:  # noqa: BLE001 - the control may not exist yet
                 pass
             try:
