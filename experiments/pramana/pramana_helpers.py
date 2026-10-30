@@ -383,6 +383,25 @@ BROWSER_INFRA_DOMAINS: tuple[str, ...] = (
 )
 
 
+# The hostname suffixes that carry an app's MEDIA, as opposed to its page,
+# its thumbnails or its ads. Kept separate from `domains` because the
+# pcap-vs-player check (R4) compares bytes counted here against bytes Chrome
+# counted with the identical list in the collector's CDP ledger
+# (`_CDP_HOSTS` in services/orchestration/scripts/selenium_video_qoe/
+# collect.py). The two lists must not drift, so a test asserts they match.
+MEDIA_HOST_SUFFIXES: dict[str, tuple[str, ...]] = {
+    "youtube": ("googlevideo.com",),
+    "vimeo": ("vimeocdn.com", "akamaized.net"),
+    "twitch": ("ttvnw.net", "twitchcdn.net"),
+    "tubi": ("tubitv.com", "adrise.tv", "cloudfront.net"),
+}
+
+
+def media_host_suffixes(app: str) -> tuple[str, ...]:
+    """Hostname suffixes that carry `app`'s media segments."""
+    return MEDIA_HOST_SUFFIXES.get(app, ())
+
+
 def app_domains(app: str) -> list[str]:
     """Hostname suffixes that identify `app`'s traffic in a capture."""
     return list(APP_REGISTRY.get(app, {}).get("domains") or [])
@@ -1460,6 +1479,8 @@ def telemetry_get_results(**params: Any) -> list[dict[str, Any]]:
 # ═════════════════════════════════════════════════════════════════════════════
 #  Capture reader — handles BOTH classic pcap and pcapng (tshark's default)
 # ═════════════════════════════════════════════════════════════════════════════
+import hashlib
+import hmac
 import re
 import socket
 import shutil
@@ -1696,6 +1717,14 @@ _HOST_RE = re.compile(rb"[A-Za-z0-9._-]{4,253}")
 # YouTube's media CDN also appears as `r6---sn-<id>.gvt1.com`; plain `gvt1.com`
 # hosts (edgedl, redirector) are Chrome's own downloads, so match the sn- form.
 _YT_GVT_RE = re.compile(r"(^|\.)r[0-9]+-+sn-[a-z0-9-]+\.gvt1\.com$")
+# The DOUBLE-r form on the same GGC edges is Chrome's component updater, not
+# YouTube, so it must not fall through to an app bucket. Measured on both
+# concurrent release runs: `rr5---sn-jxopj-n5oe.gvt1.com` delivered 973 kB in a
+# 4-5 s burst at t=1..5 s, before the page had loaded, redirected from
+# redirector.gvt1.com -- while YouTube's own media ran 14.3 MB from t=16..120 s
+# on a sibling IP in the same /24. Treating the sn- form as YouTube because the
+# names look alike would have added ~1 MB of browser traffic to every run.
+_GVT_GGC_RE = re.compile(r"(^|\.)r{2,}[0-9]+-+sn-[a-z0-9-]+\.gvt1\.com$")
 
 
 def _dns_name(buf: bytes, off: int) -> tuple[Optional[str], int]:
@@ -1762,17 +1791,21 @@ def _harvest_dns(l4: bytes, out: dict[str, str]) -> None:
             continue
 
 
-def _harvest_sni(l4: bytes, dst: str, out: dict[str, str]) -> None:
-    """Record dst-IP→SNI from a TLS ClientHello (TCP payload)."""
-    if len(l4) < 20:
-        return
-    doff = (l4[12] >> 4) * 4
-    b = l4[doff:]
-    # TLS record: handshake(0x16), then ClientHello(0x01)
-    if len(b) < 45 or b[0] != 0x16 or b[5] != 0x01:
-        return
+def _sni_from_client_hello(b: bytes, o: int = 0) -> Optional[str]:
+    """SNI from a TLS ClientHello handshake message starting at ``b[o]``.
+
+    Returns None unless the *whole* handshake message is present. A partial
+    buffer would otherwise yield a silently truncated hostname, and because
+    callers record names with `setdefault`, that truncated name would also
+    block the correct one from ever being stored for the same IP.
+    """
     try:
-        o = 5 + 4 + 2 + 32  # record + hs hdr + version + random
+        if len(b) < o + 40 or b[o] != 0x01:
+            return None
+        msg_len = int.from_bytes(b[o + 1 : o + 4], "big")
+        if len(b) < o + 4 + msg_len:
+            return None
+        o += 4 + 2 + 32  # hs hdr + version + random
         o += 1 + b[o]  # session id
         o += 2 + struct.unpack_from(">H", b, o)[0]  # cipher suites
         o += 1 + b[o]  # compression methods
@@ -1782,15 +1815,276 @@ def _harvest_sni(l4: bytes, dst: str, out: dict[str, str]) -> None:
         while o + 4 <= end:
             etype, elen = struct.unpack_from(">HH", b, o)
             o += 4
-            if etype == 0 and o + 5 <= len(b):  # server_name
+            if etype == 0:  # server_name
+                if o + 5 + struct.unpack_from(">H", b, o + 3)[0] > len(b):
+                    return None
                 nlen = struct.unpack_from(">H", b, o + 3)[0]
                 host = b[o + 5 : o + 5 + nlen].decode("ascii", "replace")
-                if host:
-                    out.setdefault(dst, host)
-                return
+                return host or None
             o += elen
     except (struct.error, IndexError):
+        return None
+    return None
+
+
+def _harvest_sni(l4: bytes, dst: str, out: dict[str, str]) -> None:
+    """Record dst-IP→SNI from a TLS ClientHello (TCP payload)."""
+    if len(l4) < 20:
         return
+    doff = (l4[12] >> 4) * 4
+    b = l4[doff:]
+    # TLS record: handshake(0x16), then ClientHello(0x01)
+    if len(b) < 45 or b[0] != 0x16 or b[5] != 0x01:
+        return
+    host = _sni_from_client_hello(b, 5)
+    if host:
+        out.setdefault(dst, host)
+
+
+# ── QUIC Initial → SNI ───────────────────────────────────────────────────────
+#
+# Why this is here at all. A media flow is named in a capture only by the SNI
+# its TLS ClientHello sent in the clear, and YouTube's media rides QUIC. On a
+# QUIC-only connection no TCP ClientHello is ever sent, so the endpoint stays
+# unnamed and its bytes fall into `other`.
+#
+# Measured on the two concurrent release runs, which hit the SAME YouTube GGC
+# server (198.189.66.13, rr2---sn-jxopj-n5oe.googlevideo.com) and disagreed
+# only by luck:
+#
+#   6 Mbps run  Chrome also opened a throwaway TCP/443 connection to it
+#               (7,973 bytes, 2 SYNs) whose ClientHello leaked the SNI, so
+#               14.3 MB of QUIC media was attributed correctly.
+#   3 Mbps run  zero TCP packets to that IP — Chrome went straight to QUIC —
+#               and no DNS answer for the name was in the capture either
+#               (warm resolver cache), so the same 14.3 MB landed in `other`.
+#
+# QUIC Initial packets are protected with keys derived from a FIXED, published
+# salt and the client's own Destination Connection ID (RFC 9001 §5.2), so any
+# observer can read them; this is exactly what a protocol analyser does. That
+# makes the name available from the capture alone, deterministically, instead
+# of depending on whether a TCP race happened to leave a ClientHello behind.
+#
+# AES is not in the standard library and adding a dependency to the release
+# path was not worth it, so AES-128 is implemented here. It runs only on client
+# Initial packets (235 of 60,673 in the 3 Mbps capture).
+
+_QUIC_V1_INITIAL_SALT = bytes.fromhex("38762cf7f55934b34d179ae6a4c80cadccbb7f0a")
+
+
+def _aes_xtime(a: int) -> int:
+    a <<= 1
+    return (a ^ 0x1B) & 0xFF if a & 0x100 else a
+
+
+def _aes_build_sbox() -> bytes:
+    exp, log, x = [0] * 512, [0] * 256, 1
+    for i in range(255):
+        exp[i] = x
+        log[x] = i
+        x ^= _aes_xtime(x)
+    for i in range(255, 512):
+        exp[i] = exp[i - 255]
+
+    def rotl8(v: int, n: int) -> int:
+        return ((v << n) | (v >> (8 - n))) & 0xFF
+
+    box = bytearray(256)
+    for a in range(256):
+        inv = 0 if a == 0 else exp[255 - log[a]]
+        box[a] = (
+            inv ^ rotl8(inv, 1) ^ rotl8(inv, 2) ^ rotl8(inv, 3) ^ rotl8(inv, 4) ^ 0x63
+        )
+    return bytes(box)
+
+
+_AES_SBOX = _aes_build_sbox()
+
+
+def _aes_expand_key(key: bytes) -> list[list[int]]:
+    rk = [list(key[i : i + 4]) for i in range(0, 16, 4)]
+    rcon = 1
+    for i in range(4, 44):
+        t = list(rk[i - 1])
+        if i % 4 == 0:
+            t = [_AES_SBOX[b] for b in (t[1:] + t[:1])]
+            t[0] ^= rcon
+            rcon = _aes_xtime(rcon)
+        rk.append([rk[i - 4][j] ^ t[j] for j in range(4)])
+    return rk
+
+
+def _aes_encrypt_block(rk: list[list[int]], block: bytes) -> bytes:
+    s = [[block[r + 4 * c] for c in range(4)] for r in range(4)]
+
+    def add_round_key(rnd: int) -> None:
+        for c in range(4):
+            for r in range(4):
+                s[r][c] ^= rk[4 * rnd + c][r]
+
+    add_round_key(0)
+    for rnd in range(1, 11):
+        for r in range(4):
+            for c in range(4):
+                s[r][c] = _AES_SBOX[s[r][c]]
+        for r in range(1, 4):
+            s[r] = s[r][r:] + s[r][:r]
+        if rnd != 10:
+            for c in range(4):
+                a = [s[r][c] for r in range(4)]
+                s[0][c] = _aes_xtime(a[0]) ^ _aes_xtime(a[1]) ^ a[1] ^ a[2] ^ a[3]
+                s[1][c] = a[0] ^ _aes_xtime(a[1]) ^ _aes_xtime(a[2]) ^ a[2] ^ a[3]
+                s[2][c] = a[0] ^ a[1] ^ _aes_xtime(a[2]) ^ _aes_xtime(a[3]) ^ a[3]
+                s[3][c] = _aes_xtime(a[0]) ^ a[0] ^ a[1] ^ a[2] ^ _aes_xtime(a[3])
+        add_round_key(rnd)
+    return bytes(s[i % 4][i // 4] for i in range(16))
+
+
+def aes128_ecb_encrypt(key: bytes, block: bytes) -> bytes:
+    """One-block AES-128 encryption (used for QUIC header protection)."""
+    return _aes_encrypt_block(_aes_expand_key(key), block)
+
+
+def aes128_ctr(key: bytes, counter_block: bytes, data: bytes) -> bytes:
+    """AES-128-CTR. AES-GCM payload decryption with the counter at 2."""
+    rk = _aes_expand_key(key)
+    out = bytearray()
+    ctr = int.from_bytes(counter_block, "big")
+    for off in range(0, len(data), 16):
+        ks = _aes_encrypt_block(rk, ctr.to_bytes(16, "big"))
+        out += bytes(a ^ b for a, b in zip(data[off : off + 16], ks))
+        ctr = (ctr + 1) & ((1 << 128) - 1)
+    return bytes(out)
+
+
+def _hkdf_expand_label(secret: bytes, label: str, length: int) -> bytes:
+    """TLS 1.3 HKDF-Expand-Label (RFC 8446 §7.1), empty context."""
+    info = (
+        struct.pack(">H", length)
+        + bytes([6 + len(label)])
+        + b"tls13 "
+        + label.encode()
+        + b"\x00"
+    )
+    out, t, i = b"", b"", 1
+    while len(out) < length:
+        t = hmac.new(secret, t + info + bytes([i]), hashlib.sha256).digest()
+        out += t
+        i += 1
+    return out[:length]
+
+
+def quic_initial_client_keys(dcid: bytes) -> tuple[bytes, bytes, bytes]:
+    """(key, iv, hp) for a QUIC v1 client Initial packet (RFC 9001 §5.2)."""
+    initial = hmac.new(_QUIC_V1_INITIAL_SALT, dcid, hashlib.sha256).digest()
+    client = _hkdf_expand_label(initial, "client in", 32)
+    return (
+        _hkdf_expand_label(client, "quic key", 16),
+        _hkdf_expand_label(client, "quic iv", 12),
+        _hkdf_expand_label(client, "quic hp", 16),
+    )
+
+
+def _quic_varint(b: bytes, o: int) -> tuple[Optional[int], int]:
+    if o >= len(b):
+        return None, o
+    n = 1 << (b[o] >> 6)
+    if o + n > len(b):
+        return None, o
+    v = b[o] & 0x3F
+    for i in range(1, n):
+        v = (v << 8) | b[o + i]
+    return v, o + n
+
+
+def quic_initial_crypto(payload: bytes) -> Optional[tuple[bytes, list]]:
+    """(dcid, [(offset, data)]) of CRYPTO frames in a client Initial packet."""
+    b = payload
+    if len(b) < 64 or not (b[0] & 0x80):  # long header only
+        return None
+    if (b[0] & 0x30) >> 4 != 0:  # packet type Initial
+        return None
+    try:
+        if struct.unpack_from(">I", b, 1)[0] != 1:  # QUIC v1
+            return None
+        o = 5
+        dcil = b[o]
+        o += 1
+        dcid = bytes(b[o : o + dcil])
+        o += dcil
+        o += 1 + b[o]  # source connection id
+        tlen, o = _quic_varint(b, o)
+        if tlen is None:
+            return None
+        o += tlen  # token
+        plen, o = _quic_varint(b, o)
+        if plen is None or o + plen > len(b):
+            return None
+        pn_off = o
+        key, iv, hp = quic_initial_client_keys(dcid)
+        sample = bytes(b[pn_off + 4 : pn_off + 20])
+        if len(sample) < 16:
+            return None
+        mask = aes128_ecb_encrypt(hp, sample)
+        pn_len = ((b[0] ^ (mask[0] & 0x0F)) & 0x03) + 1
+        pn = bytes(x ^ y for x, y in zip(b[pn_off : pn_off + pn_len], mask[1:]))
+        ct = bytes(b[pn_off + pn_len : pn_off + plen])
+        if len(ct) <= 16:  # nothing but the AEAD tag
+            return None
+        nonce = bytes(
+            a ^ c for a, c in zip(iv, int.from_bytes(pn, "big").to_bytes(12, "big"))
+        )
+        pt = aes128_ctr(key, nonce + b"\x00\x00\x00\x02", ct[:-16])
+        frames: list = []
+        o = 0
+        while o < len(pt):
+            ft, o = _quic_varint(pt, o)
+            if ft is None:
+                break
+            if ft == 0x00:  # PADDING
+                while o < len(pt) and pt[o] == 0:
+                    o += 1
+                continue
+            if ft == 0x01:  # PING
+                continue
+            if ft == 0x06:  # CRYPTO
+                coff, o = _quic_varint(pt, o)
+                clen, o = _quic_varint(pt, o)
+                if coff is None or clen is None:
+                    break
+                frames.append((coff, bytes(pt[o : o + clen])))
+                o += clen
+                continue
+            break  # any other frame type: stop rather than guess
+        return (dcid, frames) if frames else None
+    except (struct.error, IndexError, ValueError):
+        return None
+
+
+def _harvest_quic_sni(l4: bytes, dst: str, out: dict[str, str], state: dict) -> None:
+    """Record dst-IP→SNI from a QUIC Initial ClientHello (UDP payload).
+
+    Chrome's ClientHello does not fit in one Initial packet, so CRYPTO frames
+    are reassembled per connection id before the hello is parsed.
+    """
+    if len(l4) < 8:
+        return
+    got = quic_initial_crypto(l4[8:])
+    if got is None:
+        return
+    dcid, frames = got
+    buf = state.setdefault(dcid, {})
+    for off, data in frames:
+        if data:
+            buf[off] = data
+    # Splice the contiguous run from offset 0; a gap means wait for more.
+    whole, want = bytearray(), 0
+    while want in buf:
+        whole += buf[want]
+        want += len(buf[want])
+    host = _sni_from_client_hello(bytes(whole), 0) if whole else None
+    if host:
+        out.setdefault(dst, host)
 
 
 def _host_matches(host: str, domains: Iterable[str]) -> bool:
@@ -1816,6 +2110,8 @@ def classify_host(host: str, apps: Iterable[str]) -> str:
         return "other"
     if _YT_GVT_RE.search(h):
         return "youtube" if "youtube" in list(apps) else "other"
+    if _GVT_GGC_RE.search(h):
+        return "browser_infra"
     for app in apps:
         if _host_matches(h, app_domains(app)):
             return app
@@ -1895,6 +2191,12 @@ class CaptureAttribution:
     # Unnamed remote IPs adopted into an app bucket by connection affinity,
     # as ip -> "app:reason". Kept so every adoption is auditable after the fact.
     adopted_ips: dict[str, str] = field(default_factory=dict)
+    # app -> direction -> bytes carried by hosts in MEDIA_HOST_SUFFIXES. This
+    # is the only figure comparable with the player's own byte counters, since
+    # those count media responses and nothing else. Bytes on an app endpoint
+    # that was never named stay OUT, so a lost media flow shows up as a
+    # shortfall here instead of being quietly absorbed.
+    media_bytes: dict[str, dict[str, int]] = field(default_factory=dict)
 
     def traffic(self, app: str, direction: str) -> Optional[AppTraffic]:
         return (self.per_app.get(app) or {}).get(direction)
@@ -2070,6 +2372,8 @@ def attribute_capture(
     ip_host: dict[str, str] = {}
     ip_from_alias = {ip: app for app, ip in (local_ip_map or {}).items() if ip}
     frames = 0
+    # QUIC CRYPTO fragments, keyed by connection id, until a hello is whole.
+    quic_state: dict = {}
 
     # ── pass 1: learn IP→hostname, local endpoints, and the time base ────────
     endpoint_pkts: dict[str, int] = defaultdict(int)
@@ -2108,6 +2412,11 @@ def attribute_capture(
             sport, _dport = struct.unpack_from(">HH", l4, 0)
             if sport == 53:
                 _harvest_dns(l4, ip_host)
+            elif _dport == 443:
+                # QUIC: the only in-the-clear name a QUIC-only media flow ever
+                # offers. Without this, YouTube's media endpoint is named only
+                # when a stray TCP connection to it happens to be captured.
+                _harvest_quic_sni(l4, dst, ip_host, quic_state)
         elif proto == 6:
             _harvest_sni(l4, dst, ip_host)
 
@@ -2211,6 +2520,7 @@ def attribute_capture(
         lambda: defaultdict(int)
     )
     pkt_counts: dict[tuple[str, str], int] = defaultdict(int)
+    media_tally: dict[tuple[str, str], int] = defaultdict(int)
     bucket_hosts: dict[str, set[str]] = defaultdict(set)
     host_bytes: dict[str, int] = defaultdict(int)
     bucket_bytes: dict[str, int] = defaultdict(int)
@@ -2253,6 +2563,10 @@ def attribute_capture(
                 bucket = classify_host(host, apps)
 
         bucket_bytes[bucket] += ol
+        if bucket in apps and res.method != "local_alias_ip":
+            _h = ip_host.get(remote, "")
+            if _h and _host_matches(_h, media_host_suffixes(bucket)):
+                media_tally[(bucket, direction)] += ol
         if bucket in apps:
             # Remember which endpoint carried this app's bytes so the capture
             # can later be split into one pcap per app.
@@ -2271,6 +2585,9 @@ def attribute_capture(
     res.host_bytes = dict(sorted(host_bytes.items(), key=lambda kv: -kv[1])[:40])
     res.ip_side = "local" if res.method == "local_alias_ip" else "remote"
     res.app_ips = {a: sorted(bucket_ips.get(a, ())) for a in apps}
+    res.media_bytes = {
+        a: {d: media_tally.get((a, d), 0) for d in ("download", "upload")} for a in apps
+    }
     named = sum(v for k, v in bucket_bytes.items() if k != "other")
     res.attributed_fraction = round(named / total_bytes, 4) if total_bytes else 0.0
 

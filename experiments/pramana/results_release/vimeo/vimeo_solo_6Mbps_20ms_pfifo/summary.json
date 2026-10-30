@@ -46,7 +46,10 @@
    "audio_mbps": 0.196,
    "mse_video_bytes": 52243305.0,
    "mse_audio_bytes": 5089056.0,
-   "basis": "mse_appended_bytes(video sourcebuffer)"
+   "basis": "mse_appended_bytes(video sourcebuffer)",
+   "video_mbps_per_media_second": 2.2418,
+   "media_seconds_appended": 186.0,
+   "window_seconds": 179.0
   },
   "4_switching": {
    "switch_count": 5,
@@ -108,6 +111,12 @@
   "upload": {
    "peak_mbps": 0.1991,
    "mean_mbps": 0.0677
+  },
+  "download_active": {
+   "mbps": 4.0527,
+   "seconds": 117,
+   "window_seconds": 180,
+   "idle_floor_mbps": 0.05
   },
   "link_shared": {
    "peak_mbps": 5.9545,
@@ -175,6 +184,10 @@
   "R3": [
    "PASS",
    "mse_video_bytes=52243305.0"
+  ],
+  "R4": [
+   "PASS",
+   "pcap media download / cdp_received = 1.052, band [1.00, 1.25] (61253366 B vs 58224484 B)"
   ],
   "J8": [
    "PASS",

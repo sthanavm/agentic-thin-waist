@@ -124,3 +124,91 @@ Twitch ships as a labelled 4/5 limit with no Twitch folders in the release.
 - A root cause is only named if a test that could have disproved it was run.
 - Mixed results are reported as mixed; the better trial is never selected.
 - Cross-traffic profiles (CTP) are **out of scope** for this round.
+
+---
+
+# Per-app capture completeness — R4, pre-registered
+
+Added after the release round was collected, and stated here **before** being
+run against any release run, because it tests a property of the *tooling*
+rather than a property of the network: whether the per-app split of a shared
+capture actually contains the app's traffic. No existing band is changed and
+no run is re-judged on anything but R4.
+
+## Why it is needed
+
+The concurrent 3 Mbps cell shipped with YouTube's download chart empty and its
+per-app pcap at 4.7 MB against the 13.3 MB the page itself reported receiving.
+Every other check on that run passed. The cause was that a capture names a
+media endpoint only by the TLS SNI it sees in the clear, and YouTube's media
+rides QUIC:
+
+- both concurrent runs used the **same** server, 198.189.66.13
+  (`rr2---sn-jxopj-n5oe.googlevideo.com`);
+- in the 6 Mbps run Chrome also opened a throwaway TCP/443 connection to it
+  (7,973 bytes, 2 SYNs) whose ClientHello leaked the name, so its 14.3 MB of
+  QUIC media was attributed correctly;
+- in the 3 Mbps run there were **no TCP packets to that address at all**, and
+  no DNS answer for the name either, so the same 14.3 MB was bucketed as
+  `other`.
+
+Attribution was therefore correct only by luck. QUIC Initial packets are now
+decrypted with the published fixed salt (RFC 9001 §5.2) and their ClientHello
+SNI read, which is what a protocol analyser does and needs no cooperation from
+the endpoint, so the name is available from the capture alone.
+
+## The band
+
+**R4 passes if, for each app, the media-host download bytes in that run's
+capture divided by that app's `cdp_received_bytes` falls in [1.00, 1.25].**
+
+Both sides count the same thing: media hosts only (the identical suffix list
+drives the pcap tally and Chrome's own ledger), download only.
+
+- **Floor 1.00 is physics.** Every byte Chrome counted crossed the wire inside
+  this app's media flow, and the capture additionally sees per-packet framing
+  that `encodedDataLength` never counts. Below 1.00 the capture is missing part
+  of the flow, which is exactly the failure above — it would have scored 0.000.
+- **Ceiling 1.25** allows that framing — 14 B Ethernet + 20 B IPv4 + 8 B UDP +
+  about 26 B of QUIC header and AEAD tag over a ~1432 B payload, so ~4.8 % on
+  a full-size frame — plus room for retransmission. Above it, bytes from some
+  other flow have been folded in, which is the double-counting failure the
+  attributor's disjoint-bucket rule exists to prevent.
+
+Set from that arithmetic. It is not a fit: the ceiling is roughly four times
+the expected overhead.
+
+- A run that produces bytes but misses this band is **not** released as a
+  verified per-app capture, and its pcap is not cited as that app's traffic.
+- R4 is reported N/A, never PASS, for a run with no capture or no CDP ledger
+  (the ledger only exists for apps with a media-host list).
+- This is a different quantity from **T1**, which divides the *whole* per-app
+  pcap by MSE appended bytes and so legitimately runs higher; both stand.
+
+## Also reported from now on, not bands
+
+Two figures are added alongside the existing ones. No check uses either, and
+no existing derivation changed.
+
+**The rate at which the link actually delivered**, over the seconds in which it
+delivered anything — `throughput_mbps_not_a_qoe_metric.download_active`,
+measured from the capture with the existing 0.05 Mbps idle floor. The window
+mean is dragged down by a player idling on a full buffer: YouTube on a 10 Mbps
+cap averages 0.87 Mbps across the window but **4.23 Mbps across the 37 seconds
+it was transferring**. This is throughput, so it sits under the throughput key
+and is not a QoE metric.
+
+This figure is deliberately taken from the capture and **not** from MSE append
+intervals. An append is instantaneous, so the intervals in which the byte
+counter moved are not wire time; dividing by them gave Vimeo **24.5 Mbps on a
+10 Mbps link**, which is an append rate bounded by nothing physical and would
+have reproduced exactly the cap-violation misreading that the bitrate chart's
+annotation exists to prevent.
+
+**Delivered bitrate per second of media** —
+`metrics.3_delivered_bitrate.video_mbps_per_media_second` — appended bytes over
+the span of media those bytes cover, rather than over the wall-clock window.
+`video_mbps` divides by the window, which equals the encoded bitrate only while
+the buffer is in steady state. Across all 16 release runs the two agree within
+10 %, which is the evidence that the reported figure is a sound reading of the
+rendition's bitrate rather than an artefact of how long the player ran ahead.

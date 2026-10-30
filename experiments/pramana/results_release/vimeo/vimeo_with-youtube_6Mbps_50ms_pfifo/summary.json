@@ -46,7 +46,10 @@
    "audio_mbps": 0.1895,
    "mse_video_bytes": 45498703.0,
    "mse_audio_bytes": 5234330.0,
-   "basis": "mse_appended_bytes(video sourcebuffer)"
+   "basis": "mse_appended_bytes(video sourcebuffer)",
+   "video_mbps_per_media_second": 2.0313,
+   "media_seconds_appended": 174.3,
+   "window_seconds": 179.0
   },
   "4_switching": {
    "switch_count": 4,
@@ -102,9 +105,15 @@
    "peak_mbps": 0.2542,
    "mean_mbps": 0.0621
   },
+  "download_active": {
+   "mbps": 3.8867,
+   "seconds": 111,
+   "window_seconds": 180,
+   "idle_floor_mbps": 0.05
+  },
   "link_shared": {
    "peak_mbps": 5.9741,
-   "mean_mbps": 2.959,
+   "mean_mbps": 2.9591,
    "apps": [
     "youtube",
     "vimeo"
@@ -136,7 +145,7 @@
   ],
   "J2": [
    "PASS",
-   "mean 2.9590 vs cap 6, sum of 2 apps (youtube, vimeo)"
+   "mean 2.9591 vs cap 6, sum of 2 apps (youtube, vimeo)"
   ],
   "S3": [
    "PASS",
@@ -169,6 +178,10 @@
   "R3": [
    "PASS",
    "mse_video_bytes=45498703.0"
+  ],
+  "R4": [
+   "PASS",
+   "pcap media download / cdp_received = 1.042, band [1.00, 1.25] (57157826 B vs 54850102 B)"
   ],
   "J8": [
    "PASS",

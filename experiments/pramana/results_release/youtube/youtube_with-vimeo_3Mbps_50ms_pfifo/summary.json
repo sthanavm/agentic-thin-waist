@@ -46,7 +46,10 @@
    "audio_mbps": 0.1027,
    "mse_video_bytes": 9874338.0,
    "mse_audio_bytes": 3433384.0,
-   "basis": "mse_appended_bytes(video sourcebuffer)"
+   "basis": "mse_appended_bytes(video sourcebuffer)",
+   "video_mbps_per_media_second": 0.3601,
+   "media_seconds_appended": 151.2,
+   "window_seconds": 179.0
   },
   "4_switching": {
    "switch_count": 0,
@@ -66,16 +69,22 @@
  },
  "throughput_mbps_not_a_qoe_metric": {
   "download": {
-   "peak_mbps": 0.0495,
-   "mean_mbps": 0.0004
+   "peak_mbps": 2.998,
+   "mean_mbps": 0.4343
   },
   "upload": {
    "peak_mbps": 0.0588,
-   "mean_mbps": 0.0006
+   "mean_mbps": 0.0085
+  },
+  "download_active": {
+   "mbps": 1.6618,
+   "seconds": 47,
+   "window_seconds": 180,
+   "idle_floor_mbps": 0.05
   },
   "link_shared": {
-   "peak_mbps": 2.9591,
-   "mean_mbps": 1.246,
+   "peak_mbps": 2.998,
+   "mean_mbps": 1.6799,
    "apps": [
     "youtube",
     "vimeo"
@@ -103,11 +112,11 @@
   ],
   "J1": [
    "PASS",
-   "peak 2.9591 vs cap 3 (+5% bin tolerance), sum of 2 apps (youtube, vimeo)"
+   "peak 2.9980 vs cap 3 (+5% bin tolerance), sum of 2 apps (youtube, vimeo)"
   ],
   "J2": [
    "PASS",
-   "mean 1.2460 vs cap 3, sum of 2 apps (youtube, vimeo)"
+   "mean 1.6799 vs cap 3, sum of 2 apps (youtube, vimeo)"
   ],
   "S3": [
    "PASS",
@@ -140,6 +149,10 @@
   "R3": [
    "PASS",
    "mse_video_bytes=9874338.0"
+  ],
+  "R4": [
+   "PASS",
+   "pcap media download / cdp_received = 1.060, band [1.00, 1.25] (14122495 B vs 13317335 B)"
   ],
   "J8": [
    "PASS",
@@ -183,7 +196,7 @@
   ],
   "J3": [
    "PASS",
-   "youtube_with-vimeo_3Mbps_50ms_pfifo.youtube.pcap (4087 pkts) + capture.pcap"
+   "youtube_with-vimeo_3Mbps_50ms_pfifo.youtube.pcap (17608 pkts) + capture.pcap"
   ]
  }
 }

@@ -21,6 +21,7 @@ import hashlib
 import json
 import math
 import os
+import shutil
 import subprocess
 import sys
 from pathlib import Path
@@ -42,6 +43,22 @@ LINE = dict(lw=1.4, marker="o", ms=2.6)
 
 # Bands, from THRESHOLDS.md. Named here so a reader can match them one to one.
 R_LO, R_HI = 1.00, 1.15  # cdp_received / MSE
+# R4: per-app media bytes in the capture / bytes Chrome says it received.
+# The floor is physics -- every byte Chrome counted crossed the wire inside
+# this app's media flow, and the capture additionally sees the per-packet
+# framing that `encodedDataLength` never counts, so the ratio cannot sit below
+# 1.00 unless the capture is missing part of the flow. The ceiling allows that
+# framing (~5 % of a full-size frame: 14 B Ethernet + 20 B IPv4 + 8 B UDP +
+# ~26 B QUIC header and AEAD tag over a ~1432 B payload) plus room for
+# retransmission; anything above it means bytes from some other flow were
+# folded in. Set from that arithmetic, not from the measurements.
+PCAP_CDP_LO, PCAP_CDP_HI = 1.00, 1.25
+# Per-app captures at or under this size are committed under `pcaps/`; a
+# larger one stays in the pramana-data archive and is listed in the manifest
+# with `in_repo=no` and the path it lives at. Enforced here rather than left to
+# whoever copies the files, which is how the manifest came to cite a 111 MB
+# capture that was in no tree at all.
+PCAP_REPO_MAX_BYTES = int(os.environ.get("PRAMANA_PCAP_REPO_MAX_BYTES", 95_000_000))
 B_GAP_MAX_X = 2.0  # x nominal sampling interval
 B_MAE_MAX, B_R_MIN = 1.0, 0.90  # YouTube buffer vs vendor figure
 F_OVERSHOOT = 1.05  # rendered <= decoded x this
@@ -51,7 +68,7 @@ J_PEAK_TOL = 1.05
 METRIC_CHECKS = {
     "1_startup_delay": ["S1", "S2", "S3"],
     "2_buffer_rebuffering": ["B1", "B2", "B3", "B4"],
-    "3_delivered_bitrate": ["R1", "R2", "R3"],
+    "3_delivered_bitrate": ["R1", "R2", "R3", "R4"],
     "4_switching": ["W1", "W2"],
     "5_frame_rate": ["F1", "F2", "F3"],
 }
@@ -371,6 +388,22 @@ def build_run(run_dir: Path, out_root: Path, meta_env: dict, app: str | None = N
             sum_mean <= cap,
             "mean %.4f vs cap %g, %s" % (sum_mean, cap, scope),
         )
+        # How fast the link actually delivered, over the seconds in which it
+        # was delivering at all. The window mean answers "how much arrived per
+        # second of session" and is dragged down by a player idling on a full
+        # buffer: measured, YouTube on a 10 Mbps cap averages 0.87 Mbps over
+        # the window but 4.23 Mbps across the 37 seconds it was transferring.
+        # Both are throughput, not QoE, so both live under this key.
+        _dl = at.traffic(app, "download")
+        _dls = (_dl.mbps if _dl else []) or []
+        _win = [_dls[i] if 0 <= i < len(_dls) else 0.0 for i in range(lo, hi)]
+        _live = [x for x in _win if x > H._IDLE_MBPS]
+        thr["download_active"] = {
+            "mbps": round(sum(_live) / len(_live), 4) if _live else 0.0,
+            "seconds": len(_live),
+            "window_seconds": len(_win),
+            "idle_floor_mbps": H._IDLE_MBPS,
+        }
         thr["link_shared"] = {
             "peak_mbps": sum_peak,
             "mean_mbps": sum_mean,
@@ -492,6 +525,28 @@ def build_run(run_dir: Path, out_root: Path, meta_env: dict, app: str | None = N
         (num(u.get("mse_video_bytes")) or 0) > 0,
         "mse_video_bytes=%s" % u.get("mse_video_bytes"),
     )
+    # R4: the capture has to account for what the player actually received.
+    #
+    # This is the check that would have caught the concurrent 3 Mbps run, where
+    # YouTube's media endpoint (198.189.66.13, reached only over QUIC) was never
+    # named, so 14.3 MB of its download was bucketed as `other`: media bytes in
+    # the capture were 0 against 13.3 MB received, a ratio of 0.000, while every
+    # other check on that run passed. Compared like with like -- media hosts
+    # only on both sides, download only -- because `cdp_received_bytes` counts
+    # media responses and nothing else.
+    pcap_media = (at.media_bytes.get(app) or {}).get("download") if at else None
+    if at is not None and rcv and pcap_media is not None:
+        mratio = pcap_media / rcv
+        chk(
+            "R4",
+            PCAP_CDP_LO <= mratio <= PCAP_CDP_HI,
+            "pcap media download / cdp_received = %.3f, band [%.2f, %.2f] "
+            "(%d B vs %d B)" % (mratio, PCAP_CDP_LO, PCAP_CDP_HI, pcap_media, rcv),
+        )
+    elif at is None:
+        chk("R4", None, "no capture for this run")
+    else:
+        chk("R4", None, "no CDP byte reference for this app")
     # ---------------- QoE charts ----------------
     buf = [num(s.get("buffer_ahead_secs")) for s in st]
     f, ax = fig(
@@ -514,11 +569,29 @@ def build_run(run_dir: Path, out_root: Path, meta_env: dict, app: str | None = N
             except Exception:
                 pass
     cap_txt = "%d rebuffer event(s); shaded in red" % (u.get("rebuffer_events") or 0)
+    # A stall that ended before the first sample has no position on an axis
+    # that starts AT the first sample, and saying so only in a caption left it
+    # looking like it had not happened. Mark it instead: a hatched band pinned
+    # to the left edge, distinct from the solid shading used for stalls that do
+    # have a time, plus an arrow pointing off-axis to where it really sits.
     if n_before:
-        cap_txt += (
-            "\n%d occurred before the first sample (page t=%.1f s) and "
-            "cannot be shown on this axis" % (n_before, (page0 or 0) / 1000.0)
+        _bw = min(1.0, (max(relt) if relt else 1.0) * 0.02)
+        ax.axvspan(
+            0.0,
+            _bw,
+            facecolor="none",
+            edgecolor="#C62828",
+            hatch="///",
+            lw=0.8,
+            alpha=0.9,
         )
+        cap_txt += (
+            "\n%d before the first sample (page t=%.1f s): hatched at the "
+            "left edge, off-axis" % (n_before, (page0 or 0) / 1000.0)
+        )
+    _bvals = [b for b in buf if b is not None]
+    # Headroom so the caption never lands on the trace.
+    ax.set_ylim(0, (max(_bvals) * 1.45) if _bvals else 1.0)
     ax.text(
         0.01,
         0.97,
@@ -527,8 +600,8 @@ def build_run(run_dir: Path, out_root: Path, meta_env: dict, app: str | None = N
         va="top",
         fontsize=8,
         color="#C62828" if (u.get("rebuffer_events") or 0) else "#555",
+        bbox=dict(facecolor="white", edgecolor="none", alpha=0.75, pad=1.5),
     )
-    ax.set_ylim(bottom=0)
     ax.set_xlim(0, max(relt) if relt else 1)
     save(f, d / "buffer.png")
 
@@ -575,6 +648,22 @@ def build_run(run_dir: Path, out_root: Path, meta_env: dict, app: str | None = N
             )
         return out
 
+    def _first_last(key):
+        vals = [num(s_.get(key)) for s_ in st]
+        got = [v for v in vals if v is not None]
+        return (got[0], got[-1]) if len(got) >= 2 else (None, None)
+
+    _be0, _be1 = _first_last("buffered_end_secs")
+    _v0, _v1 = _first_last("mse_video_bytes")
+    media_span_s = (
+        round(_be1 - _be0, 1) if (_be0 is not None and _be1 - _be0 > 0) else None
+    )
+    v_per_media = (
+        round((_v1 - _v0) * 8.0 / 1e6 / (_be1 - _be0), 4)
+        if (media_span_s and _v0 is not None)
+        else None
+    )
+
     f, ax = fig(
         "Delivered Bitrate — %s @ %g Mbps, %g ms" % (H.display_name(app), cap, lat),
         "Seconds from first QoE sample",
@@ -620,6 +709,36 @@ def build_run(run_dir: Path, out_root: Path, meta_env: dict, app: str | None = N
     if cap:
         ax.axhline(
             cap, color="#333", ls=":", lw=1.0, alpha=0.7, label="link cap %g Mbps" % cap
+        )
+    # Spikes above the cap are the single thing most likely to be misread on
+    # this chart, so say what they are ON the chart rather than only in the
+    # axis label: a segment is handed to the buffer in one go, so the interval
+    # that receives it reads far above the link rate while no link rate was
+    # ever exceeded. The capture, not this series, is what J1/J2 test.
+    _vser = rate("mse_video_bytes")
+    _over = [(relt[i], _vser[i]) for i in range(len(_vser)) if cap and _vser[i] > cap]
+    if _over:
+        xs, ys = max(_over, key=lambda xy: xy[1])
+        ax.annotate(
+            "append burst, not link rate\n(%d interval%s above the cap)"
+            % (len(_over), "" if len(_over) == 1 else "s"),
+            xy=(xs, ys),
+            xytext=(0.52, 0.93),
+            textcoords="axes fraction",
+            fontsize=7,
+            ha="left",
+            va="top",
+            color="#B71C1C",
+            arrowprops=dict(arrowstyle="->", color="#B71C1C", lw=0.9),
+        )
+    _act = (thr.get("download_active") or {}) if thr else {}
+    if _act.get("mbps"):
+        ax.plot(
+            [],
+            [],
+            " ",
+            label="link delivered %.4f Mbps over %d active s (capture)"
+            % (_act["mbps"], _act.get("seconds") or 0),
         )
     ax.set_ylim(bottom=0)
     ax.set_xlim(0, max(relt) if relt else 1)
@@ -686,6 +805,18 @@ def build_run(run_dir: Path, out_root: Path, meta_env: dict, app: str | None = N
             drawn_in_window += 1
         prev_h = h
     sc = u.get("switch_count")
+    # The top rendition used to be drawn exactly on the axis line, which read
+    # as a clipped trace, and the caption sat on top of it. Reserve headroom
+    # above the highest rendition for the caption, and tick the axis at the
+    # renditions actually used so a step is readable as 480 -> 720 rather than
+    # as an arbitrary height.
+    _hs = sorted({h for h in res if h})
+    if _hs:
+        ax.set_ylim(0, _hs[-1] * 1.45)
+        ax.set_yticks(_hs)
+        ax.set_yticklabels(["%gp" % h for h in _hs])
+    else:
+        ax.set_ylim(0, 1.0)
     ax.text(
         0.01,
         0.97,
@@ -694,8 +825,8 @@ def build_run(run_dir: Path, out_root: Path, meta_env: dict, app: str | None = N
         transform=ax.transAxes,
         va="top",
         fontsize=8,
+        bbox=dict(facecolor="white", edgecolor="none", alpha=0.75, pad=1.5),
     )
-    ax.set_ylim(bottom=0)
     ax.set_xlim(0, max(relt) if relt else 1)
     save(f, d / "switches.png")
 
@@ -896,6 +1027,12 @@ def build_run(run_dir: Path, out_root: Path, meta_env: dict, app: str | None = N
             chk("J3", True, "%s (%d pkts) + capture.pcap" % (split.name, len(keep)))
         else:
             chk("J3", False, "no packets attributed to %s" % app)
+        in_repo = False
+        if keep and split.stat().st_size <= PCAP_REPO_MAX_BYTES:
+            repo_pcaps = out_root / "pcaps"
+            repo_pcaps.mkdir(parents=True, exist_ok=True)
+            shutil.copyfile(split, repo_pcaps / split.name)
+            in_repo = True
         pinfo = {
             "run": name,
             "capture_bytes": pcap.stat().st_size,
@@ -903,7 +1040,15 @@ def build_run(run_dir: Path, out_root: Path, meta_env: dict, app: str | None = N
             "per_app_pcap": split.name if keep else "",
             "per_app_bytes": split.stat().st_size if keep else 0,
             "per_app_sha256": sha256(split) if keep else "",
-            "location": "VM:%s and laptop:~/SNL-Lab-Codebases/pramana-data/" % archive,
+            "in_repo": "yes" if in_repo else "no",
+            "location": (
+                "pcaps/ in this tree"
+                if in_repo
+                else (
+                    "NOT in this repository (over %.0f MB): pramana-data/pcaps/ "
+                    "on the VM and on the laptop" % (PCAP_REPO_MAX_BYTES / 1e6)
+                )
+            ),
         }
     else:
         chk("J3", False, "no capture.pcap for this run")
@@ -941,6 +1086,23 @@ def build_run(run_dir: Path, out_root: Path, meta_env: dict, app: str | None = N
             "mse_video_bytes": u.get("mse_video_bytes"),
             "mse_audio_bytes": u.get("mse_audio_bytes"),
             "basis": u.get("bitrate_basis"),
+            # The same bytes over the seconds of MEDIA they represent rather
+            # than over the wall-clock window. `video_mbps` divides by the
+            # window, which equals the encoded bitrate only while the buffer is
+            # in steady state; when the player runs ahead it appends more media
+            # than it plays and the window figure drifts. Measured across the
+            # 16 release runs the two agree within 10%, which is the evidence
+            # that `video_mbps` is a sound reading of the rendition's bitrate.
+            #
+            # Deliberately NOT computed per "active append interval": MSE
+            # appends are instantaneous, so the seconds in which the counter
+            # moved are not wire time, and dividing by them gave 24.5 Mbps for
+            # Vimeo on a 10 Mbps link. The rate at which the link actually
+            # delivered is a capture quantity and is reported as
+            # `throughput_mbps_not_a_qoe_metric.download_active`.
+            "video_mbps_per_media_second": v_per_media,
+            "media_seconds_appended": media_span_s,
+            "window_seconds": round(w1 - w0, 1),
         },
         "4_switching": {
             "switch_count": u.get("switch_count"),
@@ -1089,15 +1251,21 @@ def write_sweep_matrix(out_root: Path, runs: list) -> None:
         if n.strip()
     }
     cols = [
-        # The folder name first: app/cap/latency/aqm/trial alone do not
-        # identify a row -- a solo run and a concurrent run can agree on all
-        # five -- so without this two different runs look like duplicates.
+        # The folder name first: app/cap/latency/aqm alone do not identify a
+        # row -- a solo run and a concurrent run can agree on all four -- so
+        # without this two different runs look like duplicates.
+        #
+        # The trial and batch numbers are deliberately NOT columns. They are
+        # internal scheduling ids with no meaning outside the runner, and
+        # carrying them invited the matrix to be read as if trial 551 and
+        # trial 631 were comparable positions in some sequence. The run folder
+        # identifies the row; `run_metadata.run_dir_on_vm` in each
+        # summary.json still records the exact source run.
         "run",
         "app",
         "bandwidth_mbps",
         "latency_ms",
         "aqm",
-        "trial",
         "verdict",
         "in_repo",
         "resolution_p",
@@ -1124,7 +1292,6 @@ def write_sweep_matrix(out_root: Path, runs: list) -> None:
                     "%g" % r["cap"],
                     "%g" % r["lat"],
                     r["aqm"],
-                    r["trial"],
                     r["verdict"],
                     "no (archived)" if r["name"] in archive_only else "yes",
                     r.get("res_p") or "",
@@ -1156,7 +1323,12 @@ def write_readme(out_root: Path, runs: list, meta_env: dict):
     n_conc = len({(tuple(sorted(r["apps"])), r["cap"]) for r in conc})
     n_caps = n_solo + n_conc
     L = [
-        "# Streaming QoE results — YouTube and Vimeo (Step A)",
+        "# Streaming QoE results — YouTube and Vimeo",
+        "",
+        "The 8-vCPU release round: solo cells at 1, 3, 6 and 10 Mbps, the",
+        "6 Mbps latency cells at 20 and 150 ms, and the concurrent 3 and",
+        '6 Mbps cells. (Earlier drafts of this file were headed "Step A",',
+        "which named only the first solo pass and not the rest of what is here.)",
         "",
         "One extraction method and one schema on both apps, with no per-site",
         "APIs. Solo runs carry one app each. The concurrent cell runs both",
@@ -1562,6 +1734,38 @@ def write_readme(out_root: Path, runs: list, meta_env: dict):
         "Dropped frames are carried as raw counts only; throughput is not a QoE",
         "metric and appears only in its own two charts and the cap check.",
         "",
+        "## How startup delay is defined",
+        "",
+        "Startup delay is **navigation start to the presentation time of the",
+        "first video frame**, measured on the page's own clock:",
+        "",
+        "```",
+        "startup_delay_ms = first_presentation_ms - navigationStart",
+        "```",
+        "",
+        "`first_presentation_ms` is the `presentationTime` the browser reports",
+        "to the first `requestVideoFrameCallback`, which is the moment a frame",
+        "was actually put on the screen -- not when the player said it was",
+        "ready, not when the first byte arrived, and not when `playing` fired.",
+        "Each run records which of these it used in",
+        "`metrics.1_startup_delay.basis`.",
+        "",
+        "Three consequences worth stating, because each one has been misread:",
+        "",
+        "- **It includes page load.** A 11.6 s figure on the concurrent 3 Mbps",
+        "  cell is mostly Chrome fetching and running the YouTube page under a",
+        "  shared 3 Mbps cap, not the video pipeline stalling. `S3` decomposes",
+        "  it: navStart -> first packet, then first packet -> first frame.",
+        "- **Initial buffering is reported here, not as a rebuffer.** The first",
+        "  `waiting` -> `playing` span before playback has ever advanced is",
+        "  pre-roll, so it is counted into startup and excluded from",
+        "  `rebuffer_events`. `metrics.2_buffer_rebuffering.basis` states how",
+        "  many such spans were excluded and their total duration.",
+        "- **The sample window opens at the first frame, so startup is over",
+        "  before `t=0` on every chart.** Anything earlier than that -- startup",
+        "  itself, pre-roll stalls, buffering done ahead of playback -- sits",
+        "  off the left edge of every time series in the run folder.",
+        "",
         "## Checks",
         "",
         "| | count |",
@@ -1624,6 +1828,8 @@ def write_readme(out_root: Path, runs: list, meta_env: dict):
         "| B4 | buffer agrees with YouTube's own figure (YouTube only) | MAE <= 1.0 s, r >= 0.90 |",
         "| R1 | delivered bytes vs Chrome's Network domain | cdp_received / appended in [1.00, 1.15] |",
         "| R2,R3 | video and audio reported separately, video non-zero | both non-null |",
+        "| R4 | the per-app capture accounts for what the player received | "
+        "pcap media download / cdp_received in [1.00, 1.25] |",
         "| W1,W2 | switches timestamped with direction; chart agrees with count | drawn <= switch_count |",
         "| F1,F2,F3 | rendered rate positive, <= decoded, chart equals summary | <= decoded x 1.05 |",
         "| J1,J2 | throughput within the shaped cap, peak and mean | peak <= cap x 1.05; mean <= cap |",
@@ -1657,10 +1863,14 @@ def write_readme(out_root: Path, runs: list, meta_env: dict):
         "The whole-capture files are deliberately **not** committed -- they",
         "would duplicate the per-app splits at several times the size.",
         "",
-        "**What is not:** any per-app capture over 95 MB. At the time of",
-        "writing that is `vimeo_10Mbps_50ms_pfifo_trial541.vimeo.pcap`",
-        "(111.2 MB). It is listed in `pcap_manifest.csv` with its checksum and",
-        "ships in the `RELEASE_FOR_JABER/` folder alongside this tree instead.",
+        "**What is not:** any per-app capture over 95 MB. Today that is",
+        "`vimeo_solo_10Mbps_50ms_pfifo.vimeo.pcap` (111.2 MB). It is listed in",
+        "`pcap_manifest.csv` with its size and SHA-256 and `in_repo=no`, and it",
+        "is kept in the `pramana-data/pcaps/` archive — on the VM at",
+        "`~/pramana-data/pcaps/` and on the laptop at",
+        "`~/SNL-Lab-Codebases/pramana-data/pcaps/` — not in this repository.",
+        "The split is made by the build, so the committed set and the manifest",
+        "cannot disagree about which captures are here.",
         "",
         "The committed captures were scanned before commit: no HTTP basic or",
         "bearer headers, no password, api-key or secret assignments, no AWS or",
@@ -1741,6 +1951,7 @@ def main():
                 "per_app_pcap",
                 "per_app_bytes",
                 "per_app_sha256",
+                "in_repo",
                 "location",
             ],
         )

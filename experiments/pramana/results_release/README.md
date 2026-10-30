@@ -1,4 +1,9 @@
-# Streaming QoE results — YouTube and Vimeo (Step A)
+# Streaming QoE results — YouTube and Vimeo
+
+The 8-vCPU release round: solo cells at 1, 3, 6 and 10 Mbps, the
+6 Mbps latency cells at 20 and 150 ms, and the concurrent 3 and
+6 Mbps cells. (Earlier drafts of this file were headed "Step A",
+which named only the first solo pass and not the rest of what is here.)
 
 One extraction method and one schema on both apps, with no per-site
 APIs. Solo runs carry one app each. The concurrent cell runs both
@@ -104,11 +109,43 @@ with that difference in mind.
 Dropped frames are carried as raw counts only; throughput is not a QoE
 metric and appears only in its own two charts and the cap check.
 
+## How startup delay is defined
+
+Startup delay is **navigation start to the presentation time of the
+first video frame**, measured on the page's own clock:
+
+```
+startup_delay_ms = first_presentation_ms - navigationStart
+```
+
+`first_presentation_ms` is the `presentationTime` the browser reports
+to the first `requestVideoFrameCallback`, which is the moment a frame
+was actually put on the screen -- not when the player said it was
+ready, not when the first byte arrived, and not when `playing` fired.
+Each run records which of these it used in
+`metrics.1_startup_delay.basis`.
+
+Three consequences worth stating, because each one has been misread:
+
+- **It includes page load.** A 11.6 s figure on the concurrent 3 Mbps
+  cell is mostly Chrome fetching and running the YouTube page under a
+  shared 3 Mbps cap, not the video pipeline stalling. `S3` decomposes
+  it: navStart -> first packet, then first packet -> first frame.
+- **Initial buffering is reported here, not as a rebuffer.** The first
+  `waiting` -> `playing` span before playback has ever advanced is
+  pre-roll, so it is counted into startup and excluded from
+  `rebuffer_events`. `metrics.2_buffer_rebuffering.basis` states how
+  many such spans were excluded and their total duration.
+- **The sample window opens at the first frame, so startup is over
+  before `t=0` on every chart.** Anything earlier than that -- startup
+  itself, pre-roll stalls, buffering done ahead of playback -- sits
+  off the left edge of every time series in the run folder.
+
 ## Checks
 
 | | count |
 |---|---|
-| PASS | 360 |
+| PASS | 376 |
 | **FAIL** | **0** |
 | no reference (N/A) | 8 |
 
@@ -146,6 +183,7 @@ No check failed.
 | B4 | buffer agrees with YouTube's own figure (YouTube only) | MAE <= 1.0 s, r >= 0.90 |
 | R1 | delivered bytes vs Chrome's Network domain | cdp_received / appended in [1.00, 1.15] |
 | R2,R3 | video and audio reported separately, video non-zero | both non-null |
+| R4 | the per-app capture accounts for what the player received | pcap media download / cdp_received in [1.00, 1.25] |
 | W1,W2 | switches timestamped with direction; chart agrees with count | drawn <= switch_count |
 | F1,F2,F3 | rendered rate positive, <= decoded, chart equals summary | <= decoded x 1.05 |
 | J1,J2 | throughput within the shaped cap, peak and mean | peak <= cap x 1.05; mean <= cap |
@@ -178,10 +216,14 @@ runs, under `pcaps/`, one per app per run, each at or under 95 MB.
 The whole-capture files are deliberately **not** committed -- they
 would duplicate the per-app splits at several times the size.
 
-**What is not:** any per-app capture over 95 MB. At the time of
-writing that is `vimeo_10Mbps_50ms_pfifo_trial541.vimeo.pcap`
-(111.2 MB). It is listed in `pcap_manifest.csv` with its checksum and
-ships in the `RELEASE_FOR_JABER/` folder alongside this tree instead.
+**What is not:** any per-app capture over 95 MB. Today that is
+`vimeo_solo_10Mbps_50ms_pfifo.vimeo.pcap` (111.2 MB). It is listed in
+`pcap_manifest.csv` with its size and SHA-256 and `in_repo=no`, and it
+is kept in the `pramana-data/pcaps/` archive — on the VM at
+`~/pramana-data/pcaps/` and on the laptop at
+`~/SNL-Lab-Codebases/pramana-data/pcaps/` — not in this repository.
+The split is made by the build, so the committed set and the manifest
+cannot disagree about which captures are here.
 
 The committed captures were scanned before commit: no HTTP basic or
 bearer headers, no password, api-key or secret assignments, no AWS or
