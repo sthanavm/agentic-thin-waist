@@ -15,6 +15,7 @@ and every second of that would otherwise be captured as idle link time.
 from __future__ import annotations
 
 import argparse
+import base64
 import json
 import os
 import subprocess
@@ -79,6 +80,25 @@ def wait_for_worker(endpoint: str) -> None:
 
 def write_json(path: Path, value: Any) -> None:
     path.write_text(json.dumps(value, indent=2, default=str) + "\n", encoding="utf-8")
+
+
+def write_json_via_container(container: str, path_in_container: str, value: Any) -> None:
+    """Write JSON through the worker container, as root.
+
+    /out gets chown'd to root:root right before capture starts (dumpcap drops
+    privileges before opening its output, so it needs to own the directory),
+    and isn't chown'd back to this process's own user until teardown. Writing
+    from here directly between those two points hits EACCES on the host side
+    of that same mount; going through `docker exec` writes as the same root
+    the chown granted. Base64 avoids any shell-quoting risk from the content.
+    """
+    payload = base64.b64encode(
+        (json.dumps(value, indent=2, default=str) + "\n").encode()
+    ).decode()
+    docker(
+        "exec", container, "sh", "-c",
+        f"echo {payload} | base64 -d > {path_in_container}",
+    )
 
 
 def build_experiment(
@@ -538,7 +558,7 @@ def run_one_tier(
                 # clean baseline, so it's recorded and surfaced instead.
                 ctp_status["ctp_error"] = str(exc)
                 print(f"[{capacity_mbps}mbps]     CTP replay could not start: {exc}")
-            write_json(result_dir / "ctp.json", ctp_status)
+            write_json_via_container(container, "/out/ctp.json", ctp_status)
         time.sleep(1)
 
         print(
