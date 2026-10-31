@@ -1486,6 +1486,7 @@ import socket
 import shutil
 import subprocess
 import struct
+import tempfile
 from collections import defaultdict, namedtuple
 
 _Pkt = namedtuple("_Pkt", ["ts", "orig_len", "data"])
@@ -2120,16 +2121,6 @@ def classify_host(host: str, apps: Iterable[str]) -> str:
     return "other"
 
 
-def _is_private(ip: str) -> bool:
-    if ":" in ip:
-        return ip.lower().startswith(("fc", "fd", "fe80"))
-    try:
-        a, b = (int(x) for x in ip.split(".")[:2])
-    except ValueError:
-        return False
-    return a == 10 or (a == 172 and 16 <= b <= 31) or (a == 192 and b == 168)
-
-
 @dataclass
 class AppTraffic:
     """Time-binned throughput for one app in one direction."""
@@ -2164,6 +2155,11 @@ class AppTraffic:
         return d
 
 
+# Buckets that represent "attribution could not place these bytes". Kept apart
+# from app buckets and `browser_infra`, which are genuine classifications.
+_UNATTRIBUTED_BUCKETS = frozenset({"other", "off_link", "intra_local"})
+
+
 @dataclass
 class CaptureAttribution:
     """The result of splitting one capture into per-app, per-direction traffic."""
@@ -2174,6 +2170,18 @@ class CaptureAttribution:
     duration_s: float = 0.0
     nbins: int = 0
     local_ips: list[str] = field(default_factory=list)
+    # Which rule decided `local_ips`, so a run record says whether locality was
+    # ground truth or a guess: per_app_alias | declared_client_ips |
+    # inferred_private_majority.
+    local_ip_source: str = "none"
+    # Addresses the caller declared as an app's far end (`app_endpoint_ips`).
+    # Recorded so the split can be audited when the peer is RFC1918 and
+    # therefore indistinguishable from the vantage by address alone.
+    peer_ips: list[str] = field(default_factory=list)
+    # probe name -> its endpoint IPs. A probe shares the link but is not an app:
+    # it gets its own bucket, never a per-app pcap, and is never summed into the
+    # shared-cap total, because it is not in `apps`.
+    probe_ips: dict[str, list[str]] = field(default_factory=dict)
     per_app: dict[str, dict[str, AppTraffic]] = field(default_factory=dict)
     host_bytes: dict[str, int] = field(default_factory=dict)
     bucket_mb: dict[str, float] = field(default_factory=dict)
@@ -2357,12 +2365,36 @@ def attribute_capture(
     bin_s: float = 1.0,
     local_ip_map: Optional[dict[str, str]] = None,
     app_endpoint_ips: Optional[dict[str, set[str]]] = None,
+    client_ips: Optional[Iterable[str]] = None,
+    probe_endpoint_ips: Optional[dict[str, set[str]]] = None,
 ) -> CaptureAttribution:
     """Split a shared capture into per-app download/upload throughput series.
 
     `local_ip_map` maps app → its namespace/alias IP. When supplied (substrate
     per-app marks), attribution is exact and by local IP. Otherwise the remote
     endpoint is identified from in-capture DNS answers + TLS SNI.
+
+    Locality — which address is "us" — decides every packet's direction, so it
+    is resolved in a fixed order of decreasing authority:
+
+    1. `local_ip_map`      per-app alias IPs from the substrate (exact).
+    2. `client_ips`        declared vantage addresses, e.g. ns1's veth1 IP.
+    3. inference           private addresses carrying >=10% of packets.
+
+    `probe_endpoint_ips` maps a *probe* name to its endpoints. A probe (IRTT, a
+    NetVibe offerer) shares the link with the app under test but is not an app:
+    it has no player, no QoE and no per-app pcap. Naming its endpoints keeps its
+    traffic out of `other`, out of the app buckets, and -- the part that matters
+    -- out of reach of the unnamed-flow adoption pass, which would otherwise
+    hand a timing-overlapped RFC1918 flow straight to the browser app.
+
+    Inference alone is wrong as soon as the far end is *also* RFC1918, which is
+    the normal case for anything we run inside our own namespaces (the WebRTC
+    peer server in ns2, an IRTT server, a NetVibe multiofferer). It claims both
+    ends as local, so `remote` ends up pointing at a local address that has no
+    hostname, and the flow lands in "other" — a measured 1.5% attributed. Hence
+    rule 2, and hence `app_endpoint_ips` being subtracted from the inferred set:
+    an address the caller names as an app's peer is the far side by definition.
     """
     apps = [a for a in apps]
     res = CaptureAttribution(bin_s=bin_s)
@@ -2440,22 +2472,62 @@ def attribute_capture(
     res.t0_epoch = round(t0, 3)
     res.nbins = max(int(math.ceil(res.duration_s / bin_s)), 1)
 
-    # Local endpoints: private IPs that appear on a large share of packets. With
-    # per-app alias IPs there are several; with the deployed single-namespace
-    # setup there is exactly one.
+    # Addresses the caller names as some app's peer are the far side of the
+    # measurement by definition, so they can never be the vantage point.
+    _probe_ip_name: dict[str, str] = {
+        ip: name
+        for name, ips in (probe_endpoint_ips or {}).items()
+        for ip in (ips or ())
+        if ip
+    }
+    _declared_app_ips = {
+        ip for ips in (app_endpoint_ips or {}).values() for ip in ips if ip
+    }
+    # A probe's far end is as much a peer as an app's: it is the other side of
+    # the measurement, so it can never be the vantage point either.
+    declared_peers = _declared_app_ips | set(_probe_ip_name)
+
+    # Local endpoints: see the ordering in the docstring.
     if ip_from_alias:
         res.local_ips = sorted(ip_from_alias)
         res.method = "local_alias_ip"
+        res.local_ip_source = "per_app_alias"
+    elif client_ips:
+        declared_client = {ip for ip in client_ips if ip}
+        # An address declared as both the vantage and an app's peer makes every
+        # direction arbitrary. Refuse rather than pick one silently.
+        contradiction = sorted(declared_client & declared_peers)
+        if contradiction:
+            raise ValueError(
+                f"address(es) {contradiction} are declared BOTH as the capture "
+                f"vantage (client_ips) and as an app endpoint (app_endpoint_ips). "
+                f"One of the two is wrong, and the choice silently decides the "
+                f"direction of every packet, so attribution will not guess."
+            )
+        res.local_ips = sorted(declared_client)
+        res.method = "remote_hostname"
+        res.local_ip_source = "declared_client_ips"
     else:
         res.local_ips = sorted(
             ip
             for ip, c in endpoint_pkts.items()
-            if _is_private(ip) and c >= 0.10 * total_pkts
+            if _is_private_ip(ip)
+            and c >= 0.10 * total_pkts
+            and ip not in declared_peers
         )
         if not res.local_ips and endpoint_pkts:
-            res.local_ips = [max(endpoint_pkts, key=lambda k: endpoint_pkts[k])]
+            busiest = [ip for ip in endpoint_pkts if ip not in declared_peers]
+            if busiest:
+                res.local_ips = [max(busiest, key=lambda k: endpoint_pkts[k])]
         res.method = "remote_hostname"
+        res.local_ip_source = "inferred_private_majority"
     local = set(res.local_ips)
+    res.peer_ips = sorted(declared_peers)
+    res.probe_ips = {
+        name: sorted(ips)
+        for name, ips in sorted((probe_endpoint_ips or {}).items())
+        if ips
+    }
 
     # ── pass 1b: adopt unnamed flows that only one app can plausibly own ─────
     # Only meaningful for remote-hostname attribution; with per-app alias IPs
@@ -2471,8 +2543,11 @@ def attribute_capture(
         # not a heuristic, so seed it directly.
         for _app, _ips in (app_endpoint_ips or {}).items():
             for _ip in _ips:
-                if _ip in local:
-                    continue
+                # Deliberately NOT skipped when `_ip` is private: a peer we run
+                # ourselves inside ns2 is RFC1918, and dropping it here was the
+                # second half of the 1.5%-attributed collapse. It cannot be in
+                # `local` any more — declared peers are excluded above, and a
+                # contradiction with `client_ips` raises.
                 named_app_ips[_app].add(_ip)
                 _sp = endpoint_span.get(_ip)
                 if _sp:
@@ -2496,10 +2571,24 @@ def attribute_capture(
                         if cur is None
                         else (min(cur[0], span[0]), max(cur[1], span[1]))
                     )
+        # A probe's endpoint is named, so it is not "unnamed" and must not be
+        # offered to adoption. IRTT's UDP flow overlaps the browser's run
+        # exactly and carries no DNS answer or SNI, which is precisely the
+        # shape `adopt_unnamed_ips` claims by timing when only one app is in
+        # the run -- it would have been handed to the browser app.
+        # Declared endpoints -- an app's or a probe's -- are named, so they are
+        # not "unnamed" and must not be offered to adoption. A declared app
+        # endpoint with no in-capture hostname was otherwise "adopted" into the
+        # app it had already been declared for, which put an entry in
+        # `adopted_ips` that was not an adoption at all. That field exists so
+        # every real adoption is auditable, so it has to mean only that.
         unnamed = {
             ip: (endpoint_bytes[ip], sp[0], sp[1])
             for ip, sp in endpoint_span.items()
-            if ip not in local and ip not in ip_host
+            if ip not in local
+            and ip not in ip_host
+            and ip not in _probe_ip_name
+            and ip not in _declared_app_ips
         }
         adopted = adopt_unnamed_ips(unnamed, named_app_ips, app_windows)
         res.adopted_ips = dict(sorted(adopted.items()))
@@ -2538,6 +2627,14 @@ def attribute_capture(
         total_bytes += ol
 
         # Direction is defined by the local endpoint: toward it = download.
+        if src in local and dst in local:
+            # Both ends are the vantage point. With a correct local set this
+            # cannot happen; when it does, the old code took the `dst in local`
+            # branch and called it a download with `remote` pointing at a local
+            # address — unattributable, and counted twice over the two
+            # directions. Tally it as its own bucket so it is visible instead.
+            bucket_bytes["intra_local"] += ol
+            continue
         if dst in local:
             direction, remote, localside = "download", src, dst
         elif src in local:
@@ -2546,7 +2643,12 @@ def attribute_capture(
             bucket_bytes["off_link"] += ol
             continue
 
-        if res.method == "local_alias_ip":
+        if remote in _probe_ip_name:
+            # Checked before anything else, including the alias path: a probe's
+            # identity is declared, not inferred, and it must not be able to
+            # fall into an app bucket by any route.
+            bucket = _probe_ip_name[remote]
+        elif res.method == "local_alias_ip":
             bucket = ip_from_alias.get(localside, "other")
         else:
             host = ip_host.get(remote, "")
@@ -2588,8 +2690,21 @@ def attribute_capture(
     res.media_bytes = {
         a: {d: media_tally.get((a, d), 0) for d in ("download", "upload")} for a in apps
     }
-    named = sum(v for k, v in bucket_bytes.items() if k != "other")
+    # "attributed" means "assigned to a named traffic class". `other` is the
+    # explicit unknown, and `off_link`/`intra_local` are packets attribution
+    # could not place at all, so counting them as named would overstate the
+    # very figure that is supposed to reveal this bug.
+    named = sum(v for k, v in bucket_bytes.items() if k not in _UNATTRIBUTED_BUCKETS)
     res.attributed_fraction = round(named / total_bytes, 4) if total_bytes else 0.0
+    if bucket_bytes.get("intra_local"):
+        share = 100 * bucket_bytes["intra_local"] / total_bytes
+        res.note = (
+            f"{share:.1f}% of bytes travelled between two addresses both held "
+            f"to be local ({sorted(local)}), so they could not be attributed. "
+            f"Declare the capture vantage via client_ips, or the far end via "
+            f"app_endpoint_ips, so one side is unambiguously remote."
+        )
+        print(f"  ! {res.note}")
 
     for app in apps:
         res.per_app[app] = {}
@@ -2689,10 +2804,21 @@ class NetStats:
     stall_seconds: Optional[float] = None  # seconds with ~no traffic
     shaping_verified: bool = False
     shaping_error_pct: Optional[float] = None
+    # Set when the download direction could not be isolated, so a caller never
+    # has to infer "no packets" from `avg_throughput_mbps is None`.
+    note: str = ""
 
 
-def analyze_pcap_netstats(pcap: Path, cap_mbps: float) -> NetStats:
-    """Compute throughput stats from the capture and verify the cap was respected."""
+def analyze_pcap_netstats(
+    pcap: Path, cap_mbps: float, client_ips: Optional[Iterable[str]] = None
+) -> NetStats:
+    """Compute throughput stats from the capture and verify the cap was respected.
+
+    `client_ips` declares the capture vantage. Without it locality is inferred
+    as "any private address", which claims both ends of a flow between two of
+    our own namespaces and then counts every packet as a download — inflating
+    measured throughput by roughly 2x against a download-only cap.
+    """
     if not pcap.exists():
         return NetStats()
     # One pass, keeping the link type so each packet's direction is known: the
@@ -2723,25 +2849,51 @@ def analyze_pcap_netstats(pcap: Path, cap_mbps: float) -> NetStats:
     ts = [p.ts for p in packets if p.ts]
     duration = (max(ts) - min(ts)) if len(ts) > 1 else 0.0
 
-    # Local side = the endpoint the capture sits behind. Prefer a private
-    # address; fall back to the busiest endpoint, as attribution does.
-    local = {ip for ip in endpoint_pkts if _is_private_ip(ip)}
-    if not local and endpoint_pkts:
-        local = {max(endpoint_pkts, key=lambda k: endpoint_pkts[k])}
-    down = [pkt for pkt, _src, dst in ip_pkts if dst in local]
+    # Local side = the endpoint the capture sits behind. Declared when the
+    # caller knows it; otherwise inferred as "private", falling back to the
+    # busiest endpoint, as attribution does.
+    note = ""
+    if client_ips:
+        local = {ip for ip in client_ips if ip}
+    else:
+        local = {ip for ip in endpoint_pkts if _is_private_ip(ip)}
+        if not local and endpoint_pkts:
+            local = {max(endpoint_pkts, key=lambda k: endpoint_pkts[k])}
+    # `_src not in local` is what keeps a flow between two of our own
+    # namespaces out of the download total. Without it both directions count as
+    # download and the shaping check is measured against roughly twice the real
+    # download rate.
+    down = [pkt for pkt, _src, dst in ip_pkts if dst in local and _src not in local]
+    intra = sum(1 for _pkt, _src, dst in ip_pkts if dst in local and _src in local)
+    if intra and not down:
+        note = (
+            f"every IP packet ran between two addresses both held to be local "
+            f"({sorted(local)}), so no download direction could be isolated "
+            f"and no throughput is reported. Pass client_ips to name the "
+            f"capture vantage."
+        )
+        print(f"  ! {note}")
     down_bytes = sum(p.orig_len for p in down)
 
     ns = NetStats(
+        note=note,
         packets=len(packets),
         duration_s=round(duration, 2),
         total_mb=round(total_bytes / 1e6, 2),  # whole capture, both directions
+        # `None`, not 0.0, when the download direction could not be isolated:
+        # a reported 0.0 Mbps compares as "under the cap" and would mark the
+        # shaping check verified on a capture nothing was measured from.
         avg_throughput_mbps=(
-            round(down_bytes * 8 / max(duration, 0.001) / 1e6, 3) if duration else None
+            round(down_bytes * 8 / max(duration, 0.001) / 1e6, 3)
+            if duration and down
+            else None
         ),
     )
 
     # per-second throughput series for peak / p95 / stalls — shaped direction
-    _, rates = _throughput_series(down or packets, 1.0)
+    # only. Falling back to every packet when `down` is empty would report a
+    # peak and a p95 for a direction that was never identified.
+    _, rates = _throughput_series(down, 1.0) if down else (None, [])
     if rates:
         srt = sorted(rates)
         ns.peak_throughput_mbps = round(max(rates), 3)
@@ -3530,7 +3682,20 @@ def replot_run(run_dir: Path | str, bin_s: float = 1.0) -> dict[str, str]:
         print(f"  ! no capture.pcap in {run_dir}")
         return {}
 
-    at = attribute_capture(pcap, cfg.apps, cfg.bandwidth_mbps, bin_s=bin_s)
+    # Same ground truth as the live path in run_direct: a re-render must not
+    # quietly fall back to inferred locality and produce a different split from
+    # the run it is re-rendering.
+    at = attribute_capture(
+        pcap,
+        cfg.apps,
+        cfg.bandwidth_mbps,
+        bin_s=bin_s,
+        app_endpoint_ips=merge_endpoint_ips(
+            app_endpoint_ips_from_urls(cfg),
+            app_endpoint_ips_from_webrtc_stats(run_dir, cfg.apps),
+        ),
+        client_ips=client_ips_for_capture(),
+    )
     # Carry the record's real player QoE into the plots, so a re-render shows the
     # player-side panels rather than falling back to the network proxy view.
     plots = generate_run_plots(
@@ -3861,23 +4026,525 @@ def substrate_teardown_per_app_marks() -> None:
         pass
 
 
-def app_endpoint_ips_from_urls(cfg: "ExperimentConfig") -> dict[str, set[str]]:
+# ═════════════════════════════════════════════════════════════════════════════
+#  IRTT — a UDP round-trip probe that shares the link with the app under test
+#
+#  It is a *probe*, not an app: no player, no QoE, no per-app pcap, and it is
+#  never summed into the shared-cap total. It has the same start/stop lifecycle
+#  as /capture and /replay, which is what lets it run concurrently with a
+#  browser without touching run_direct's app sequencing.
+# ═════════════════════════════════════════════════════════════════════════════
+IRTT_ENABLED = os.environ.get("PRAMANA_IRTT", "0").strip() not in ("", "0", "false")
+IRTT_PROBE_NAME = "irtt"
+IRTT_SERVER_ADDR = os.environ.get("PRAMANA_IRTT_SERVER", "172.16.2.1")
+IRTT_PORT = int(os.environ.get("PRAMANA_IRTT_PORT", "2112"))
+IRTT_INTERVAL_MS = int(os.environ.get("PRAMANA_IRTT_INTERVAL_MS", "100"))
+# The deployed worker image predates POST /irtt and answers 404. Rather than
+# silently skipping the probe, the orchestrator can drive irtt itself by
+# entering the worker's namespaces from the host. Opt-in, and always recorded
+# in the run as `transport`, so no reader has to guess which path produced the
+# numbers.
+IRTT_HOST_FALLBACK = os.environ.get("PRAMANA_IRTT_HOST_FALLBACK", "0").strip() not in (
+    "",
+    "0",
+    "false",
+)
+IRTT_BIN = os.environ.get("PRAMANA_IRTT_BIN", "irtt")
+IRTT_WORKER_CONTAINER = os.environ.get("PRAMANA_IRTT_CONTAINER", "substrate-worker")
+
+
+def _irtt_netns_path(namespace: str) -> str:
+    """Host path to one of the worker's network namespaces.
+
+    ns1/ns2 live inside the worker container, so they are not in the host's
+    /run/netns. They are reachable through the container's root filesystem.
+    """
+    pid = subprocess.run(
+        ["docker", "inspect", "-f", "{{.State.Pid}}", IRTT_WORKER_CONTAINER],
+        capture_output=True,
+        text=True,
+        timeout=30,
+    )
+    if pid.returncode != 0 or not pid.stdout.strip().isdigit():
+        raise RuntimeError(
+            f"could not read pid of container {IRTT_WORKER_CONTAINER!r}: "
+            f"{pid.stderr.strip()[:200]}"
+        )
+    return f"/proc/{pid.stdout.strip()}/root/run/netns/{namespace}"
+
+
+def _irtt_host_start(duration_s: int) -> dict[str, Any]:
+    """Start irtt from the host, inside the worker's namespaces."""
+    binary = shutil.which(IRTT_BIN) or IRTT_BIN
+    bind = f"{IRTT_SERVER_ADDR}:{IRTT_PORT}"
+    srv_ns = _irtt_netns_path("ns2")
+    cli_ns = _irtt_netns_path("ns1")
+    out = Path(tempfile.gettempdir()) / f"irtt_{uuid.uuid4().hex[:10]}.json"
+
+    # `timeout` is a hard backstop, not the normal stop path. Without it an
+    # interpreter that dies mid-run leaves a server holding port 2112, and the
+    # next run fails to bind with an error that looks nothing like the cause.
+    server = subprocess.Popen(
+        [
+            "sudo",
+            "-n",
+            "timeout",
+            "-k",
+            "5",
+            str(duration_s + 120),
+            "nsenter",
+            f"--net={srv_ns}",
+            binary,
+            "server",
+            "-b",
+            bind,
+            "-d",
+            f"{duration_s + 60}s",
+            "-i",
+            "1ms",
+            "--timeout=10s",
+        ],
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+    )
+    # Readiness, not a sleep: `-n` validates the test against the server
+    # without sending one. Starting the client too early fails with
+    # "connection refused", which reads as a network fault rather than a race.
+    deadline = time.time() + 10.0
+    last = ""
+    while time.time() < deadline:
+        if server.poll() is not None:
+            _, err = server.communicate()
+            raise RuntimeError(
+                f"irtt server exited immediately (rc={server.returncode}): "
+                f"{err.decode(errors='replace')[:300]}"
+            )
+        probe = subprocess.run(
+            [
+                "sudo",
+                "-n",
+                "nsenter",
+                f"--net={cli_ns}",
+                binary,
+                "client",
+                "-n",
+                "-Q",
+                "-d",
+                "1s",
+                bind,
+            ],
+            capture_output=True,
+            timeout=15,
+        )
+        if probe.returncode == 0:
+            break
+        last = probe.stderr.decode(errors="replace").strip()[:200]
+        time.sleep(0.5)
+    else:
+        _irtt_kill(server)
+        raise RuntimeError(f"irtt server at {bind} never accepted a client: {last}")
+
+    client = subprocess.Popen(
+        [
+            "sudo",
+            "-n",
+            "nsenter",
+            f"--net={cli_ns}",
+            binary,
+            "client",
+            "-i",
+            f"{IRTT_INTERVAL_MS}ms",
+            "-d",
+            f"{duration_s}s",
+            "-Q",
+            "-o",
+            str(out),
+            bind,
+        ],
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+    )
+    return {
+        "transport": "host_nsenter",
+        "server_proc": server,
+        "client_proc": client,
+        "out_path": str(out),
+        "server_address": IRTT_SERVER_ADDR,
+        "port": IRTT_PORT,
+        "endpoint_ips": [IRTT_SERVER_ADDR],
+    }
+
+
+def _irtt_kill(proc: "subprocess.Popen") -> None:
+    if proc.poll() is not None:
+        return
+    proc.terminate()
+    try:
+        proc.wait(timeout=5)
+    except subprocess.TimeoutExpired:
+        proc.kill()
+
+
+def _irtt_host_stop(session: dict[str, Any]) -> dict[str, Any]:
+    client, server = session["client_proc"], session["server_proc"]
+    stderr = ""
+    try:
+        _, err = client.communicate(timeout=20)
+        stderr = err.decode(errors="replace")[:500]
+    except subprocess.TimeoutExpired:
+        _irtt_kill(client)
+    _irtt_kill(server)
+
+    out = Path(session["out_path"])
+    result, error = None, None
+    try:
+        if out.exists():
+            result = json.loads(out.read_text())
+        else:
+            error = (
+                f"irtt wrote no output (rc={client.returncode}): "
+                f"{stderr.strip()[:300]}"
+            )
+    except (ValueError, OSError) as exc:
+        error = f"irtt output unreadable: {type(exc).__name__}: {exc}"
+    finally:
+        # Written by root through sudo, so removing it needs the same.
+        subprocess.run(
+            ["sudo", "-n", "rm", "-f", str(out)], capture_output=True, timeout=30
+        )
+    return {
+        "transport": "host_nsenter",
+        "server_address": session["server_address"],
+        "port": session["port"],
+        "endpoint_ips": session["endpoint_ips"],
+        "client_returncode": client.returncode,
+        "result": result,
+        "error": error,
+    }
+
+
+def substrate_irtt_start(duration_s: int) -> Optional[dict[str, Any]]:
+    """Start the probe. Returns a session handle, or None if it could not start.
+
+    Tries the worker endpoint first. A 404 means the deployed image predates
+    POST /irtt; that is reported, and the host fallback is used only when it has
+    been explicitly enabled.
+    """
+    payload = {
+        "duration_seconds": int(duration_s),
+        "interval_ms": IRTT_INTERVAL_MS,
+        "server_namespace": "ns2",
+        "client_namespace": "ns1",
+        "server_address": IRTT_SERVER_ADDR,
+        "port": IRTT_PORT,
+    }
+    try:
+        r = requests.post(f"{SUBSTRATE}/irtt", json=payload, timeout=HTTP_TIMEOUT * 2)
+        if r.status_code != 404:
+            r.raise_for_status()
+            data = r.json()
+            data["transport"] = "worker_endpoint"
+            print(
+                f"    · IRTT started via worker endpoint "
+                f"(id={data.get('irtt_id', '?')[:8]}, "
+                f"{IRTT_SERVER_ADDR}:{IRTT_PORT}, every {IRTT_INTERVAL_MS} ms)"
+            )
+            return data
+        print(
+            "    ! worker has no POST /irtt (404) — its image predates this "
+            "endpoint and needs rebuilding from services/substrate-worker"
+        )
+    except requests.RequestException as exc:
+        print(f"    ! IRTT start via worker failed: {type(exc).__name__}: {exc}")
+        return None
+
+    if not IRTT_HOST_FALLBACK:
+        print(
+            "    ! IRTT skipped. Set PRAMANA_IRTT_HOST_FALLBACK=1 to drive it "
+            "from the host instead, or deploy a worker that serves /irtt."
+        )
+        return None
+    try:
+        session = _irtt_host_start(int(duration_s))
+        print(
+            f"    · IRTT started via HOST FALLBACK (nsenter into "
+            f"{IRTT_WORKER_CONTAINER}'s ns1/ns2), {IRTT_SERVER_ADDR}:{IRTT_PORT}, "
+            f"every {IRTT_INTERVAL_MS} ms"
+        )
+        return session
+    except Exception as exc:  # noqa: BLE001 - a probe must never fail the run
+        print(f"    ! IRTT host fallback failed: {type(exc).__name__}: {exc}")
+        return None
+
+
+def substrate_irtt_stop(session: Optional[dict[str, Any]]) -> Optional[dict[str, Any]]:
+    """Stop the probe and return its raw result, or None if there was none."""
+    if not session:
+        return None
+    if session.get("transport") == "host_nsenter":
+        try:
+            return _irtt_host_stop(session)
+        except Exception as exc:  # noqa: BLE001
+            print(f"    ! IRTT stop (host) failed: {type(exc).__name__}: {exc}")
+            return {"transport": "host_nsenter", "error": str(exc), "result": None}
+    irtt_id = session.get("irtt_id")
+    if not irtt_id:
+        return None
+    try:
+        r = requests.delete(f"{SUBSTRATE}/irtt/{irtt_id}", timeout=HTTP_TIMEOUT * 4)
+        r.raise_for_status()
+        data = r.json()
+        data["transport"] = "worker_endpoint"
+        return data
+    except requests.RequestException as exc:
+        print(f"    ! IRTT stop failed: {type(exc).__name__}: {exc}")
+        return {"transport": "worker_endpoint", "error": str(exc), "result": None}
+
+
+def irtt_probe_endpoints(
+    irtt_record: Optional[dict[str, Any]],
+) -> dict[str, set[str]]:
+    """{probe: {ip}} for attribution, from a finished probe's own report.
+
+    Taken from what the probe reports rather than from configuration, so the
+    addresses registered as ground truth are the ones actually used. An empty
+    map when the probe did not run keeps attribution identical to a run without
+    it.
+    """
+    if not irtt_record:
+        return {}
+    ips = {ip for ip in (irtt_record.get("endpoint_ips") or []) if ip}
+    if not ips:
+        return {}
+    return {irtt_record.get("probe") or IRTT_PROBE_NAME: ips}
+
+
+def _ns_to_ms(v: Any) -> Optional[float]:
+    """irtt reports durations in nanoseconds; the record uses milliseconds."""
+    try:
+        return round(float(v) / 1e6, 4)
+    except (TypeError, ValueError):
+        return None
+
+
+def summarize_irtt(stopped: Optional[dict[str, Any]]) -> Optional[dict[str, Any]]:
+    """Reduce irtt's JSON to a record in the same shape as the rest.
+
+    Durations are converted to milliseconds and named `_ms`, because every other
+    latency in this project is in milliseconds and a bare number in nanoseconds
+    beside them would be read as one.
+    """
+    if not stopped:
+        return None
+    out: dict[str, Any] = {
+        "probe": IRTT_PROBE_NAME,
+        "transport": stopped.get("transport"),
+        "server_address": stopped.get("server_address"),
+        "port": stopped.get("port"),
+        "endpoint_ips": stopped.get("endpoint_ips") or [],
+        "interval_ms": IRTT_INTERVAL_MS,
+        "client_returncode": stopped.get("client_returncode"),
+        "error": stopped.get("error"),
+        "status": (
+            "ok" if (stopped.get("result") and not stopped.get("error")) else "failed"
+        ),
+    }
+    raw = stopped.get("result") or {}
+    stats = raw.get("stats") or {}
+    if not stats:
+        return out
+
+    rtt = stats.get("rtt") or {}
+    out["round_trip_ms"] = {
+        k: _ns_to_ms(rtt.get(k))
+        for k in ("min", "mean", "median", "max", "stddev")
+        if rtt.get(k) is not None
+    }
+    out["one_way_ms"] = {
+        "send_mean": _ns_to_ms((stats.get("send_delay") or {}).get("mean")),
+        "receive_mean": _ns_to_ms((stats.get("receive_delay") or {}).get("mean")),
+    }
+    out["jitter_ms"] = {
+        "round_trip_mean": _ns_to_ms((stats.get("ipdv_round_trip") or {}).get("mean")),
+        "send_mean": _ns_to_ms((stats.get("ipdv_send") or {}).get("mean")),
+        "receive_mean": _ns_to_ms((stats.get("ipdv_receive") or {}).get("mean")),
+    }
+    out["packets"] = {
+        "sent": stats.get("packets_sent"),
+        "received": stats.get("packets_received"),
+        "loss_percent": stats.get("packet_loss_percent"),
+        "upstream_loss_percent": stats.get("upstream_loss_percent"),
+        "downstream_loss_percent": stats.get("downstream_loss_percent"),
+        "duplicates": stats.get("duplicates"),
+        "late": stats.get("late_packets"),
+    }
+    out["bytes"] = {
+        "sent": stats.get("bytes_sent"),
+        "received": stats.get("bytes_received"),
+    }
+    out["duration_ms"] = _ns_to_ms(stats.get("duration"))
+    # The probe's own send timing. If the sender missed its schedule the
+    # latency numbers describe the sender, not the link, so this is reported
+    # rather than left in the raw blob.
+    out["timer"] = {
+        "error_percent": stats.get("timer_err_percent"),
+        "miss_percent": stats.get("timer_miss_percent"),
+        "misses": stats.get("timer_misses"),
+    }
+    out["irtt_version"] = (raw.get("version") or {}).get("irtt")
+    return out
+
+
+def app_endpoint_ips_from_url_map(
+    app_urls: Optional[dict[str, str]],
+) -> dict[str, set[str]]:
     """{app: {ip}} for any app whose URL names a literal IP rather than a host.
 
     Used for targets we run ourselves (the WebRTC peer server), which are
     reached by address and therefore leave no DNS or SNI trace to attribute by.
+
+    Takes a plain mapping rather than an ExperimentConfig so a release rebuild,
+    which only has the serialised config out of record.json, can derive exactly
+    the same ground truth as the live run.
     """
-    import ipaddress
     from urllib.parse import urlparse
 
     out: dict[str, set[str]] = {}
-    for app, url in (cfg.app_urls or {}).items():
+    for app, url in (app_urls or {}).items():
         host = urlparse(url or "").hostname or ""
         try:
             ipaddress.ip_address(host)
         except ValueError:
             continue
         out.setdefault(app, set()).add(host)
+    return out
+
+
+def app_endpoint_ips_from_urls(cfg: "ExperimentConfig") -> dict[str, set[str]]:
+    """{app: {ip}} from an ExperimentConfig's URLs."""
+    return app_endpoint_ips_from_url_map(cfg.app_urls)
+
+
+# The application client's address inside ns1. This is the substrate-worker
+# topology convention documented in services/substrate-worker/README.md
+# (veth1 172.16.1.1/30 ↔ veth2 172.16.1.2/30) and already relied on by
+# services/analysis/pcap_analysis.py:APP_CLIENT_IP_DEFAULT. Not imported from
+# there because that module pulls in scapy, which this one deliberately avoids
+# in favour of its own streaming pcap reader.
+#
+# Override for a different topology with PRAMANA_CLIENT_IPS="ip[,ip...]".
+#
+# FOLLOW-UP: this duplicates services/analysis/pcap_analysis.py's
+# APP_CLIENT_IP_DEFAULT. Worth collapsing into one shared topology constant,
+# which means first moving it somewhere neither module has to import scapy to
+# reach. Left as two copies deliberately rather than importing scapy here.
+CLIENT_IPS_DEFAULT = ("172.16.1.1",)
+
+
+def client_ips_for_capture() -> list[str]:
+    """Addresses the capture vantage sits behind, as ground truth for direction.
+
+    Capture happens on `veth2`, the root↔ns1 leg, so the client side is ns1.
+    Declaring it removes the guesswork that breaks down the moment the far end
+    is also RFC1918 — see `attribute_capture`.
+    """
+    raw = os.environ.get("PRAMANA_CLIENT_IPS", "")
+    if raw.strip():
+        out: list[str] = []
+        for part in raw.split(","):
+            ip = part.strip()
+            if not ip:
+                continue
+            try:
+                ipaddress.ip_address(ip)
+            except ValueError:
+                raise ValueError(
+                    f"PRAMANA_CLIENT_IPS contains {ip!r}, which is not an IP "
+                    f"address. Direction attribution depends on this being "
+                    f"exact, so it is not silently ignored."
+                )
+            out.append(ip)
+        return out
+    return list(CLIENT_IPS_DEFAULT)
+
+
+def app_endpoint_ips_from_webrtc_stats(
+    run_dir: Path, apps: Iterable[str]
+) -> dict[str, set[str]]:
+    """{app: {ip}} from the ICE pair the call actually used.
+
+    A room URL names a web server, not the media path. WebRTC negotiates its
+    own transport address, and for a peer inside our namespaces that address is
+    RFC1918 and unrelated to whatever the URL resolved to — so attributing by
+    the URL's address misses the media entirely. The collector reports the
+    selected candidate pair per sample; this reads the negotiated remote
+    address back out.
+
+    Addresses that are not literal IPs are skipped and counted: Chrome
+    publishes host candidates as mDNS `<uuid>.local` names unless the page
+    holds a media permission, and a name cannot be matched against a capture.
+    """
+    out: dict[str, set[str]] = {}
+    for app in apps:
+        f = run_dir / "qoe" / f"{app}_stats.jsonl"
+        if not f.exists() or f.stat().st_size == 0:
+            continue
+        found: set[str] = set()
+        mdns = 0
+        unparsable = 0
+        for line in f.read_text(errors="replace").splitlines():
+            line = line.strip()
+            if not line:
+                continue
+            try:
+                sample = json.loads(line)
+            except (ValueError, TypeError):
+                unparsable += 1
+                continue
+            stats = sample.get("stats")
+            if not isinstance(stats, dict):
+                continue
+            addr = stats.get("selected_remote_address")
+            if not addr or not isinstance(addr, str):
+                continue
+            try:
+                ipaddress.ip_address(addr)
+            except ValueError:
+                if addr.endswith(".local"):
+                    mdns += 1
+                else:
+                    unparsable += 1
+                continue
+            found.add(addr)
+        if mdns:
+            print(
+                f"    ! {app}: ICE reported an mDNS candidate name on {mdns} "
+                f"sample(s) instead of an address, so those cannot be matched "
+                f"against the capture"
+            )
+        if unparsable:
+            print(
+                f"    ! {app}: {unparsable} stats sample(s) carried an "
+                f"unreadable selected-candidate address"
+            )
+        if found:
+            out[app] = found
+            print(
+                f"    · {app}: ICE negotiated {sorted(found)} "
+                f"(used as attribution ground truth)"
+            )
+    return out
+
+
+def merge_endpoint_ips(
+    *sources: Optional[dict[str, set[str]]],
+) -> dict[str, set[str]]:
+    """Union of several {app: {ip}} maps, skipping None."""
+    out: dict[str, set[str]] = {}
+    for source in sources:
+        for app, ips in (source or {}).items():
+            if ips:
+                out.setdefault(app, set()).update(ips)
     return out
 
 
@@ -3932,6 +4599,15 @@ def run_direct(cfg: ExperimentConfig) -> dict[str, Any]:
     print(f"  • capture on {DOWNSTREAM_IFACE} (auto-stop {cap_duration}s) ...")
     cap = substrate_capture_start(cfg.slug, duration_s=cap_duration)
     capture_id = cap["capture_id"]
+
+    # The probe starts inside the capture window and runs alongside the app,
+    # not after it. It is deliberately started AFTER the capture so every probe
+    # packet is in the pcap, and stopped BEFORE the download so none is in
+    # flight while the capture is being finalised.
+    irtt_session = None
+    if IRTT_ENABLED:
+        print("  • IRTT probe (ns1 → ns2, concurrent with the app) ...")
+        irtt_session = substrate_irtt_start(cfg.duration_s)
 
     run_results: dict[str, Any] = {}
     reg, _qlib = _bind_shared()
@@ -4005,6 +4681,21 @@ def run_direct(cfg: ExperimentConfig) -> dict[str, Any]:
 
     apps = cfg.apps  # collector/substrate split is done; report on all apps
 
+    irtt_stopped = substrate_irtt_stop(irtt_session)
+    irtt_record = summarize_irtt(irtt_stopped)
+    if irtt_record:
+        if irtt_record.get("status") == "ok":
+            _rt = irtt_record.get("round_trip_ms") or {}
+            _pk = irtt_record.get("packets") or {}
+            print(
+                f"    · IRTT: rtt mean {_rt.get('mean')} ms "
+                f"(min {_rt.get('min')} / max {_rt.get('max')}), "
+                f"{_pk.get('received')}/{_pk.get('sent')} packets, "
+                f"loss {_pk.get('loss_percent')}%  [{irtt_record.get('transport')}]"
+            )
+        else:
+            print(f"    ! IRTT produced no result: {irtt_record.get('error')}")
+
     print("  • finalising capture + downloading pcap ...")
     substrate_capture_wait(capture_id, timeout_s=cap_duration + 60)
     local_pcap = run_dir / "capture.pcap"
@@ -4025,7 +4716,12 @@ def run_direct(cfg: ExperimentConfig) -> dict[str, Any]:
         substrate_teardown_per_app_marks()
 
     # ── link-level stats (shaping fidelity) ──────────────────────────────────
-    net = analyze_pcap_netstats(local_pcap, cfg.bandwidth_mbps) if got else NetStats()
+    client_ips = client_ips_for_capture()
+    net = (
+        analyze_pcap_netstats(local_pcap, cfg.bandwidth_mbps, client_ips=client_ips)
+        if got
+        else NetStats()
+    )
     if net.avg_throughput_mbps is not None:
         verdict = "OK" if net.shaping_verified else "OVER CAP"
         print(
@@ -4050,16 +4746,26 @@ def run_direct(cfg: ExperimentConfig) -> dict[str, Any]:
         attribution = CaptureAttribution(note="deferred: run replot_run(run_dir)")
     else:
         print("  • splitting capture per app ...")
+        # The URL's address and the address ICE actually chose are different
+        # questions; take both, preferring neither, since an app may be reached
+        # by literal IP *and* negotiate a separate media path.
+        endpoint_ips = merge_endpoint_ips(
+            app_endpoint_ips_from_urls(cfg),
+            app_endpoint_ips_from_webrtc_stats(run_dir, apps),
+        )
         attribution = attribute_capture(
             local_pcap,
             apps,
             cfg.bandwidth_mbps,
             local_ip_map=local_ip_map,
-            app_endpoint_ips=app_endpoint_ips_from_urls(cfg),
+            app_endpoint_ips=endpoint_ips,
+            client_ips=None if local_ip_map else client_ips,
+            probe_endpoint_ips=irtt_probe_endpoints(irtt_record),
         )
     if attribution.method != "none":
         print(
             f"    method={attribution.method}  local={attribution.local_ips}  "
+            f"({attribution.local_ip_source})  "
             f"{100 * attribution.attributed_fraction:.1f}% of bytes attributed"
         )
         for bucket, mb in list(attribution.bucket_mb.items())[:6]:
@@ -4237,8 +4943,14 @@ def run_direct(cfg: ExperimentConfig) -> dict[str, Any]:
             ),
             "attributed_byte_fraction": attribution.attributed_fraction,
             "adopted_unnamed_ips": attribution.adopted_ips,
+            "local_ip_source": attribution.local_ip_source,
+            "declared_peer_ips": attribution.peer_ips,
+            "probe_endpoint_ips": attribution.probe_ips,
         },
         "network_stats": asdict(net),
+        # The probe's own record, beside the QoE record rather than inside it:
+        # it measures the link, not the application, and it is not an app.
+        "irtt": irtt_record,
         "per_app_stats": per_app_stats,
         # True when the capture split and plots were postponed to keep a live
         # meeting window free. per_app_stats and the plots are EMPTY in that
@@ -4367,7 +5079,9 @@ def _throughput_from_pcap_path(
     for p in candidates:
         try:
             if p.exists() and p.stat().st_size > 24:
-                ns = analyze_pcap_netstats(p, cap_mbps or 0)
+                ns = analyze_pcap_netstats(
+                    p, cap_mbps or 0, client_ips=client_ips_for_capture()
+                )
                 if ns.avg_throughput_mbps is not None:
                     return ns.avg_throughput_mbps
         except Exception:
@@ -4754,6 +5468,12 @@ __all__ = [
     "iter_capture",
     "attribute_capture",
     "classify_host",
+    # locality + endpoint ground truth (see attribute_capture's docstring)
+    "client_ips_for_capture",
+    "app_endpoint_ips_from_url_map",
+    "app_endpoint_ips_from_urls",
+    "app_endpoint_ips_from_webrtc_stats",
+    "merge_endpoint_ips",
     "AppTraffic",
     "CaptureAttribution",
     "NetStats",
