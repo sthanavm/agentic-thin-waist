@@ -2120,16 +2120,6 @@ def classify_host(host: str, apps: Iterable[str]) -> str:
     return "other"
 
 
-def _is_private(ip: str) -> bool:
-    if ":" in ip:
-        return ip.lower().startswith(("fc", "fd", "fe80"))
-    try:
-        a, b = (int(x) for x in ip.split(".")[:2])
-    except ValueError:
-        return False
-    return a == 10 or (a == 172 and 16 <= b <= 31) or (a == 192 and b == 168)
-
-
 @dataclass
 class AppTraffic:
     """Time-binned throughput for one app in one direction."""
@@ -2164,6 +2154,11 @@ class AppTraffic:
         return d
 
 
+# Buckets that represent "attribution could not place these bytes". Kept apart
+# from app buckets and `browser_infra`, which are genuine classifications.
+_UNATTRIBUTED_BUCKETS = frozenset({"other", "off_link", "intra_local"})
+
+
 @dataclass
 class CaptureAttribution:
     """The result of splitting one capture into per-app, per-direction traffic."""
@@ -2174,6 +2169,14 @@ class CaptureAttribution:
     duration_s: float = 0.0
     nbins: int = 0
     local_ips: list[str] = field(default_factory=list)
+    # Which rule decided `local_ips`, so a run record says whether locality was
+    # ground truth or a guess: per_app_alias | declared_client_ips |
+    # inferred_private_majority.
+    local_ip_source: str = "none"
+    # Addresses the caller declared as an app's far end (`app_endpoint_ips`).
+    # Recorded so the split can be audited when the peer is RFC1918 and
+    # therefore indistinguishable from the vantage by address alone.
+    peer_ips: list[str] = field(default_factory=list)
     per_app: dict[str, dict[str, AppTraffic]] = field(default_factory=dict)
     host_bytes: dict[str, int] = field(default_factory=dict)
     bucket_mb: dict[str, float] = field(default_factory=dict)
@@ -2357,12 +2360,28 @@ def attribute_capture(
     bin_s: float = 1.0,
     local_ip_map: Optional[dict[str, str]] = None,
     app_endpoint_ips: Optional[dict[str, set[str]]] = None,
+    client_ips: Optional[Iterable[str]] = None,
 ) -> CaptureAttribution:
     """Split a shared capture into per-app download/upload throughput series.
 
     `local_ip_map` maps app → its namespace/alias IP. When supplied (substrate
     per-app marks), attribution is exact and by local IP. Otherwise the remote
     endpoint is identified from in-capture DNS answers + TLS SNI.
+
+    Locality — which address is "us" — decides every packet's direction, so it
+    is resolved in a fixed order of decreasing authority:
+
+    1. `local_ip_map`      per-app alias IPs from the substrate (exact).
+    2. `client_ips`        declared vantage addresses, e.g. ns1's veth1 IP.
+    3. inference           private addresses carrying >=10% of packets.
+
+    Inference alone is wrong as soon as the far end is *also* RFC1918, which is
+    the normal case for anything we run inside our own namespaces (the WebRTC
+    peer server in ns2, an IRTT server, a NetVibe multiofferer). It claims both
+    ends as local, so `remote` ends up pointing at a local address that has no
+    hostname, and the flow lands in "other" — a measured 1.5% attributed. Hence
+    rule 2, and hence `app_endpoint_ips` being subtracted from the inferred set:
+    an address the caller names as an app's peer is the far side by definition.
     """
     apps = [a for a in apps]
     res = CaptureAttribution(bin_s=bin_s)
@@ -2440,22 +2459,48 @@ def attribute_capture(
     res.t0_epoch = round(t0, 3)
     res.nbins = max(int(math.ceil(res.duration_s / bin_s)), 1)
 
-    # Local endpoints: private IPs that appear on a large share of packets. With
-    # per-app alias IPs there are several; with the deployed single-namespace
-    # setup there is exactly one.
+    # Addresses the caller names as some app's peer are the far side of the
+    # measurement by definition, so they can never be the vantage point.
+    declared_peers = {
+        ip for ips in (app_endpoint_ips or {}).values() for ip in ips if ip
+    }
+
+    # Local endpoints: see the ordering in the docstring.
     if ip_from_alias:
         res.local_ips = sorted(ip_from_alias)
         res.method = "local_alias_ip"
+        res.local_ip_source = "per_app_alias"
+    elif client_ips:
+        declared_client = {ip for ip in client_ips if ip}
+        # An address declared as both the vantage and an app's peer makes every
+        # direction arbitrary. Refuse rather than pick one silently.
+        contradiction = sorted(declared_client & declared_peers)
+        if contradiction:
+            raise ValueError(
+                f"address(es) {contradiction} are declared BOTH as the capture "
+                f"vantage (client_ips) and as an app endpoint (app_endpoint_ips). "
+                f"One of the two is wrong, and the choice silently decides the "
+                f"direction of every packet, so attribution will not guess."
+            )
+        res.local_ips = sorted(declared_client)
+        res.method = "remote_hostname"
+        res.local_ip_source = "declared_client_ips"
     else:
         res.local_ips = sorted(
             ip
             for ip, c in endpoint_pkts.items()
-            if _is_private(ip) and c >= 0.10 * total_pkts
+            if _is_private_ip(ip)
+            and c >= 0.10 * total_pkts
+            and ip not in declared_peers
         )
         if not res.local_ips and endpoint_pkts:
-            res.local_ips = [max(endpoint_pkts, key=lambda k: endpoint_pkts[k])]
+            busiest = [ip for ip in endpoint_pkts if ip not in declared_peers]
+            if busiest:
+                res.local_ips = [max(busiest, key=lambda k: endpoint_pkts[k])]
         res.method = "remote_hostname"
+        res.local_ip_source = "inferred_private_majority"
     local = set(res.local_ips)
+    res.peer_ips = sorted(declared_peers)
 
     # ── pass 1b: adopt unnamed flows that only one app can plausibly own ─────
     # Only meaningful for remote-hostname attribution; with per-app alias IPs
@@ -2471,8 +2516,11 @@ def attribute_capture(
         # not a heuristic, so seed it directly.
         for _app, _ips in (app_endpoint_ips or {}).items():
             for _ip in _ips:
-                if _ip in local:
-                    continue
+                # Deliberately NOT skipped when `_ip` is private: a peer we run
+                # ourselves inside ns2 is RFC1918, and dropping it here was the
+                # second half of the 1.5%-attributed collapse. It cannot be in
+                # `local` any more — declared peers are excluded above, and a
+                # contradiction with `client_ips` raises.
                 named_app_ips[_app].add(_ip)
                 _sp = endpoint_span.get(_ip)
                 if _sp:
@@ -2538,6 +2586,14 @@ def attribute_capture(
         total_bytes += ol
 
         # Direction is defined by the local endpoint: toward it = download.
+        if src in local and dst in local:
+            # Both ends are the vantage point. With a correct local set this
+            # cannot happen; when it does, the old code took the `dst in local`
+            # branch and called it a download with `remote` pointing at a local
+            # address — unattributable, and counted twice over the two
+            # directions. Tally it as its own bucket so it is visible instead.
+            bucket_bytes["intra_local"] += ol
+            continue
         if dst in local:
             direction, remote, localside = "download", src, dst
         elif src in local:
@@ -2588,8 +2644,21 @@ def attribute_capture(
     res.media_bytes = {
         a: {d: media_tally.get((a, d), 0) for d in ("download", "upload")} for a in apps
     }
-    named = sum(v for k, v in bucket_bytes.items() if k != "other")
+    # "attributed" means "assigned to a named traffic class". `other` is the
+    # explicit unknown, and `off_link`/`intra_local` are packets attribution
+    # could not place at all, so counting them as named would overstate the
+    # very figure that is supposed to reveal this bug.
+    named = sum(v for k, v in bucket_bytes.items() if k not in _UNATTRIBUTED_BUCKETS)
     res.attributed_fraction = round(named / total_bytes, 4) if total_bytes else 0.0
+    if bucket_bytes.get("intra_local"):
+        share = 100 * bucket_bytes["intra_local"] / total_bytes
+        res.note = (
+            f"{share:.1f}% of bytes travelled between two addresses both held "
+            f"to be local ({sorted(local)}), so they could not be attributed. "
+            f"Declare the capture vantage via client_ips, or the far end via "
+            f"app_endpoint_ips, so one side is unambiguously remote."
+        )
+        print(f"  ! {res.note}")
 
     for app in apps:
         res.per_app[app] = {}
@@ -2689,10 +2758,21 @@ class NetStats:
     stall_seconds: Optional[float] = None  # seconds with ~no traffic
     shaping_verified: bool = False
     shaping_error_pct: Optional[float] = None
+    # Set when the download direction could not be isolated, so a caller never
+    # has to infer "no packets" from `avg_throughput_mbps is None`.
+    note: str = ""
 
 
-def analyze_pcap_netstats(pcap: Path, cap_mbps: float) -> NetStats:
-    """Compute throughput stats from the capture and verify the cap was respected."""
+def analyze_pcap_netstats(
+    pcap: Path, cap_mbps: float, client_ips: Optional[Iterable[str]] = None
+) -> NetStats:
+    """Compute throughput stats from the capture and verify the cap was respected.
+
+    `client_ips` declares the capture vantage. Without it locality is inferred
+    as "any private address", which claims both ends of a flow between two of
+    our own namespaces and then counts every packet as a download — inflating
+    measured throughput by roughly 2x against a download-only cap.
+    """
     if not pcap.exists():
         return NetStats()
     # One pass, keeping the link type so each packet's direction is known: the
@@ -2723,25 +2803,51 @@ def analyze_pcap_netstats(pcap: Path, cap_mbps: float) -> NetStats:
     ts = [p.ts for p in packets if p.ts]
     duration = (max(ts) - min(ts)) if len(ts) > 1 else 0.0
 
-    # Local side = the endpoint the capture sits behind. Prefer a private
-    # address; fall back to the busiest endpoint, as attribution does.
-    local = {ip for ip in endpoint_pkts if _is_private_ip(ip)}
-    if not local and endpoint_pkts:
-        local = {max(endpoint_pkts, key=lambda k: endpoint_pkts[k])}
-    down = [pkt for pkt, _src, dst in ip_pkts if dst in local]
+    # Local side = the endpoint the capture sits behind. Declared when the
+    # caller knows it; otherwise inferred as "private", falling back to the
+    # busiest endpoint, as attribution does.
+    note = ""
+    if client_ips:
+        local = {ip for ip in client_ips if ip}
+    else:
+        local = {ip for ip in endpoint_pkts if _is_private_ip(ip)}
+        if not local and endpoint_pkts:
+            local = {max(endpoint_pkts, key=lambda k: endpoint_pkts[k])}
+    # `_src not in local` is what keeps a flow between two of our own
+    # namespaces out of the download total. Without it both directions count as
+    # download and the shaping check is measured against roughly twice the real
+    # download rate.
+    down = [pkt for pkt, _src, dst in ip_pkts if dst in local and _src not in local]
+    intra = sum(1 for _pkt, _src, dst in ip_pkts if dst in local and _src in local)
+    if intra and not down:
+        note = (
+            f"every IP packet ran between two addresses both held to be local "
+            f"({sorted(local)}), so no download direction could be isolated "
+            f"and no throughput is reported. Pass client_ips to name the "
+            f"capture vantage."
+        )
+        print(f"  ! {note}")
     down_bytes = sum(p.orig_len for p in down)
 
     ns = NetStats(
+        note=note,
         packets=len(packets),
         duration_s=round(duration, 2),
         total_mb=round(total_bytes / 1e6, 2),  # whole capture, both directions
+        # `None`, not 0.0, when the download direction could not be isolated:
+        # a reported 0.0 Mbps compares as "under the cap" and would mark the
+        # shaping check verified on a capture nothing was measured from.
         avg_throughput_mbps=(
-            round(down_bytes * 8 / max(duration, 0.001) / 1e6, 3) if duration else None
+            round(down_bytes * 8 / max(duration, 0.001) / 1e6, 3)
+            if duration and down
+            else None
         ),
     )
 
     # per-second throughput series for peak / p95 / stalls — shaped direction
-    _, rates = _throughput_series(down or packets, 1.0)
+    # only. Falling back to every packet when `down` is empty would report a
+    # peak and a p95 for a direction that was never identified.
+    _, rates = _throughput_series(down, 1.0) if down else (None, [])
     if rates:
         srt = sorted(rates)
         ns.peak_throughput_mbps = round(max(rates), 3)
@@ -3530,7 +3636,20 @@ def replot_run(run_dir: Path | str, bin_s: float = 1.0) -> dict[str, str]:
         print(f"  ! no capture.pcap in {run_dir}")
         return {}
 
-    at = attribute_capture(pcap, cfg.apps, cfg.bandwidth_mbps, bin_s=bin_s)
+    # Same ground truth as the live path in run_direct: a re-render must not
+    # quietly fall back to inferred locality and produce a different split from
+    # the run it is re-rendering.
+    at = attribute_capture(
+        pcap,
+        cfg.apps,
+        cfg.bandwidth_mbps,
+        bin_s=bin_s,
+        app_endpoint_ips=merge_endpoint_ips(
+            app_endpoint_ips_from_urls(cfg),
+            app_endpoint_ips_from_webrtc_stats(run_dir, cfg.apps),
+        ),
+        client_ips=client_ips_for_capture(),
+    )
     # Carry the record's real player QoE into the plots, so a re-render shows the
     # player-side panels rather than falling back to the network proxy view.
     plots = generate_run_plots(
@@ -3861,23 +3980,156 @@ def substrate_teardown_per_app_marks() -> None:
         pass
 
 
-def app_endpoint_ips_from_urls(cfg: "ExperimentConfig") -> dict[str, set[str]]:
+def app_endpoint_ips_from_url_map(
+    app_urls: Optional[dict[str, str]],
+) -> dict[str, set[str]]:
     """{app: {ip}} for any app whose URL names a literal IP rather than a host.
 
     Used for targets we run ourselves (the WebRTC peer server), which are
     reached by address and therefore leave no DNS or SNI trace to attribute by.
+
+    Takes a plain mapping rather than an ExperimentConfig so a release rebuild,
+    which only has the serialised config out of record.json, can derive exactly
+    the same ground truth as the live run.
     """
-    import ipaddress
     from urllib.parse import urlparse
 
     out: dict[str, set[str]] = {}
-    for app, url in (cfg.app_urls or {}).items():
+    for app, url in (app_urls or {}).items():
         host = urlparse(url or "").hostname or ""
         try:
             ipaddress.ip_address(host)
         except ValueError:
             continue
         out.setdefault(app, set()).add(host)
+    return out
+
+
+def app_endpoint_ips_from_urls(cfg: "ExperimentConfig") -> dict[str, set[str]]:
+    """{app: {ip}} from an ExperimentConfig's URLs."""
+    return app_endpoint_ips_from_url_map(cfg.app_urls)
+
+
+# The application client's address inside ns1. This is the substrate-worker
+# topology convention documented in services/substrate-worker/README.md
+# (veth1 172.16.1.1/30 ↔ veth2 172.16.1.2/30) and already relied on by
+# services/analysis/pcap_analysis.py:APP_CLIENT_IP_DEFAULT. Not imported from
+# there because that module pulls in scapy, which this one deliberately avoids
+# in favour of its own streaming pcap reader.
+#
+# Override for a different topology with PRAMANA_CLIENT_IPS="ip[,ip...]".
+#
+# FOLLOW-UP: this duplicates services/analysis/pcap_analysis.py's
+# APP_CLIENT_IP_DEFAULT. Worth collapsing into one shared topology constant,
+# which means first moving it somewhere neither module has to import scapy to
+# reach. Left as two copies deliberately rather than importing scapy here.
+CLIENT_IPS_DEFAULT = ("172.16.1.1",)
+
+
+def client_ips_for_capture() -> list[str]:
+    """Addresses the capture vantage sits behind, as ground truth for direction.
+
+    Capture happens on `veth2`, the root↔ns1 leg, so the client side is ns1.
+    Declaring it removes the guesswork that breaks down the moment the far end
+    is also RFC1918 — see `attribute_capture`.
+    """
+    raw = os.environ.get("PRAMANA_CLIENT_IPS", "")
+    if raw.strip():
+        out: list[str] = []
+        for part in raw.split(","):
+            ip = part.strip()
+            if not ip:
+                continue
+            try:
+                ipaddress.ip_address(ip)
+            except ValueError:
+                raise ValueError(
+                    f"PRAMANA_CLIENT_IPS contains {ip!r}, which is not an IP "
+                    f"address. Direction attribution depends on this being "
+                    f"exact, so it is not silently ignored."
+                )
+            out.append(ip)
+        return out
+    return list(CLIENT_IPS_DEFAULT)
+
+
+def app_endpoint_ips_from_webrtc_stats(
+    run_dir: Path, apps: Iterable[str]
+) -> dict[str, set[str]]:
+    """{app: {ip}} from the ICE pair the call actually used.
+
+    A room URL names a web server, not the media path. WebRTC negotiates its
+    own transport address, and for a peer inside our namespaces that address is
+    RFC1918 and unrelated to whatever the URL resolved to — so attributing by
+    the URL's address misses the media entirely. The collector reports the
+    selected candidate pair per sample; this reads the negotiated remote
+    address back out.
+
+    Addresses that are not literal IPs are skipped and counted: Chrome
+    publishes host candidates as mDNS `<uuid>.local` names unless the page
+    holds a media permission, and a name cannot be matched against a capture.
+    """
+    out: dict[str, set[str]] = {}
+    for app in apps:
+        f = run_dir / "qoe" / f"{app}_stats.jsonl"
+        if not f.exists() or f.stat().st_size == 0:
+            continue
+        found: set[str] = set()
+        mdns = 0
+        unparsable = 0
+        for line in f.read_text(errors="replace").splitlines():
+            line = line.strip()
+            if not line:
+                continue
+            try:
+                sample = json.loads(line)
+            except (ValueError, TypeError):
+                unparsable += 1
+                continue
+            stats = sample.get("stats")
+            if not isinstance(stats, dict):
+                continue
+            addr = stats.get("selected_remote_address")
+            if not addr or not isinstance(addr, str):
+                continue
+            try:
+                ipaddress.ip_address(addr)
+            except ValueError:
+                if addr.endswith(".local"):
+                    mdns += 1
+                else:
+                    unparsable += 1
+                continue
+            found.add(addr)
+        if mdns:
+            print(
+                f"    ! {app}: ICE reported an mDNS candidate name on {mdns} "
+                f"sample(s) instead of an address, so those cannot be matched "
+                f"against the capture"
+            )
+        if unparsable:
+            print(
+                f"    ! {app}: {unparsable} stats sample(s) carried an "
+                f"unreadable selected-candidate address"
+            )
+        if found:
+            out[app] = found
+            print(
+                f"    · {app}: ICE negotiated {sorted(found)} "
+                f"(used as attribution ground truth)"
+            )
+    return out
+
+
+def merge_endpoint_ips(
+    *sources: Optional[dict[str, set[str]]],
+) -> dict[str, set[str]]:
+    """Union of several {app: {ip}} maps, skipping None."""
+    out: dict[str, set[str]] = {}
+    for source in sources:
+        for app, ips in (source or {}).items():
+            if ips:
+                out.setdefault(app, set()).update(ips)
     return out
 
 
@@ -4025,7 +4277,12 @@ def run_direct(cfg: ExperimentConfig) -> dict[str, Any]:
         substrate_teardown_per_app_marks()
 
     # ── link-level stats (shaping fidelity) ──────────────────────────────────
-    net = analyze_pcap_netstats(local_pcap, cfg.bandwidth_mbps) if got else NetStats()
+    client_ips = client_ips_for_capture()
+    net = (
+        analyze_pcap_netstats(local_pcap, cfg.bandwidth_mbps, client_ips=client_ips)
+        if got
+        else NetStats()
+    )
     if net.avg_throughput_mbps is not None:
         verdict = "OK" if net.shaping_verified else "OVER CAP"
         print(
@@ -4050,16 +4307,25 @@ def run_direct(cfg: ExperimentConfig) -> dict[str, Any]:
         attribution = CaptureAttribution(note="deferred: run replot_run(run_dir)")
     else:
         print("  • splitting capture per app ...")
+        # The URL's address and the address ICE actually chose are different
+        # questions; take both, preferring neither, since an app may be reached
+        # by literal IP *and* negotiate a separate media path.
+        endpoint_ips = merge_endpoint_ips(
+            app_endpoint_ips_from_urls(cfg),
+            app_endpoint_ips_from_webrtc_stats(run_dir, apps),
+        )
         attribution = attribute_capture(
             local_pcap,
             apps,
             cfg.bandwidth_mbps,
             local_ip_map=local_ip_map,
-            app_endpoint_ips=app_endpoint_ips_from_urls(cfg),
+            app_endpoint_ips=endpoint_ips,
+            client_ips=None if local_ip_map else client_ips,
         )
     if attribution.method != "none":
         print(
             f"    method={attribution.method}  local={attribution.local_ips}  "
+            f"({attribution.local_ip_source})  "
             f"{100 * attribution.attributed_fraction:.1f}% of bytes attributed"
         )
         for bucket, mb in list(attribution.bucket_mb.items())[:6]:
@@ -4367,7 +4633,9 @@ def _throughput_from_pcap_path(
     for p in candidates:
         try:
             if p.exists() and p.stat().st_size > 24:
-                ns = analyze_pcap_netstats(p, cap_mbps or 0)
+                ns = analyze_pcap_netstats(
+                    p, cap_mbps or 0, client_ips=client_ips_for_capture()
+                )
                 if ns.avg_throughput_mbps is not None:
                     return ns.avg_throughput_mbps
         except Exception:
@@ -4754,6 +5022,12 @@ __all__ = [
     "iter_capture",
     "attribute_capture",
     "classify_host",
+    # locality + endpoint ground truth (see attribute_capture's docstring)
+    "client_ips_for_capture",
+    "app_endpoint_ips_from_url_map",
+    "app_endpoint_ips_from_urls",
+    "app_endpoint_ips_from_webrtc_stats",
+    "merge_endpoint_ips",
     "AppTraffic",
     "CaptureAttribution",
     "NetStats",
