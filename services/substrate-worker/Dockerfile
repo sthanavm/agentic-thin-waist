@@ -1,3 +1,26 @@
+FROM --platform=$BUILDPLATFORM golang:1.25-bookworm AS netvibe-builder
+# NetVibe in bench mode: the production probe server with a SQLite sink and no
+# signaling, Postgres, ClickHouse or device login, plus the sensor that answers
+# its probes. Serves POST /netvibe.
+#
+# Pinned by COMMIT, not by tag: there are no release artifacts, and the probe's
+# own send timing and record schema ARE the measurement, so a moving source
+# would silently change the numbers. Bump this deliberately and re-check the
+# bench SQLite schema in summarize_netvibe().
+ARG NETVIBE_COMMIT=e9e93bec4eb523f0db7815ea31104db6e7934b1b
+ARG NETVIBE_REPO=https://github.com/SNL-UCSB/netvibe.git
+WORKDIR /src
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends git ca-certificates \
+    && rm -rf /var/lib/apt/lists/*
+# A private repo needs a credential at build time; the build fails loudly here
+# rather than producing an image whose /netvibe answers 422 for ever.
+RUN git clone --filter=blob:none "$NETVIBE_REPO" . \
+    && git checkout "$NETVIBE_COMMIT" \
+    && CGO_ENABLED=0 go build -o /out/netvibe-bench ./backend/cmd/bench \
+    && CGO_ENABLED=0 go build -o /out/netvibe-cli ./cli/cmd/netvibe-cli \
+    && CGO_ENABLED=0 go build -o /out/netvibe-fleet ./cli/cmd/netvibe-fleet
+
 FROM --platform=$BUILDPLATFORM golang:1.24-bookworm AS ndt-builder
 
 RUN apt-get update && apt-get install -y --no-install-recommends \
@@ -49,6 +72,11 @@ RUN apt-get update && apt-get install -y \
     sudo util-linux kmod \
     gcc libc6-dev \
     && rm -rf /var/lib/apt/lists/*
+
+# The bench-mode binaries, where the /netvibe handler looks for them
+# (NETVIBE_BIN_DIR, default /opt/netvibe/bin).
+COPY --from=netvibe-builder /out/netvibe-bench /out/netvibe-cli /out/netvibe-fleet /opt/netvibe/bin/
+ENV NETVIBE_BIN_DIR=/opt/netvibe/bin
 
 WORKDIR /app
 
