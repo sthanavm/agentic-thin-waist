@@ -677,6 +677,26 @@ def substrate_capture_start(filename: str, duration_s: int) -> dict[str, Any]:
     return r.json()
 
 
+def substrate_capture_start_on(
+    interface: str, filename: str, duration_s: int, capture_filter: str = ""
+) -> dict[str, Any]:
+    """Start a capture on any interface, not just the shaped bottleneck.
+
+    `substrate_capture_start` is deliberately fixed to the bottleneck, because
+    that is where an app's own measurement must be taken. A probe needs the
+    upstream leg as well, to prove it crossed both.
+    """
+    payload = {
+        "interface": interface,
+        "capture_filter": capture_filter,
+        "filename": filename,
+        "duration_seconds": duration_s,
+    }
+    r = requests.post(f"{SUBSTRATE}/capture", json=payload, timeout=HTTP_TIMEOUT)
+    r.raise_for_status()
+    return r.json()
+
+
 def substrate_capture_status(capture_id: str) -> dict[str, Any]:
     r = requests.get(f"{SUBSTRATE}/capture/{capture_id}", timeout=HTTP_TIMEOUT)
     r.raise_for_status()
@@ -1484,6 +1504,7 @@ import hmac
 import re
 import socket
 import shutil
+import sqlite3
 import subprocess
 import struct
 import tempfile
@@ -4395,6 +4416,753 @@ def summarize_irtt(stopped: Optional[dict[str, Any]]) -> Optional[dict[str, Any]
     return out
 
 
+# ═════════════════════════════════════════════════════════════════════════════
+#  NetVibe — the lab's own continuous-QoE probe, run beside the app under test
+#
+#  Another probe, not an app: it reuses the `probe_endpoint_ips` machinery IRTT
+#  introduced, so nothing about app attribution changes. Two things are specific
+#  to it.
+#
+#  Direction convention is NetVibe's, which is the opposite of the intuitive
+#  reading: the PROBE SERVER sends and the sensor echoes, so in
+#  `pkg/analyzer/clock.go` the raw one-way values are
+#  `[down] t2-t1, [up] t4-t3`. t1/t4 are the probe server's clock, t2/t3 the
+#  sensor's.
+#
+#  Absolute one-way delay is NOT available. bench records t2/t3 "as the engine
+#  carries them" -- the sensor's own time base, not the epoch -- so only the
+#  per-direction *variation* above each direction's own floor is meaningful.
+#  That variation is the queueing delay, which is what NetVibe itself reports;
+#  the round trip is absolute because its two unknowns cancel.
+# ═════════════════════════════════════════════════════════════════════════════
+NETVIBE_ENABLED = os.environ.get("PRAMANA_NETVIBE", "0").strip() not in (
+    "",
+    "0",
+    "false",
+)
+NETVIBE_PROBE_NAME = "netvibe"
+# sun_path, including its NUL. A probe server binds a Unix socket under
+# state_dir, so state_dir has to stay well clear of this.
+_UNIX_SOCKET_PATH_MAX = 108
+# ns2's veth3: bench's sensor API and its probe server's media both live here,
+# so every packet of the probe crosses veth2 then veth4.
+NETVIBE_SERVER_ADDR = os.environ.get("PRAMANA_NETVIBE_SERVER", "172.16.2.1")
+NETVIBE_SIGNALING_PORT = int(os.environ.get("PRAMANA_NETVIBE_SIGNALING_PORT", "9999"))
+NETVIBE_MEDIA_PORT = int(os.environ.get("PRAMANA_NETVIBE_MEDIA_PORT", "10443"))
+NETVIBE_STUB_API_PORT = int(os.environ.get("PRAMANA_NETVIBE_STUB_API_PORT", "9898"))
+NETVIBE_RATE = float(os.environ.get("PRAMANA_NETVIBE_RATE", "10"))
+NETVIBE_SENSOR_ID = os.environ.get("PRAMANA_NETVIBE_SENSOR", "pramana-ns1")
+# Escalation. Off by default; when on, the ladder is NetVibe's own and the
+# trigger is deliberately easy to fire so a short run exercises it.
+NETVIBE_ESCALATE = os.environ.get("PRAMANA_NETVIBE_ESCALATE", "0").strip() not in (
+    "",
+    "0",
+    "false",
+)
+NETVIBE_ESCALATION_RATES = os.environ.get("PRAMANA_NETVIBE_ESCALATION_RATES", "20")
+NETVIBE_TRIGGER_DELAY_MS = int(os.environ.get("PRAMANA_NETVIBE_TRIGGER_DELAY_MS", "5"))
+NETVIBE_BIN_DIR = os.environ.get("PRAMANA_NETVIBE_BIN_DIR", "")
+# Which NetVibe source the binaries were built from. bench stamps this itself
+# from its own git metadata, but a binary built from a tree without `.git`
+# stamps the literal "dev" -- measured on the verification run. The probe's
+# send timing and record schema come from that source, so the run must not be
+# left unable to say which one. The deployed path gets it from the image's
+# pinned NETVIBE_COMMIT; this is for anything built by hand.
+NETVIBE_COMMIT = os.environ.get("PRAMANA_NETVIBE_COMMIT", "")
+NETVIBE_HOST_FALLBACK = os.environ.get(
+    "PRAMANA_NETVIBE_HOST_FALLBACK", "0"
+).strip() not in ("", "0", "false")
+NETVIBE_WORKER_CONTAINER = os.environ.get(
+    "PRAMANA_NETVIBE_CONTAINER", "substrate-worker"
+)
+
+# The sensor asks the API whether a speed test is due and, with no API to ask,
+# decides to run one. An NDT7 test would saturate the very link being measured,
+# so the probe is run against a stub that answers "not due". Suppressing it by
+# hoping m-lab is unreachable is not a control.
+_NETVIBE_STUB_API = r"""
+import json, sys
+from http.server import BaseHTTPRequestHandler, HTTPServer
+
+class H(BaseHTTPRequestHandler):
+    def _send(self, code, body):
+        raw = json.dumps(body).encode()
+        self.send_response(code)
+        self.send_header("Content-Type", "application/json")
+        self.send_header("Content-Length", str(len(raw)))
+        self.end_headers()
+        self.wfile.write(raw)
+
+    def do_GET(self):
+        # GET /networks/{id}/speedtests/latest -- the sensor's due check.
+        if self.path.endswith("/speedtests/latest"):
+            self._send(200, {"last_test": None, "due": False})
+        else:
+            self._send(404, {"error": "not found"})
+
+    def do_POST(self):
+        n = int(self.headers.get("Content-Length") or 0)
+        if n:
+            self.rfile.read(n)
+        self._send(200, {"ok": True})
+
+    def log_message(self, *a):
+        pass
+
+HTTPServer((sys.argv[1], int(sys.argv[2])), H).serve_forever()
+"""
+
+
+def _netvibe_bin(name: str) -> str:
+    """Path to a netvibe binary, or just its name to be found on PATH."""
+    if NETVIBE_BIN_DIR:
+        return str(Path(NETVIBE_BIN_DIR) / name)
+    return shutil.which(name) or name
+
+
+def netvibe_bench_config(
+    out_sqlite: Path, state_dir: Path, in_namespace: bool
+) -> dict[str, Any]:
+    """The bench.yaml body for one run.
+
+    `in_namespace` says whether bench itself is already inside ns2. When it is
+    not -- the worker path -- the probe server is placed there with bench's own
+    `netns` key, which is how upstream means it to be done. The host fallback
+    runs bench inside ns2 instead, because `netns` resolves `/run/netns/NAME`
+    against the caller's mount namespace and ns1/ns2 live inside the worker
+    container's.
+    """
+    server: dict[str, Any] = {
+        "label": "pramana",
+        "media_port": NETVIBE_MEDIA_PORT,
+        "public_ip": NETVIBE_SERVER_ADDR,
+    }
+    if not in_namespace:
+        server["netns"] = "ns2"
+    probe: dict[str, Any] = {
+        "name": "pramana-fixed",
+        "rate_per_second": NETVIBE_RATE,
+        "spacing": "fixed",
+        "max_gap_ms": 2000,
+        "echo_timeout_ms": 5000,
+    }
+    if NETVIBE_ESCALATE:
+        rungs = [
+            float(r.strip()) for r in NETVIBE_ESCALATION_RATES.split(",") if r.strip()
+        ]
+        probe.update(
+            {
+                "name": "pramana-escalating",
+                "escalation_rates": rungs,
+                "trigger_delay_ms": NETVIBE_TRIGGER_DELAY_MS,
+                "trigger_window_ms": 2000,
+                "trigger_percentile": 90,
+                "rung_hold_ms": 2000,
+                "cooldown_ms": 5000,
+                "max_escalated_ms": 600000,
+            }
+        )
+    return {
+        "out": str(out_sqlite),
+        "listen": f"{NETVIBE_SERVER_ADDR}:{NETVIBE_SIGNALING_PORT}",
+        "state_dir": str(state_dir),
+        "public_ip": NETVIBE_SERVER_ADDR,
+        "session_seconds": 86400,
+        "probe_servers": [server],
+        "probe": probe,
+    }
+
+
+def _netvibe_netns_path(namespace: str) -> str:
+    """Host path to one of the worker's network namespaces."""
+    pid = subprocess.run(
+        ["docker", "inspect", "-f", "{{.State.Pid}}", NETVIBE_WORKER_CONTAINER],
+        capture_output=True,
+        text=True,
+        timeout=30,
+    )
+    if pid.returncode != 0 or not pid.stdout.strip().isdigit():
+        raise RuntimeError(
+            f"could not read pid of container {NETVIBE_WORKER_CONTAINER!r}: "
+            f"{pid.stderr.strip()[:200]}"
+        )
+    return f"/proc/{pid.stdout.strip()}/root/run/netns/{namespace}"
+
+
+def _netvibe_host_start(run_dir: Path, duration_s: int) -> dict[str, Any]:
+    """Run bench in ns2 and the sensor in ns1, from the host."""
+    import yaml  # bench reads YAML; only needed on this path
+
+    work = run_dir / "netvibe"
+    work.mkdir(parents=True, exist_ok=True)
+    out_sqlite = work / "bench.sqlite"
+    if out_sqlite.exists():
+        raise RuntimeError(
+            f"{out_sqlite} already exists; bench refuses to append to an old "
+            f"run, so the previous run's file must be moved aside first"
+        )
+    # NOT under the run directory, and NOT created here.
+    #
+    # Not created, because bench makes it 0700 and refuses a directory another
+    # user owns, and bench runs as root through sudo.
+    #
+    # Not under the run directory, because each probe server binds a Unix
+    # socket at `<state_dir>/<label>.sock` and sun_path is 108 bytes. A run
+    # directory named after its scenario pushes that over: measured, a real run
+    # produced a 138-byte path and the probe server died with
+    # `bind: invalid argument`, which surfaced only as a readiness timeout.
+    state_dir = Path(tempfile.gettempdir()) / f"nv_{uuid.uuid4().hex[:8]}"
+    sock_len = len(str(state_dir / "pramana.sock").encode()) + 1
+    if sock_len > _UNIX_SOCKET_PATH_MAX:
+        raise RuntimeError(
+            f"bench's probe-server socket path would be {sock_len} bytes, over "
+            f"the {_UNIX_SOCKET_PATH_MAX}-byte sun_path limit: "
+            f"{state_dir / 'pramana.sock'}. Set TMPDIR to something shorter."
+        )
+    cfg = netvibe_bench_config(out_sqlite, state_dir, in_namespace=True)
+    cfg_path = work / "bench.yaml"
+    cfg_path.write_text(yaml.safe_dump(cfg, sort_keys=False))
+
+    ns1 = _netvibe_netns_path("ns1")
+    ns2 = _netvibe_netns_path("ns2")
+    bench_bin = _netvibe_bin("netvibe-bench")
+    cli_bin = _netvibe_bin("netvibe-cli")
+
+    # The stub speed-test API, in ns2 beside bench so the sensor can reach it.
+    stub_src = work / "stub_api.py"
+    stub_src.write_text(_NETVIBE_STUB_API)
+    stub = subprocess.Popen(
+        [
+            "sudo",
+            "-n",
+            "nsenter",
+            f"--net={ns2}",
+            sys.executable,
+            str(stub_src),
+            NETVIBE_SERVER_ADDR,
+            str(NETVIBE_STUB_API_PORT),
+        ],
+        stdout=subprocess.DEVNULL,
+        stderr=subprocess.PIPE,
+    )
+
+    bench_log = open(work / "bench.log", "wb")
+    bench = subprocess.Popen(
+        [
+            "sudo",
+            "-n",
+            "timeout",
+            "-k",
+            "5",
+            str(duration_s + 180),
+            "nsenter",
+            f"--net={ns2}",
+            bench_bin,
+            "--config",
+            str(cfg_path),
+        ],
+        stdout=bench_log,
+        stderr=subprocess.STDOUT,
+    )
+
+    # Readiness from bench itself rather than a sleep: /ready reports which
+    # probe servers are down, so a server that failed to bind is an explicit
+    # failure instead of a sensor that cannot connect for unclear reasons.
+    deadline = time.time() + 45.0
+    ready, last = False, ""
+    while time.time() < deadline:
+        if bench.poll() is not None:
+            _netvibe_kill(stub)
+            raise RuntimeError(
+                "netvibe-bench exited during startup; see " f"{work / 'bench.log'}"
+            )
+        probe = subprocess.run(
+            [
+                "sudo",
+                "-n",
+                "nsenter",
+                f"--net={ns2}",
+                "curl",
+                "-s",
+                "-m",
+                "3",
+                f"http://{NETVIBE_SERVER_ADDR}:{NETVIBE_SIGNALING_PORT}/ready",
+            ],
+            capture_output=True,
+            timeout=15,
+        )
+        body = probe.stdout.decode(errors="replace").strip()
+        if probe.returncode == 0 and '"ready":true' in body.replace(" ", ""):
+            ready = True
+            break
+        last = body or probe.stderr.decode(errors="replace").strip()[:160]
+        time.sleep(1.0)
+    if not ready:
+        _netvibe_kill(bench)
+        _netvibe_kill(stub)
+        raise RuntimeError(
+            f"netvibe-bench did not report ready within 45s: {last[:200]}"
+        )
+
+    sensor_log = open(work / "sensor.log", "wb")
+    sensor = subprocess.Popen(
+        [
+            "sudo",
+            "-n",
+            "timeout",
+            "-k",
+            "5",
+            str(duration_s + 120),
+            "nsenter",
+            f"--net={ns1}",
+            cli_bin,
+            "test",
+            "--signaling-host",
+            f"http://{NETVIBE_SERVER_ADDR}",
+            "--signaling-port",
+            str(NETVIBE_SIGNALING_PORT),
+            "--api-host",
+            f"http://{NETVIBE_SERVER_ADDR}",
+            "--api-port",
+            str(NETVIBE_STUB_API_PORT),
+            "--sensor-id",
+            NETVIBE_SENSOR_ID,
+            # Host candidates only: a STUN-derived candidate could put the media
+            # on a path that does not cross the shaped link at all.
+            "--no-stun",
+        ],
+        stdout=sensor_log,
+        stderr=subprocess.STDOUT,
+    )
+    return {
+        "transport": "host_nsenter",
+        "bench_proc": bench,
+        "sensor_proc": sensor,
+        "stub_proc": stub,
+        "logs": [bench_log, sensor_log],
+        "out_sqlite": str(out_sqlite),
+        "work_dir": str(work),
+        "state_dir": str(state_dir),
+        "server_address": NETVIBE_SERVER_ADDR,
+        "media_port": NETVIBE_MEDIA_PORT,
+        "endpoint_ips": [NETVIBE_SERVER_ADDR],
+    }
+
+
+def _netvibe_kill(proc: "subprocess.Popen") -> None:
+    if proc is None or proc.poll() is not None:
+        return
+    proc.terminate()
+    try:
+        proc.wait(timeout=8)
+    except subprocess.TimeoutExpired:
+        proc.kill()
+
+
+def _netvibe_host_stop(session: dict[str, Any]) -> dict[str, Any]:
+    """Stop the sensor, then bench, then read the run's SQLite file.
+
+    Order matters: bench writes `meta.stopped_at_ns` and flushes its servers'
+    records on SIGTERM, and the file is only complete once it exits. Killing it
+    first would lose the tail of the run.
+    """
+    _netvibe_kill(session.get("sensor_proc"))
+    bench = session.get("bench_proc")
+    if bench is not None and bench.poll() is None:
+        bench.terminate()
+        try:
+            bench.wait(timeout=30)
+        except subprocess.TimeoutExpired:
+            bench.kill()
+    _netvibe_kill(session.get("stub_proc"))
+    for fh in session.get("logs") or []:
+        try:
+            fh.close()
+        except Exception:  # noqa: BLE001
+            pass
+    # bench runs as root, so its file and state dir are root-owned. Hand the
+    # file back so the rest of the pipeline (and the user) can read it.
+    out = session.get("out_sqlite")
+    if out:
+        subprocess.run(
+            [
+                "sudo",
+                "-n",
+                "chown",
+                "-R",
+                f"{os.getuid()}:{os.getgid()}",
+                session.get("work_dir") or out,
+            ],
+            capture_output=True,
+            timeout=60,
+        )
+    # state_dir sits outside the run directory (see _netvibe_host_start), so
+    # removing it is this function's job. Root-owned, hence sudo.
+    state_dir = session.get("state_dir")
+    if state_dir and str(state_dir).startswith(tempfile.gettempdir()):
+        subprocess.run(
+            ["sudo", "-n", "rm", "-rf", str(state_dir)],
+            capture_output=True,
+            timeout=60,
+        )
+    return {
+        "transport": "host_nsenter",
+        "out_sqlite": out,
+        "work_dir": session.get("work_dir"),
+        "server_address": session.get("server_address"),
+        "media_port": session.get("media_port"),
+        "endpoint_ips": session.get("endpoint_ips") or [],
+    }
+
+
+def substrate_netvibe_start(run_dir: Path, duration_s: int) -> Optional[dict[str, Any]]:
+    """Start the NetVibe probe. Returns a session handle, or None.
+
+    Tries the worker endpoint first; a 404 means the deployed image predates it.
+    The host fallback is used only when explicitly enabled, and the path that
+    produced the numbers is recorded on the run either way.
+    """
+    payload = {
+        "duration_seconds": int(duration_s),
+        "rate_per_second": NETVIBE_RATE,
+        "server_address": NETVIBE_SERVER_ADDR,
+        "signaling_port": NETVIBE_SIGNALING_PORT,
+        "media_port": NETVIBE_MEDIA_PORT,
+        "sensor_id": NETVIBE_SENSOR_ID,
+        "escalate": NETVIBE_ESCALATE,
+    }
+    try:
+        r = requests.post(
+            f"{SUBSTRATE}/netvibe", json=payload, timeout=HTTP_TIMEOUT * 4
+        )
+        if r.status_code != 404:
+            r.raise_for_status()
+            data = r.json()
+            data["transport"] = "worker_endpoint"
+            print(
+                f"    · NetVibe started via worker endpoint "
+                f"(id={str(data.get('netvibe_id', '?'))[:8]}, "
+                f"{NETVIBE_SERVER_ADDR}:{NETVIBE_MEDIA_PORT})"
+            )
+            return data
+        print(
+            "    ! worker has no POST /netvibe (404) — its image predates this "
+            "endpoint and needs rebuilding from services/substrate-worker"
+        )
+    except requests.RequestException as exc:
+        print(f"    ! NetVibe start via worker failed: {type(exc).__name__}: {exc}")
+        return None
+
+    if not NETVIBE_HOST_FALLBACK:
+        print(
+            "    ! NetVibe skipped. Set PRAMANA_NETVIBE_HOST_FALLBACK=1 to drive "
+            "it from the host, or deploy a worker that serves /netvibe."
+        )
+        return None
+    try:
+        session = _netvibe_host_start(run_dir, int(duration_s))
+        print(
+            f"    · NetVibe started via HOST FALLBACK: bench in ns2 "
+            f"({NETVIBE_SERVER_ADDR}:{NETVIBE_SIGNALING_PORT}, media "
+            f"{NETVIBE_MEDIA_PORT}), sensor in ns1, {NETVIBE_RATE:g}/s"
+            + (", escalation on" if NETVIBE_ESCALATE else "")
+        )
+        return session
+    except Exception as exc:  # noqa: BLE001 - a probe must never fail the run
+        print(f"    ! NetVibe host fallback failed: {type(exc).__name__}: {exc}")
+        return None
+
+
+def substrate_netvibe_stop(
+    session: Optional[dict[str, Any]],
+) -> Optional[dict[str, Any]]:
+    """Stop the probe and return where its records landed."""
+    if not session:
+        return None
+    if session.get("transport") == "host_nsenter":
+        try:
+            return _netvibe_host_stop(session)
+        except Exception as exc:  # noqa: BLE001
+            print(f"    ! NetVibe stop (host) failed: {type(exc).__name__}: {exc}")
+            return {"transport": "host_nsenter", "error": str(exc)}
+    netvibe_id = session.get("netvibe_id")
+    if not netvibe_id:
+        return None
+    try:
+        r = requests.delete(
+            f"{SUBSTRATE}/netvibe/{netvibe_id}", timeout=HTTP_TIMEOUT * 6
+        )
+        r.raise_for_status()
+        data = r.json()
+        data["transport"] = "worker_endpoint"
+        return data
+    except requests.RequestException as exc:
+        print(f"    ! NetVibe stop failed: {type(exc).__name__}: {exc}")
+        return {"transport": "worker_endpoint", "error": str(exc)}
+
+
+def _quantiles_ms(values_us: list[float]) -> dict[str, Optional[float]]:
+    """min/mean/median/p95/max of microsecond values, reported in ms."""
+    if not values_us:
+        return {k: None for k in ("min", "mean", "median", "p95", "max")}
+    s = sorted(values_us)
+    n = len(s)
+    return {
+        "min": round(s[0] / 1000.0, 4),
+        "mean": round(sum(s) / n / 1000.0, 4),
+        "median": round(s[n // 2] / 1000.0, 4),
+        "p95": round(s[min(n - 1, int(0.95 * n))] / 1000.0, 4),
+        "max": round(s[-1] / 1000.0, 4),
+    }
+
+
+def summarize_netvibe(stopped: Optional[dict[str, Any]]) -> Optional[dict[str, Any]]:
+    """Reduce bench's SQLite run into a record, per direction.
+
+    Direction names are NetVibe's own (`pkg/analyzer/clock.go`): the probe
+    SERVER sends and the sensor echoes, so `t2 - t1` is the DOWNstream leg
+    (ns2 -> ns1) and `t4 - t3` is the UPstream leg (ns1 -> ns2).
+
+    What is reported per direction is QUEUEING -- each leg's delay above its own
+    floor over the run -- not absolute one-way delay. bench stores t2/t3 on the
+    sensor's own time base rather than the epoch, so the absolute legs are not
+    recoverable from the file; their difference is, which is why the round trip
+    is reported absolutely. NetVibe's analyzer does the same thing properly,
+    with a lower-envelope fit per clock segment; this is the first-order version
+    of it and is labelled as such.
+    """
+    if not stopped:
+        return None
+    out: dict[str, Any] = {
+        "probe": NETVIBE_PROBE_NAME,
+        "transport": stopped.get("transport"),
+        "server_address": stopped.get("server_address"),
+        "media_port": stopped.get("media_port"),
+        "endpoint_ips": stopped.get("endpoint_ips") or [],
+        "rate_per_second_configured": NETVIBE_RATE,
+        "escalation_configured": NETVIBE_ESCALATE,
+        "error": stopped.get("error"),
+        "status": "failed",
+        "sqlite": stopped.get("out_sqlite"),
+        "delay_basis": (
+            "per-direction queueing above each leg's own floor; absolute "
+            "one-way delay is not recoverable because t2/t3 are on the "
+            "sensor's time base. Round trip is absolute."
+        ),
+    }
+    path = stopped.get("out_sqlite")
+    if not path or not Path(path).exists():
+        out["error"] = out["error"] or f"no bench SQLite file at {path!r}"
+        return out
+
+    try:
+        con = sqlite3.connect(f"file:{path}?mode=ro", uri=True)
+    except sqlite3.Error as exc:
+        out["error"] = f"bench file unreadable: {exc}"
+        return out
+    try:
+        rows = con.execute(
+            "select t1_ns, t2_us, t3_us, t4_ns, rate_per_second "
+            "from probe_records where status = 'ok'"
+        ).fetchall()
+        out["records"] = {
+            "total": con.execute("select count(*) from probe_records").fetchone()[0],
+            "ok": len(rows),
+        }
+        out["records"]["by_status"] = {
+            str(k): int(v)
+            for k, v in con.execute(
+                "select status, count(*) from probe_records group by 1"
+            ).fetchall()
+        }
+        sessions = con.execute(
+            "select probes_sent, ok, lost_down, lost_up, lost_unknown, duplicates, "
+            "late_echoes, end_reason from probe_sessions"
+        ).fetchall()
+        out["sessions"] = [
+            {
+                "probes_sent": s[0],
+                "ok": s[1],
+                "lost_down": s[2],
+                "lost_up": s[3],
+                "lost_unknown": s[4],
+                "duplicates": s[5],
+                "late_echoes": s[6],
+                "end_reason": s[7],
+            }
+            for s in sessions
+        ]
+        out["rate_changes"] = [
+            {"t_ns": r[0], "rate_per_second": r[1], "rung": r[2], "reason": str(r[3])}
+            for r in con.execute(
+                "select t_ns, rate_per_second, rung, reason "
+                "from probe_rate_changes order by t_ns"
+            ).fetchall()
+        ]
+        try:
+            stamped = (
+                con.execute(
+                    "select value from meta where key = 'netvibe_commit'"
+                ).fetchone()
+                or [None]
+            )[0]
+        except sqlite3.Error:
+            stamped = None
+        out["netvibe_commit"] = stamped
+        # "dev" means the binary was built from a tree with no git metadata, so
+        # the file cannot say what it came from. Fall back to what the operator
+        # declared rather than leaving the run unattributable.
+        if (not stamped or stamped == "dev") and NETVIBE_COMMIT:
+            out["netvibe_commit"] = NETVIBE_COMMIT
+            out["netvibe_commit_source"] = "PRAMANA_NETVIBE_COMMIT"
+        elif stamped and stamped != "dev":
+            out["netvibe_commit_source"] = "stamped by bench"
+        else:
+            out["netvibe_commit_source"] = "unknown"
+    except sqlite3.Error as exc:
+        out["error"] = f"bench file query failed: {exc}"
+        return out
+    finally:
+        con.close()
+
+    if not rows:
+        out["error"] = out["error"] or "bench recorded no answered probes"
+        return out
+
+    # NetVibe's own direction convention; see the docstring.
+    down_us = [t2 - t1 / 1000.0 for t1, t2, _t3, _t4, _r in rows]
+    up_us = [t4 / 1000.0 - t3 for _t1, _t2, t3, t4, _r in rows]
+    rtt_us = [(t4 - t1) / 1000.0 - (t3 - t2) for t1, t2, t3, t4, _r in rows]
+    down_floor, up_floor = min(down_us), min(up_us)
+    out["queueing_ms"] = {
+        "downstream_ns2_to_ns1": _quantiles_ms([v - down_floor for v in down_us]),
+        "upstream_ns1_to_ns2": _quantiles_ms([v - up_floor for v in up_us]),
+    }
+    out["round_trip_ms"] = _quantiles_ms(rtt_us)
+    rates = sorted({float(r) for *_x, r in rows if r is not None})
+    out["rates_observed"] = rates
+    out["escalated"] = len(rates) > 1 or bool(out.get("rate_changes"))
+    out["status"] = "ok"
+    return out
+
+
+def netvibe_probe_endpoints(
+    netvibe_record: Optional[dict[str, Any]],
+) -> dict[str, set[str]]:
+    """{probe: {ip}} for attribution, from what the probe itself reported."""
+    if not netvibe_record:
+        return {}
+    ips = {ip for ip in (netvibe_record.get("endpoint_ips") or []) if ip}
+    if not ips:
+        return {}
+    return {netvibe_record.get("probe") or NETVIBE_PROBE_NAME: ips}
+
+
+# ── the shaped-path guard ────────────────────────────────────────────────────
+# The worker's root namespace carries a /32 host route to ns1 over the
+# management link (`172.16.1.1 via 10.200.0.2 dev mgmt0`) that is MORE specific
+# than the veth2 connected route. Measured, the probe does cross veth2 and
+# veth4 in both directions and mgmt0 carries none of it -- but nothing in the
+# topology guarantees that, and if it ever flipped, the downstream leg would
+# bypass both the shaper and the capture while still producing plausible
+# numbers. That is the one failure we cannot have go unnoticed, so it is
+# checked against the captures rather than assumed.
+def probe_path_evidence(
+    pcaps: dict[str, Path], probe_ips: Iterable[str]
+) -> dict[str, Any]:
+    """Per-interface, per-direction probe packet counts from the captures."""
+    wanted = {ip for ip in probe_ips if ip}
+    out: dict[str, Any] = {}
+    for iface, pcap in (pcaps or {}).items():
+        seen = {"to_probe": 0, "from_probe": 0, "other": 0}
+        if pcap and Path(pcap).exists():
+            for _ts, _ol, lt, data in iter_capture(str(pcap)):
+                fam, l3 = _l3(lt, data)
+                if fam is None:
+                    continue
+                parsed = _parse_ip(fam, l3)
+                if parsed is None:
+                    continue
+                src, dst, _proto, _l4 = parsed
+                if dst in wanted:
+                    seen["to_probe"] += 1
+                elif src in wanted:
+                    seen["from_probe"] += 1
+                else:
+                    seen["other"] += 1
+        out[iface] = seen
+    return out
+
+
+def probe_path_strict() -> bool:
+    """Whether a failed path check should invalidate the run. On by default."""
+    return os.environ.get("PRAMANA_PROBE_PATH_STRICT", "1").strip() not in (
+        "",
+        "0",
+        "false",
+    )
+
+
+def check_probe_path(
+    pcaps: dict[str, Path],
+    probe_ips: Iterable[str],
+    required_ifaces: Iterable[str] = ("veth2", "veth4"),
+    enforce: bool = True,
+) -> dict[str, Any]:
+    """Fail loudly unless the probe crossed every required interface, both ways.
+
+    `enforce=False` collects and prints the same verdict without raising, so a
+    caller can write the run's artifacts first and abort afterwards -- the
+    captures are the evidence for diagnosing the failure, so losing them to the
+    abort would be perverse. The recorded `strict` field is the configured
+    policy either way, never the caller's choice of when to raise.
+    """
+    strict = probe_path_strict()
+    evidence = probe_path_evidence(pcaps, probe_ips)
+    problems: list[str] = []
+    for iface in required_ifaces:
+        seen = evidence.get(iface)
+        if seen is None:
+            problems.append(f"{iface}: no capture was taken")
+            continue
+        if not seen["to_probe"] and not seen["from_probe"]:
+            problems.append(f"{iface}: no probe packets at all")
+            continue
+        if not seen["to_probe"]:
+            problems.append(f"{iface}: nothing toward the probe (upstream missing)")
+        if not seen["from_probe"]:
+            problems.append(
+                f"{iface}: nothing from the probe (downstream missing — the "
+                f"mgmt0 host route may be winning)"
+            )
+    result = {
+        "required_interfaces": list(required_ifaces),
+        "probe_ips": sorted({ip for ip in probe_ips if ip}),
+        "evidence": evidence,
+        "ok": not problems,
+        "problems": problems,
+        "strict": bool(strict),
+    }
+    if problems:
+        message = (
+            "probe traffic did not cross the shaped path as required: "
+            + "; ".join(problems)
+            + ". A probe that bypasses veth2/veth4 is measuring a different "
+            "link from the one under test."
+        )
+        print(f"  ! {message}")
+        if strict and enforce:
+            raise RuntimeError(message)
+    else:
+        parts = ", ".join(
+            f"{i}: {evidence[i]['to_probe']}↑/{evidence[i]['from_probe']}↓"
+            for i in required_ifaces
+            if i in evidence
+        )
+        print(f"    · probe path verified ({parts})")
+    return result
+
+
 def app_endpoint_ips_from_url_map(
     app_urls: Optional[dict[str, str]],
 ) -> dict[str, set[str]]:
@@ -4600,6 +5368,26 @@ def run_direct(cfg: ExperimentConfig) -> dict[str, Any]:
     cap = substrate_capture_start(cfg.slug, duration_s=cap_duration)
     capture_id = cap["capture_id"]
 
+    # A second capture on the upstream leg. Jaber's NetVibe spec asks for a
+    # pcap per interface, and it is also the evidence for the shaped-path
+    # guard: a probe that crossed only one of the two was not on the path
+    # under test. Only taken when a probe needs it, so an ordinary run still
+    # ships exactly one capture.
+    upstream_capture_id = None
+    if NETVIBE_ENABLED:
+        try:
+            up_cap = substrate_capture_start_on(
+                UPSTREAM_IFACE, f"{cfg.slug}_upstream", duration_s=cap_duration
+            )
+            upstream_capture_id = up_cap["capture_id"]
+            print(f"  • capture on {UPSTREAM_IFACE} (probe path evidence) ...")
+        except Exception as exc:  # noqa: BLE001
+            print(
+                f"  ! second capture on {UPSTREAM_IFACE} failed "
+                f"({type(exc).__name__}: {exc}); the shaped-path guard cannot "
+                f"run without it"
+            )
+
     # The probe starts inside the capture window and runs alongside the app,
     # not after it. It is deliberately started AFTER the capture so every probe
     # packet is in the pcap, and stopped BEFORE the download so none is in
@@ -4608,6 +5396,11 @@ def run_direct(cfg: ExperimentConfig) -> dict[str, Any]:
     if IRTT_ENABLED:
         print("  • IRTT probe (ns1 → ns2, concurrent with the app) ...")
         irtt_session = substrate_irtt_start(cfg.duration_s)
+
+    netvibe_session = None
+    if NETVIBE_ENABLED:
+        print("  • NetVibe probe (sensor in ns1, probe server in ns2) ...")
+        netvibe_session = substrate_netvibe_start(run_dir, cfg.duration_s)
 
     run_results: dict[str, Any] = {}
     reg, _qlib = _bind_shared()
@@ -4681,6 +5474,26 @@ def run_direct(cfg: ExperimentConfig) -> dict[str, Any]:
 
     apps = cfg.apps  # collector/substrate split is done; report on all apps
 
+    netvibe_stopped = substrate_netvibe_stop(netvibe_session)
+    netvibe_record = summarize_netvibe(netvibe_stopped)
+    if netvibe_record:
+        if netvibe_record.get("status") == "ok":
+            _q = netvibe_record.get("queueing_ms") or {}
+            _dn = _q.get("downstream_ns2_to_ns1") or {}
+            _up = _q.get("upstream_ns1_to_ns2") or {}
+            _rt = netvibe_record.get("round_trip_ms") or {}
+            _rc = netvibe_record.get("records") or {}
+            print(
+                f"    · NetVibe: {_rc.get('ok')}/{_rc.get('total')} answered | "
+                f"queueing down mean {_dn.get('mean')} / p95 {_dn.get('p95')} ms"
+                f"  up mean {_up.get('mean')} / p95 {_up.get('p95')} ms | "
+                f"rtt mean {_rt.get('mean')} ms | rates "
+                f"{netvibe_record.get('rates_observed')}"
+                f"  [{netvibe_record.get('transport')}]"
+            )
+        else:
+            print(f"    ! NetVibe produced no result: {netvibe_record.get('error')}")
+
     irtt_stopped = substrate_irtt_stop(irtt_session)
     irtt_record = summarize_irtt(irtt_stopped)
     if irtt_record:
@@ -4712,6 +5525,45 @@ def run_direct(cfg: ExperimentConfig) -> dict[str, Any]:
             f"being KEPT so the raw evidence is not lost. Retrieve it with: "
             f"curl -o {local_pcap} {SUBSTRATE}/capture/{capture_id}/pcap"
         )
+    # ── the upstream leg's pcap, and the shaped-path guard ──────────────────
+    upstream_pcap = None
+    probe_path_result = None
+    if upstream_capture_id:
+        upstream_pcap = run_dir / f"capture_{UPSTREAM_IFACE}.pcap"
+        substrate_capture_wait(upstream_capture_id, timeout_s=cap_duration + 60)
+        if substrate_capture_download(upstream_capture_id, upstream_pcap):
+            substrate_capture_delete(upstream_capture_id)
+            print(
+                f"  • {UPSTREAM_IFACE} pcap saved → {upstream_pcap} "
+                f"({upstream_pcap.stat().st_size / 1e6:.1f} MB)"
+            )
+        else:
+            print(
+                f"  ! {UPSTREAM_IFACE} pcap download failed; keeping the "
+                f"worker-side capture {upstream_capture_id}"
+            )
+            upstream_pcap = None
+
+    _probe_ips = sorted(
+        {
+            ip
+            for ips in merge_endpoint_ips(
+                irtt_probe_endpoints(irtt_record),
+                netvibe_probe_endpoints(netvibe_record),
+            ).values()
+            for ip in ips
+        }
+    )
+    if _probe_ips and got:
+        # Checked before anything is derived from the capture: if the probe did
+        # not cross the shaped path, every number computed from it describes a
+        # link that was not under test.
+        probe_path_result = check_probe_path(
+            {DOWNSTREAM_IFACE: local_pcap, UPSTREAM_IFACE: upstream_pcap},
+            _probe_ips,
+            enforce=False,
+        )
+
     if local_ip_map:
         substrate_teardown_per_app_marks()
 
@@ -4760,7 +5612,10 @@ def run_direct(cfg: ExperimentConfig) -> dict[str, Any]:
             local_ip_map=local_ip_map,
             app_endpoint_ips=endpoint_ips,
             client_ips=None if local_ip_map else client_ips,
-            probe_endpoint_ips=irtt_probe_endpoints(irtt_record),
+            probe_endpoint_ips=merge_endpoint_ips(
+                irtt_probe_endpoints(irtt_record),
+                netvibe_probe_endpoints(netvibe_record),
+            ),
         )
     if attribution.method != "none":
         print(
@@ -4951,6 +5806,11 @@ def run_direct(cfg: ExperimentConfig) -> dict[str, Any]:
         # The probe's own record, beside the QoE record rather than inside it:
         # it measures the link, not the application, and it is not an app.
         "irtt": irtt_record,
+        "netvibe": netvibe_record,
+        "upstream_pcap": str(upstream_pcap) if upstream_pcap else None,
+        # Evidence that the probe really crossed the shaped path, not the
+        # management link. Null when no probe needed checking.
+        "probe_path": probe_path_result,
         "per_app_stats": per_app_stats,
         # True when the capture split and plots were postponed to keep a live
         # meeting window free. per_app_stats and the plots are EMPTY in that
@@ -4981,6 +5841,25 @@ def run_direct(cfg: ExperimentConfig) -> dict[str, Any]:
 
     # Write the record (and the pcap and plots above) BEFORE any strict-shaping
     # abort: a run that failed verification is still raw evidence worth keeping.
+    # A probe that bypassed the shaped path invalidates the run, but the
+    # artifacts are written first: the same reasoning as the shaping abort
+    # below, since the captures are the evidence for the diagnosis.
+    if (
+        probe_path_result
+        and not probe_path_result.get("ok")
+        and probe_path_result.get("strict")
+    ):
+        record["probe_path_verification_failed"] = True
+        _write_record(record, run_dir)
+        print(f"  ✓ saved → {run_dir} (flagged: probe path verification failed)")
+        raise RuntimeError(
+            "Probe path verification FAILED for "
+            + cfg.slug
+            + ": "
+            + "; ".join(probe_path_result.get("problems") or [])
+            + f". Artifacts were still saved to {run_dir}."
+        )
+
     if (
         STRICT_SHAPING
         and net.avg_throughput_mbps is not None
@@ -5474,6 +6353,20 @@ __all__ = [
     "app_endpoint_ips_from_urls",
     "app_endpoint_ips_from_webrtc_stats",
     "merge_endpoint_ips",
+    # probes that share the link with the app (not apps themselves)
+    "substrate_irtt_start",
+    "substrate_irtt_stop",
+    "summarize_irtt",
+    "irtt_probe_endpoints",
+    "substrate_netvibe_start",
+    "substrate_netvibe_stop",
+    "summarize_netvibe",
+    "netvibe_probe_endpoints",
+    "netvibe_bench_config",
+    "substrate_capture_start_on",
+    "probe_path_evidence",
+    "check_probe_path",
+    "probe_path_strict",
     "AppTraffic",
     "CaptureAttribution",
     "NetStats",

@@ -164,6 +164,7 @@ CURRENT_INTERFACES = None  # {"downstream_iface": ..., "upstream_iface": ...}
 ACTIVE_REPLAYS: dict = {}  # replay_id → session dict
 ACTIVE_CAPTURES: dict = {}  # capture_id → session dict
 ACTIVE_IRTT: dict = {}  # irtt_id → session dict
+ACTIVE_NETVIBE: dict = {}  # netvibe_id → session dict
 
 CAPTURE_DIR = os.environ.get("CAPTURE_DIR", "/home/netreplica/config/captures")
 CTP_DIR = os.environ.get("CTP_DIR", "/home/netreplica/config/ctp")
@@ -416,6 +417,52 @@ class IrttStatusResponse(BaseModel):
     start_time: str
     server_alive: bool
     client_returncode: Optional[int] = None
+
+
+class NetvibeRequest(BaseModel):
+    """One NetVibe probe run: bench here, its probe server in ns2, sensor in ns1."""
+
+    duration_seconds: int = Field(60, ge=1)
+    rate_per_second: float = Field(10.0, gt=0, le=10)
+    server_address: str = Field(
+        "172.16.2.1", description="ns2's veth3 address; the probe server's media"
+    )
+    signaling_address: str = Field(
+        "172.16.2.2",
+        description=(
+            "Where bench serves the sensor API. Bench runs in the worker's own "
+            "namespace, so this is the root side of veth4, reachable from ns1"
+        ),
+    )
+    signaling_port: int = Field(9999, ge=1, le=65535)
+    media_port: int = Field(10443, ge=1, le=65535)
+    stub_api_port: int = Field(9898, ge=1, le=65535)
+    sensor_id: str = Field("pramana-ns1")
+    server_namespace: str = Field("ns2")
+    client_namespace: str = Field("ns1")
+    escalate: bool = Field(False)
+    escalation_rates: list[float] = Field(default_factory=lambda: [20.0])
+    trigger_delay_ms: int = Field(5, ge=0)
+
+
+class NetvibeResponse(BaseModel):
+    netvibe_id: str
+    status: str
+    server_address: str
+    media_port: int
+    endpoint_ips: list[str]
+    start_time: str
+
+
+class NetvibeStatusResponse(BaseModel):
+    netvibe_id: str
+    status: str
+    server_address: str
+    media_port: int
+    endpoint_ips: list[str]
+    start_time: str
+    bench_alive: bool
+    sensor_returncode: Optional[int] = None
 
 
 class CongestionRequest(BaseModel):
@@ -1515,6 +1562,308 @@ def delete_irtt(irtt_id: str):
         "client_returncode": client_proc.returncode,
         "request": session["request"],
         "result": result,
+        "error": error,
+    }
+
+
+# ═════════════════════════════════════════════════════════════════════════════
+#  NetVibe — the lab's continuous-QoE probe, in bench mode
+#
+#  Bench mode is NetVibe's own testbed path: the production probe server with a
+#  SQLite sink instead of Pub/Sub, and no signaling, Postgres, ClickHouse or
+#  device login. It takes a `netns` per probe server, so the server is placed in
+#  ns2 by configuration rather than by wrapping it, and the sensor
+#  (`netvibe-cli test`) runs in ns1. Same start/stop lifecycle as /replay and
+#  /irtt, so the probe shares the link with a browser app instead of following
+#  it.
+# ═════════════════════════════════════════════════════════════════════════════
+NETVIBE_BIN_DIR = os.environ.get("NETVIBE_BIN_DIR", "/opt/netvibe/bin")
+
+# The sensor asks the API whether a speed test is due and, with no API to ask,
+# decides to run one. An NDT7 test would saturate the link under measurement,
+# so bench is paired with a stub that answers "not due". Relying on m-lab being
+# unreachable is not a control.
+_NETVIBE_STUB_API_SRC = r"""
+import json, sys
+from http.server import BaseHTTPRequestHandler, HTTPServer
+
+class H(BaseHTTPRequestHandler):
+    def _send(self, code, body):
+        raw = json.dumps(body).encode()
+        self.send_response(code)
+        self.send_header("Content-Type", "application/json")
+        self.send_header("Content-Length", str(len(raw)))
+        self.end_headers()
+        self.wfile.write(raw)
+
+    def do_GET(self):
+        if self.path.endswith("/speedtests/latest"):
+            self._send(200, {"last_test": None, "due": False})
+        else:
+            self._send(404, {"error": "not found"})
+
+    def do_POST(self):
+        n = int(self.headers.get("Content-Length") or 0)
+        if n:
+            self.rfile.read(n)
+        self._send(200, {"ok": True})
+
+    def log_message(self, *a):
+        pass
+
+HTTPServer((sys.argv[1], int(sys.argv[2])), H).serve_forever()
+"""
+
+
+def _netvibe_bin(name: str) -> Optional[str]:
+    candidate = os.path.join(NETVIBE_BIN_DIR, name)
+    if os.path.isfile(candidate) and os.access(candidate, os.X_OK):
+        return candidate
+    return shutil.which(name)
+
+
+@app.post("/netvibe", response_model=NetvibeResponse)
+def start_netvibe(cfg: NetvibeRequest) -> NetvibeResponse:
+    bench_bin = _netvibe_bin("netvibe-bench")
+    cli_bin = _netvibe_bin("netvibe-cli")
+    missing = [
+        n for n, b in (("netvibe-bench", bench_bin), ("netvibe-cli", cli_bin)) if not b
+    ]
+    if missing:
+        raise HTTPException(
+            status_code=422,
+            detail=(
+                f"NetVibe binaries not found: {', '.join(missing)}. Build them "
+                f"from SNL-UCSB/netvibe (make bench netvibe-cli, Go 1.25) into "
+                f"{NETVIBE_BIN_DIR} or onto PATH, or set NETVIBE_BIN_DIR."
+            ),
+        )
+
+    netvibe_id = str(uuid.uuid4())
+    work = f"/tmp/netvibe_{netvibe_id[:10]}"
+    os.makedirs(work, exist_ok=True)
+    out_sqlite = os.path.join(work, "bench.sqlite")
+    # state_dir is left for bench to create: it makes it 0700 and refuses one
+    # another user owns or that group/other can reach.
+    state_dir = os.path.join(work, "state")
+
+    probe: dict = {
+        "name": "pramana-fixed",
+        "rate_per_second": cfg.rate_per_second,
+        "spacing": "fixed",
+        "max_gap_ms": 2000,
+        "echo_timeout_ms": 5000,
+    }
+    if cfg.escalate:
+        probe.update(
+            {
+                "name": "pramana-escalating",
+                "escalation_rates": list(cfg.escalation_rates),
+                "trigger_delay_ms": cfg.trigger_delay_ms,
+                "trigger_window_ms": 2000,
+                "trigger_percentile": 90,
+                "rung_hold_ms": 2000,
+                "cooldown_ms": 5000,
+                "max_escalated_ms": 600000,
+            }
+        )
+    bench_cfg = {
+        "out": out_sqlite,
+        "listen": f"{cfg.signaling_address}:{cfg.signaling_port}",
+        "state_dir": state_dir,
+        "public_ip": cfg.server_address,
+        "session_seconds": 86400,
+        "probe_servers": [
+            {
+                "label": "pramana",
+                "media_port": cfg.media_port,
+                # Bench places its own child; this is what the key is for.
+                "netns": cfg.server_namespace,
+                "public_ip": cfg.server_address,
+            }
+        ],
+        "probe": probe,
+    }
+    cfg_path = os.path.join(work, "bench.yaml")
+    with open(cfg_path, "w") as fh:
+        json.dump(bench_cfg, fh)  # bench reads YAML; JSON is valid YAML
+
+    stub_path = os.path.join(work, "stub_api.py")
+    with open(stub_path, "w") as fh:
+        fh.write(_NETVIBE_STUB_API_SRC)
+    stub_cmd = (
+        f"ip netns exec {cfg.server_namespace} python3 {stub_path}"
+        f" {cfg.server_address} {cfg.stub_api_port}"
+    )
+    bench_cmd = (
+        f"timeout -k 5 {cfg.duration_seconds + 180} {bench_bin}" f" --config {cfg_path}"
+    )
+    try:
+        stub_proc = subprocess.Popen(
+            stub_cmd, shell=True, stdout=subprocess.DEVNULL, stderr=subprocess.PIPE
+        )
+        bench_proc = subprocess.Popen(
+            bench_cmd, shell=True, stdout=subprocess.PIPE, stderr=subprocess.STDOUT
+        )
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=f"Failed to start bench: {exc}")
+
+    # Readiness from bench's own /ready, which names any probe server that is
+    # down, rather than a sleep that hides a server which never bound.
+    ready_url = f"http://{cfg.signaling_address}:{cfg.signaling_port}/ready"
+    deadline = time.time() + 60.0
+    ready, last = False, ""
+    while time.time() < deadline:
+        if bench_proc.poll() is not None:
+            out, _ = bench_proc.communicate()
+            _terminate(stub_proc)
+            raise HTTPException(
+                status_code=500,
+                detail=(
+                    f"netvibe-bench exited during startup (rc="
+                    f"{bench_proc.returncode}): "
+                    f"{out.decode(errors='replace')[-400:]}"
+                ),
+            )
+        probe_resp = subprocess.run(
+            f"curl -s -m 3 {ready_url}",
+            shell=True,
+            capture_output=True,
+            timeout=15,
+        )
+        body = probe_resp.stdout.decode(errors="replace").replace(" ", "")
+        if probe_resp.returncode == 0 and '"ready":true' in body:
+            ready = True
+            break
+        last = body[:160]
+        time.sleep(1.0)
+    if not ready:
+        _terminate(bench_proc)
+        _terminate(stub_proc)
+        raise HTTPException(
+            status_code=504,
+            detail=f"netvibe-bench never reported ready at {ready_url}: {last}",
+        )
+
+    sensor_cmd = (
+        f"timeout -k 5 {cfg.duration_seconds + 120}"
+        f" ip netns exec {cfg.client_namespace} {cli_bin} test"
+        f" --signaling-host http://{cfg.signaling_address}"
+        f" --signaling-port {cfg.signaling_port}"
+        f" --api-host http://{cfg.server_address}"
+        f" --api-port {cfg.stub_api_port}"
+        f" --sensor-id {cfg.sensor_id}"
+        # Host candidates only: a STUN-derived candidate could put the media on
+        # a path that never crosses the shaped link.
+        f" --no-stun"
+    )
+    try:
+        sensor_proc = subprocess.Popen(
+            sensor_cmd, shell=True, stdout=subprocess.PIPE, stderr=subprocess.STDOUT
+        )
+    except Exception as exc:
+        _terminate(bench_proc)
+        _terminate(stub_proc)
+        raise HTTPException(status_code=500, detail=f"Failed to start sensor: {exc}")
+
+    ACTIVE_NETVIBE[netvibe_id] = {
+        "netvibe_id": netvibe_id,
+        "bench_proc": bench_proc,
+        "sensor_proc": sensor_proc,
+        "stub_proc": stub_proc,
+        "work": work,
+        "out_sqlite": out_sqlite,
+        "server_address": cfg.server_address,
+        "signaling_address": cfg.signaling_address,
+        "media_port": cfg.media_port,
+        "start_time": datetime.utcnow().isoformat(),
+        "request": cfg.model_dump(),
+    }
+    # Both addresses are the probe's: media on ns2's veth3, the sensor API on
+    # the root side of veth4. Registering both keeps either out of the app's
+    # per-app pcap and out of the shared-cap sum.
+    endpoints = sorted({cfg.server_address, cfg.signaling_address})
+    return NetvibeResponse(
+        netvibe_id=netvibe_id,
+        status="started",
+        server_address=cfg.server_address,
+        media_port=cfg.media_port,
+        endpoint_ips=endpoints,
+        start_time=ACTIVE_NETVIBE[netvibe_id]["start_time"],
+    )
+
+
+@app.get("/netvibe/{netvibe_id}", response_model=NetvibeStatusResponse)
+def get_netvibe(netvibe_id: str) -> NetvibeStatusResponse:
+    session = ACTIVE_NETVIBE.get(netvibe_id)
+    if session is None:
+        raise HTTPException(
+            status_code=404, detail=f"NetVibe session not found: {netvibe_id}"
+        )
+    bench: subprocess.Popen = session["bench_proc"]
+    sensor: subprocess.Popen = session["sensor_proc"]
+    rc = sensor.poll()
+    return NetvibeStatusResponse(
+        netvibe_id=netvibe_id,
+        status="running" if rc is None else "finished",
+        server_address=session["server_address"],
+        media_port=session["media_port"],
+        endpoint_ips=sorted({session["server_address"], session["signaling_address"]}),
+        start_time=session["start_time"],
+        bench_alive=bench.poll() is None,
+        sensor_returncode=rc,
+    )
+
+
+@app.delete("/netvibe/{netvibe_id}")
+def delete_netvibe(netvibe_id: str):
+    """Stop the probe and say where its records are.
+
+    Order matters: the sensor is stopped first, then bench, which on SIGTERM
+    ends its sessions, waits for its servers to flush and writes
+    `meta.stopped_at_ns`. The file is only complete once bench exits, so
+    killing bench first would lose the tail of the run.
+    """
+    session = ACTIVE_NETVIBE.get(netvibe_id)
+    if session is None:
+        raise HTTPException(
+            status_code=404, detail=f"NetVibe session not found: {netvibe_id}"
+        )
+    _terminate(session["sensor_proc"])
+    bench: subprocess.Popen = session["bench_proc"]
+    if bench.poll() is None:
+        bench.terminate()
+        try:
+            bench.wait(timeout=30)
+        except subprocess.TimeoutExpired:
+            bench.kill()
+    _terminate(session["stub_proc"])
+
+    out = session["out_sqlite"]
+    error = None
+    size = None
+    if os.path.exists(out):
+        size = os.path.getsize(out)
+        if size == 0:
+            error = f"bench wrote an empty file at {out}"
+    else:
+        error = f"bench wrote no file at {out}"
+
+    del ACTIVE_NETVIBE[netvibe_id]
+    return {
+        "netvibe_id": netvibe_id,
+        "status": "stopped",
+        "server_address": session["server_address"],
+        "media_port": session["media_port"],
+        "endpoint_ips": sorted(
+            {session["server_address"], session["signaling_address"]}
+        ),
+        # The file stays in the worker for the caller to fetch; it can be large
+        # and is not JSON.
+        "out_sqlite": out,
+        "out_sqlite_bytes": size,
+        "work_dir": session["work"],
+        "request": session["request"],
         "error": error,
     }
 
