@@ -194,6 +194,33 @@ def start_ctp_replay(
     }
 
 
+def source_overrides() -> list[str]:
+    """Mount this checkout's shared/ and main_local.py over the image's copies.
+
+    Only when the netgent submodule is actually present. shared/ is where the
+    image keeps netgent, so mounting a checkout whose submodule was never
+    initialised hides utils.execution and the worker dies on import with
+    "No module named 'utils'" - a crash loop that otherwise reads as "worker
+    did not become healthy" three steps later. An uninitialised submodule
+    therefore means: run the image's own bundled sources instead.
+    """
+    netgent_src = REPO_ROOT / "shared/clients/netgent/src/utils/execution.py"
+    if not netgent_src.is_file():
+        print(
+            "    note: shared/clients/netgent is not checked out; "
+            "using the image's own sources "
+            "(run `git submodule update --init --recursive` to override them)"
+        )
+        return []
+    main_local = REPO_ROOT / "services/substrate-worker/src/substrate/main_local.py"
+    return [
+        "--volume",
+        f"{REPO_ROOT / 'shared'}:/shared:ro",
+        "--volume",
+        f"{main_local}:/app/src/substrate/main_local.py:ro",
+    ]
+
+
 def read_bot_status(result_dir: Path) -> dict[str, Any] | None:
     status_path = result_dir / "bot_status.json"
     if not status_path.is_file():
@@ -426,13 +453,7 @@ def run_one_tier(
                 if ctp_name.strip()
                 else []
             ),
-            "--volume",
-            f"{REPO_ROOT / 'shared'}:/shared:ro",
-            "--volume",
-            (
-                f"{REPO_ROOT / 'services/substrate-worker/src/substrate/main_local.py'}:"
-                "/app/src/substrate/main_local.py:ro"
-            ),
+            *source_overrides(),
             IMAGE,
         )
         published = docker("port", container, "8002/tcp").splitlines()[0]
