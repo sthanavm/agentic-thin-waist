@@ -127,15 +127,28 @@ different quantity from media bitrate.
 
 - **tubi** — ad-supported. Pre-roll ads play before the title, so the opening
   samples describe the **ad**, not the content: startup and early resolution are
-  ad metrics.
+  ad metrics. **Its catalogue rotates**, and a withdrawn title still returns
+  HTTP 200 with the correct page `<title>` while the body reads
+  "CONTENT UNAVAILABLE" and no `<video>` is ever created — measured, and the
+  reason earlier Tubi runs reported `no_data`. List current titles with
+  `curl -s https://tubitv.com/movies | grep -oE '/movies/[0-9]+/[a-z0-9-]+'`
+  and reject any page containing that string. Tubi constructs MediaSource in
+  the main world, so appended-byte metrics do work once a live title is used.
 - **twitch** — live. No finite duration and no seek, so `video_duration_secs` and
   `delivered_fraction_of_video` are `null` by construction; startup is
   time-to-first-frame. Supply a channel that is actually streaming via
   `app_urls`; the bare `twitch.tv` home page has no `<video>` and reports
-  `no_playback`.
+  `no_playback`. **Delivered bitrate is unavailable by construction**: Twitch
+  builds no main-world MediaSource, running MSE inside Workers and handing the
+  element a `MediaSourceHandle`, so an `appendBuffer` hook cannot reach it.
+  It is reported as `null` with that reason — never as 0, which an earlier
+  version did report and which read as a real measurement of zero.
 - **puffer** — live research player; may require accepting participation terms
   before playback begins.
-- **roku / vimeo** — generic `<video>`, no vendor stats API: bitrate `null`.
+- **roku / vimeo** — generic `<video>`, no vendor stats API. Bitrate is **not**
+  `null`: it comes from `SourceBuffer.appendBuffer` byte totals split by MIME,
+  which needs no vendor API at all. Measured on Vimeo across a 0.5-10 Mbps
+  ladder it tracks the cap, 0.214 -> 2.997 Mbps.
 
 ---
 

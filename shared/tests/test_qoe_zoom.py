@@ -130,3 +130,15 @@ def test_url_for_normalises_an_override():
         _apps.url_for("zoom", {"zoom": "https://us04web.zoom.us/j/99?pwd=Z.1"})
         == "https://us04web.zoom.us/wc/99/join?pwd=Z.1"
     )
+
+
+def test_driver_mode_is_per_app_and_defaults_to_uc():
+    """The peer server needs working ICE; consumer sites need bot evasion.
+
+    UC mode gathers zero ICE candidates on this image, so the raw peer target
+    asks for a stock driver. Every site that has to get past a bot wall must
+    keep UC mode - this pins that the split did not leak.
+    """
+    assert _apps.get("webrtc_peer").driver_mode == "plain"
+    for app in ("youtube", "vimeo", "tubi", "twitch", "meet", "zoom"):
+        assert _apps.get(app).driver_mode == "uc", app

@@ -52,109 +52,979 @@ import time
 from pathlib import Path
 from typing import Any
 
+# Chrome's own per-host byte accounting. Kept in its own module because its
+# logic is unit-tested without a browser (shared/tests/test_cdp_bytes.py).
+try:
+    from cdp_bytes import CdpByteLedger, drain_performance_log
+except ImportError:  # running from a different cwd inside the image
+    sys.path.insert(0, str(Path(__file__).resolve().parent))
+    from cdp_bytes import CdpByteLedger, drain_performance_log
+
 # Runs in the page. Detects YouTube vs. a generic <video> element (Vimeo
 # falls into the generic branch - that's exactly what worked in PR #6).
+MEDIA_HOOK_JS = r"""
+// Codec detection. A <video> does not expose its codec: src is usually a blob
+// backed by MediaSource, and videoTracks is empty in Chrome. The mime type is
+// only ever stated when the page creates its source buffers, so record it
+// there. Installed before page scripts, exactly like the peer-connection hook.
+(() => {
+    const key = '__netgentCodecs';
+    if (Array.isArray(window[key])) return;
+    Object.defineProperty(window, key, {
+        value: [], configurable: false, enumerable: false, writable: false
+    });
+    const MS = window.MediaSource || window.WebKitMediaSource;
+    if (!MS || !MS.prototype || MS.prototype.__netgentWrapped) return;
+    const native = MS.prototype.addSourceBuffer;
+    MS.prototype.addSourceBuffer = function (mime) {
+        try {
+            if (mime && window[key].indexOf(mime) === -1) window[key].push(mime);
+        } catch (e) { /* never break playback to observe it */ }
+        return native.apply(this, arguments);
+    };
+    MS.prototype.__netgentWrapped = true;
+})();
+
+// Which MediaStreamTracks came from the LOCAL camera. This is the only
+// deterministic way to tell a conferencing self-view from a remote participant:
+// both are MediaStream-backed <video> elements with real intrinsic sizes, and
+// size alone is actively misleading - Zoom renders the local fake device at a
+// full 1280x720 inside a 207x117 thumbnail while the remote speaker occupies the
+// main view at whatever resolution Zoom chose to send. Ranking by size therefore
+// reported the collector's own camera as the call's video quality.
+// getUserMedia is the single place a page can acquire local capture, so wrapping
+// it before any page script runs yields an exact set of local track ids.
+(() => {
+    const key = '__netgentLocalTrackIds';
+    if (window[key]) return;
+    Object.defineProperty(window, key, {
+        value: [], configurable: false, enumerable: false, writable: false
+    });
+    Object.defineProperty(window, '__netgentLocalTrackLabels', {
+        value: [], configurable: false, enumerable: false, writable: false
+    });
+    const remember = (stream) => {
+        try {
+            stream.getTracks().forEach((t) => {
+                if (t && t.id && window[key].indexOf(t.id) === -1) {
+                    window[key].push(t.id);
+                }
+                // The label survives a clone or canvas re-wrap; the id does not.
+                const lab = (t.label || '').trim();
+                if (lab && window.__netgentLocalTrackLabels.indexOf(lab) === -1) {
+                    window.__netgentLocalTrackLabels.push(lab);
+                }
+            });
+        } catch (e) { /* never break capture to observe it */ }
+        return stream;
+    };
+    const md = navigator.mediaDevices;
+    if (md && typeof md.getUserMedia === 'function') {
+        const native = md.getUserMedia.bind(md);
+        md.getUserMedia = function (c) {
+            return native(c).then(remember);
+        };
+    }
+    // Legacy entry point, still used by some builds.
+    const legacy = navigator.getUserMedia || navigator.webkitGetUserMedia;
+    if (typeof legacy === 'function') {
+        const nativeLegacy = legacy.bind(navigator);
+        const wrapped = function (c, ok, err) {
+            return nativeLegacy(c, (s) => ok(remember(s)), err);
+        };
+        try { navigator.getUserMedia = wrapped; } catch (e) { /* read-only */ }
+        try { navigator.webkitGetUserMedia = wrapped; } catch (e) { /* ditto */ }
+    }
+})();
+"""
+
+
+# Uniform streaming-QoE probe. One mechanism for every site, no per-site APIs.
+# Installed on the same pre-document channel as the codec hook, so it observes a
+# player's very first append and very first presented frame.
+#
+# Each piece exists because a target metric cannot be measured without it:
+#   * appended bytes PER SourceBuffer, keyed by mime - the only uniform source of
+#     delivered bitrate. Measured on this host: YouTube's audio buffer carried
+#     26% of all appended bytes, so a single total would overstate video bitrate
+#     by about a third. appendBuffer's argument size is observable, and audio and
+#     video are always separate SourceBuffers.
+#   * requestVideoFrameCallback - presentedFrames counts frames actually
+#     submitted for composition, which is the rendering rate being asked for;
+#     getVideoPlaybackQuality().totalVideoFrames counts DECODED frames, a
+#     different quantity. Its first callback also timestamps the first frame a
+#     viewer could see, which is the honest end of startup delay.
+#   * the media event log - `waiting` is spec-defined as "playback has stopped
+#     because of a temporary lack of data", i.e. a rebuffer, closed by `playing`.
+#     Inferring stalls from a progress counter cannot distinguish that from a
+#     paused tab or a counter reset.
+#   * changeType/addSourceBuffer mime history - a codec or rendition switch
+#     without creating a new SourceBuffer shows up nowhere else.
+#   * worker detection - a player may run MediaSource inside a Worker and hand
+#     the element a MediaSourceHandle via srcObject. Measured: Twitch does
+#     exactly this (0 main-world MediaSource constructions, 2 Workers,
+#     video.srcObject set), so these hooks are structurally blind there and the
+#     record must say so instead of reporting a silent zero.
+STREAM_PROBE_JS = r"""
+(() => {
+    const K = '__netgentProbe';
+    if (window[K]) return;
+    Object.defineProperty(window, K, {
+        value: {
+            buffers: [], appends: 0, bytes_total: 0,
+            ms_constructions: 0, workers: [],
+            events: {}, event_log: [], waiting_spans: [], _waiting_at: null,
+            rvfc: {presented: 0, first_presentation_ms: null, first_media_time: null,
+                   last_media_time: null, width: 0, height: 0, installed: false,
+                   processing_total: 0, processing_n: 0},
+            t0: (performance && performance.now) ? performance.now() : 0
+        },
+        configurable: false, enumerable: false, writable: false
+    });
+    const S = window[K];
+    const now = () => ((performance && performance.now) ? performance.now() : 0);
+
+    // ---- MSE: bytes per SourceBuffer, keyed by the mime it was created with --
+    // ── codec of the rendition actually decoding ────────────────────────────
+    // The MIME handed to addSourceBuffer() is what the page said it MIGHT
+    // send. Measured on YouTube: one declared av01.0.04M.08 held constant
+    // while the rendition went itag 394 -> 395 -> 396 -> 397 and changeType()
+    // was never called, so the mime history stayed empty and reported no
+    // switch. The init segment is the generic answer, because the decoder is
+    // configured from it. Validated offline against ffmpeg-written segments
+    // with ffprobe as ground truth (see initseg/).
+    const IS = {
+        be: (b, o, n) => { let v = 0; for (let i = 0; i < n; i++) v = v * 256 + b[o + i]; return v; },
+        fcc: (b, o) => String.fromCharCode(b[o], b[o + 1], b[o + 2], b[o + 3]),
+        boxes: function (b, s, e, cb) {
+            let o = s;
+            while (o + 8 <= e) {
+                let size = this.be(b, o, 4); const t = this.fcc(b, o + 4); let hdr = 8;
+                if (size === 1) { if (o + 16 > e) return; size = this.be(b, o + 8, 8); hdr = 16; }
+                else if (size === 0) { size = e - o; }
+                if (size < hdr || o + size > e) return;   // malformed: stop, never guess
+                cb(t, o + hdr, o + size); o += size;
+            }
+        },
+        av1c: function (b, s, e) {
+            if (e - s < 3) return null;
+            const prof = (b[s + 1] >> 5) & 7, lvl = b[s + 1] & 31;
+            const tier = (b[s + 2] >> 7) & 1, hi = (b[s + 2] >> 6) & 1, tw = (b[s + 2] >> 5) & 1;
+            const d = tw ? 12 : (hi ? 10 : 8);
+            return 'av01.' + prof + '.' + String(lvl).padStart(2, '0') + (tier ? 'H' : 'M')
+                + '.' + String(d).padStart(2, '0');
+        },
+        avcc: function (b, s, e) {
+            if (e - s < 4) return null;
+            const h = (x) => x.toString(16).padStart(2, '0');
+            return 'avc1.' + h(b[s + 1]) + h(b[s + 2]) + h(b[s + 3]);
+        },
+        vpcc: function (b, s, e, fcc) {
+            if (e - s < 6) return null;
+            return (fcc === 'vp08' ? 'vp08.' : 'vp09.') + String(b[s + 4]).padStart(2, '0')
+                + '.' + String(b[s + 5]).padStart(2, '0') + '.'
+                + String((e - s >= 7) ? (b[s + 6] >> 4) : 8).padStart(2, '0');
+        },
+        esds: function (b, s, e) {
+            for (let o = s; o + 2 < e; o++) {
+                if (b[o] !== 4) continue;
+                let q = o + 1; while (q < e && (b[q] & 0x80)) q++; q++;
+                if (q >= e) break;
+                if (b[q] !== 0x40) return 'mp4a.' + b[q].toString(16).padStart(2, '0');
+                for (let r = q; r + 2 < e; r++) {
+                    if (b[r] !== 5) continue;
+                    let z = r + 1; while (z < e && (b[z] & 0x80)) z++; z++;
+                    if (z >= e) break;
+                    return 'mp4a.40.' + ((b[z] >> 3) & 31);
+                }
+                return 'mp4a.40';
+            }
+            return null;
+        },
+        mp4: function (b) {
+            const out = []; const CONT = {moov: 1, trak: 1, mdia: 1, minf: 1, stbl: 1};
+            const visit = (s, e) => {
+                this.boxes(b, s, e, (t, cs, ce) => {
+                    if (CONT[t]) { visit(cs, ce); return; }
+                    if (t !== 'stsd' || ce - cs < 8) return;
+                    this.boxes(b, cs + 8, ce, (fcc, es, ee) => {
+                        const ent = {sample_entry: fcc, codec: null, w: null, h: null};
+                        if (ee - es >= 78) {
+                            const w = this.be(b, es + 24, 2), h = this.be(b, es + 26, 2);
+                            if (w && h) { ent.w = w; ent.h = h; }
+                        }
+                        // Child boxes sit 78 bytes into a VisualSampleEntry (the
+                        // 8-byte SampleEntry base is easy to drop and costs the
+                        // whole answer) and 28 into an AudioSampleEntry.
+                        const scan = (off) => {
+                            let got = null;
+                            if (es + off >= ee) return null;
+                            this.boxes(b, es + off, ee, (cfg, xs, xe) => {
+                                if (cfg === 'av1C') got = this.av1c(b, xs, xe);
+                                else if (cfg === 'avcC') got = this.avcc(b, xs, xe);
+                                else if (cfg === 'vpcC') got = this.vpcc(b, xs, xe, fcc);
+                                else if (cfg === 'esds') got = this.esds(b, xs, xe);
+                                else if (cfg === 'dOps') got = 'opus';
+                            });
+                            return got;
+                        };
+                        ent.codec = scan(78) || scan(28) || scan(0);
+                        if (!ent.codec && fcc === 'Opus') ent.codec = 'opus';
+                        out.push(ent);
+                    });
+                });
+            };
+            visit(0, b.length);
+            return out;
+        },
+        ebmlNum: function (b, o, e, isId) {
+            if (o >= e) return null;
+            const f = b[o]; let len = 1, m = 0x80;
+            while (len <= 8 && !(f & m)) { m >>= 1; len++; }
+            if (len > 8 || o + len > e) return null;
+            let v = isId ? f : (f & (m - 1));
+            for (let i = 1; i < len; i++) v = v * 256 + b[o + i];
+            return {v: v, len: len};
+        },
+        webm: function (b) {
+            const tracks = []; let cur = null;
+            const DESC = {0x18538067: 1, 0x1654AE6B: 1, 0xAE: 1, 0xE0: 1, 0xE1: 1};
+            const walk = (s, e, d) => {
+                if (d > 6) return;
+                let o = s;
+                while (o < e) {
+                    const id = this.ebmlNum(b, o, e, true); if (!id) return;
+                    const sz = this.ebmlNum(b, o + id.len, e, false); if (!sz) return;
+                    const cs = o + id.len + sz.len; let ce = cs + sz.v;
+                    if (sz.v >= Math.pow(2, 7 * sz.len) - 1 || ce > e) ce = e;
+                    if (id.v === 0xAE) {
+                        cur = {codec_id: null, codec: null, w: null, h: null, priv: null};
+                        tracks.push(cur); walk(cs, ce, d + 1);
+                    } else if (DESC[id.v]) { walk(cs, ce, d + 1); }
+                    else if (cur) {
+                        if (id.v === 0x86) {
+                            cur.codec_id = String.fromCharCode.apply(null,
+                                b.subarray(cs, ce)).replace(/\0+$/, '');
+                        } else if (id.v === 0x63A2) { cur.priv = [cs, ce]; }
+                        else if (id.v === 0xB0) { cur.w = this.be(b, cs, ce - cs); }
+                        else if (id.v === 0xBA) { cur.h = this.be(b, cs, ce - cs); }
+                    }
+                    if (ce <= cs) return;
+                    o = ce;
+                }
+            };
+            walk(0, b.length, 0);
+            for (const t of tracks) {
+                const i = t.codec_id || '';
+                // VP9 in WebM ships no CodecPrivate at all (verified on a real
+                // file), so its profile lives in the bitstream and the family
+                // is all the container can give.
+                if (i === 'V_AV1') t.codec = (t.priv ? this.av1c(b, t.priv[0], t.priv[1]) : null) || 'av01';
+                else if (i === 'V_VP9') t.codec = 'vp09';
+                else if (i === 'V_VP8') t.codec = 'vp08';
+                else if (i === 'A_OPUS') t.codec = 'opus';
+                else if (i.indexOf('A_AAC') === 0) t.codec = 'mp4a.40.2';
+                else t.codec = i || null;
+                delete t.priv;
+            }
+            return tracks;
+        },
+        parse: function (buf) {
+            try {
+                let b = buf;
+                if (b && b.buffer !== undefined && !(b instanceof Uint8Array)) {
+                    b = new Uint8Array(b.buffer, b.byteOffset || 0, b.byteLength);
+                } else if (b instanceof ArrayBuffer) { b = new Uint8Array(b); }
+                if (!b || b.length < 8) return null;
+                if (b[0] === 0x1A && b[1] === 0x45 && b[2] === 0xDF && b[3] === 0xA3) {
+                    const t = this.webm(b);
+                    return t.length ? {container: 'webm', tracks: t} : null;
+                }
+                const m = this.mp4(b);
+                return m.length ? {container: 'iso-bmff', tracks: m} : null;
+            } catch (e) { return null; }
+        }
+    };
+
+    const MS = window.MediaSource || window.WebKitMediaSource;
+    const findRec = (sb) => {
+        for (const r of S.buffers) { if (r.sb === sb) { return r; } }
+        return null;
+    };
+    if (MS && MS.prototype && !MS.prototype.__netgentProbeWrapped) {
+        const nativeAdd = MS.prototype.addSourceBuffer;
+        MS.prototype.addSourceBuffer = function (mime) {
+            const sb = nativeAdd.apply(this, arguments);
+            try {
+                S.buffers.push({
+                    sb: sb, mime: String(mime || ''), bytes: 0, appends: 0,
+                    mime_history: [{t: now() - S.t0, mime: String(mime || '')}],
+                    init_history: [], init_seen: 0
+                });
+            } catch (e) { /* observation must never break playback */ }
+            return sb;
+        };
+        MS.prototype.__netgentProbeWrapped = true;
+    }
+    const SBp = window.SourceBuffer && window.SourceBuffer.prototype;
+    if (SBp && SBp.appendBuffer && !SBp.__netgentProbeWrapped) {
+        const nativeAppend = SBp.appendBuffer;
+        SBp.appendBuffer = function (data) {
+            try {
+                const n = (data && (data.byteLength !== undefined
+                    ? data.byteLength : (data.length || 0))) || 0;
+                const r = findRec(this);
+                if (r) { r.bytes += n; r.appends += 1; }
+                S.appends += 1; S.bytes_total += n;
+                // An init segment, not media: it carries the decoder config and
+                // no samples. Cheap to recognise and small, so parsing it costs
+                // nothing on the append path. Capped so a player that re-sends
+                // init on every segment cannot grow this without bound.
+                if (r && r.init_seen < 40 && n > 0 && n < 200000) {
+                    const d = IS.parse(data);
+                    if (d && d.tracks && d.tracks.length) {
+                        const tr = d.tracks.filter((x) => x.codec)[0] || d.tracks[0];
+                        const sig = d.container + '|' + tr.codec + '|' + (tr.w || '')
+                            + 'x' + (tr.h || '');
+                        const last = r.init_history[r.init_history.length - 1];
+                        if (!last || last.sig !== sig) {
+                            r.init_seen += 1;
+                            r.init_history.push({
+                                t: Math.round(now() - S.t0), sig: sig,
+                                container: d.container, codec: tr.codec,
+                                w: tr.w, h: tr.h,
+                                sample_entry: tr.sample_entry || tr.codec_id || null
+                            });
+                        }
+                    }
+                }
+            } catch (e) { /* ditto */ }
+            return nativeAppend.apply(this, arguments);
+        };
+        if (SBp.changeType) {
+            const nativeChange = SBp.changeType;
+            SBp.changeType = function (mime) {
+                try {
+                    const r = findRec(this);
+                    if (r) {
+                        r.mime = String(mime || '');
+                        r.mime_history.push({t: now() - S.t0, mime: String(mime || '')});
+                    }
+                } catch (e) { /* ditto */ }
+                return nativeChange.apply(this, arguments);
+            };
+        }
+        SBp.__netgentProbeWrapped = true;
+    }
+    // Count main-world MediaSource constructions, to tell "no MSE" apart from
+    // "MSE, but inside a Worker where this hook cannot reach".
+    if (MS) {
+        try {
+            const P = new Proxy(MS, {
+                construct(t, a) { S.ms_constructions += 1; return new t(...a); }
+            });
+            window.MediaSource = P;
+        } catch (e) { /* a non-configurable global is fine; count stays 0 */ }
+    }
+    if (window.Worker) {
+        try {
+            const NW = window.Worker;
+            const W = function (url, opts) {
+                try { S.workers.push(String(url).slice(0, 120)); } catch (e) {}
+                return new NW(url, opts);
+            };
+            W.prototype = NW.prototype;
+            window.Worker = W;
+        } catch (e) { /* ditto */ }
+    }
+
+    // ---- media events + rVFC, attached to each <video> as it appears ---------
+    const EV = ['waiting', 'playing', 'stalled', 'seeking', 'seeked', 'ratechange',
+                'loadeddata', 'canplay', 'play', 'pause', 'suspend', 'emptied',
+                'error', 'ended', 'loadedmetadata'];
+    const attach = (v) => {
+        if (!v || v.__netgentProbeAttached) { return; }
+        v.__netgentProbeAttached = true;
+        for (const name of EV) {
+            v.addEventListener(name, () => {
+                try {
+                    S.events[name] = (S.events[name] || 0) + 1;
+                    const t = now() - S.t0;
+                    if (S.event_log.length < 400) {
+                        S.event_log.push({t: Math.round(t), e: name,
+                                          ct: v.currentTime});
+                    }
+                    // A rebuffer is the span from `waiting` to the next
+                    // `playing`, which is what the spec defines those events to
+                    // mean. Seeking also fires `waiting`, so the span records
+                    // whether a seek was in flight and the reducer can exclude it.
+                    if (name === 'waiting') {
+                        S._waiting_at = {t: t, ct: v.currentTime, seeking: !!v.seeking};
+                    } else if (name === 'playing' && S._waiting_at) {
+                        S.waiting_spans.push({
+                            start: Math.round(S._waiting_at.t),
+                            end: Math.round(t),
+                            dur_ms: Math.round(t - S._waiting_at.t),
+                            ct: S._waiting_at.ct,
+                            during_seek: S._waiting_at.seeking
+                        });
+                        S._waiting_at = null;
+                    }
+                } catch (e) { /* never throw from a listener */ }
+            }, {passive: true});
+        }
+        if (typeof v.requestVideoFrameCallback === 'function' && !S.rvfc.installed) {
+            S.rvfc.installed = true;
+            const step = (nowTs, md) => {
+                try {
+                    S.rvfc.presented = md.presentedFrames || (S.rvfc.presented + 1);
+                    if (S.rvfc.first_presentation_ms === null) {
+                        S.rvfc.first_presentation_ms = Math.round(
+                            (md.presentationTime || nowTs) - S.t0);
+                        S.rvfc.first_media_time = md.mediaTime;
+                    }
+                    S.rvfc.last_media_time = md.mediaTime;
+                    S.rvfc.width = md.width || S.rvfc.width;
+                    S.rvfc.height = md.height || S.rvfc.height;
+                    if (typeof md.processingDuration === 'number') {
+                        S.rvfc.processing_total += md.processingDuration;
+                        S.rvfc.processing_n += 1;
+                    }
+                } catch (e) { /* ditto */ }
+                try { v.requestVideoFrameCallback(step); } catch (e) {}
+            };
+            try { v.requestVideoFrameCallback(step); } catch (e) {}
+        }
+    };
+    // Resource Timing evicts entries once its buffer fills, with no error. Raise
+    // the limit and count the event, so an undercount is attributable instead of
+    // guessed at.
+    try {
+        if (performance.setResourceTimingBufferSize) {
+            performance.setResourceTimingBufferSize(3000);
+        }
+        window.__netgentRtBufferFull = 0;
+        performance.addEventListener('resourcetimingbufferfull', () => {
+            try { window.__netgentRtBufferFull += 1; } catch (e) {}
+        });
+    } catch (e) { /* observability only */ }
+    const scan = () => {
+        try { document.querySelectorAll('video').forEach(attach); } catch (e) {}
+    };
+    scan();
+    try {
+        new MutationObserver(scan).observe(document.documentElement || document,
+            {childList: true, subtree: true});
+    } catch (e) { /* fall back to the periodic scan */ }
+    setInterval(scan, 1000);
+})();
+"""
+
+
+# Runs in the page, once per sample. ONE generic path does the real work on any
+# <video> element - no app detection, no per-app branches. YouTube's
+# getStatsForNerds() is layered on top as a bonus when it happens to exist;
+# nothing downstream requires it. Output carries both the standardized
+# video/playback/frames blocks and the original flat keys, because shared/qoe.py
+# and ~400 stored runs read the flat names and must keep working unchanged.
 STATS_JS = r"""
 const host = location.hostname || '';
 
-function youtubeStats() {
-    const player = document.getElementById('movie_player')
-        || document.querySelector('.html5-video-player');
-    // Zoom's page carries 0x0 screen-share placeholders alongside the real
-    // remote tile, so "the first video" is the wrong one there. With a single
-    // video this is identical to querySelector('video').
-    const _vids = Array.from(document.querySelectorAll('video'));
-    const _live = _vids.filter(v => v.videoWidth > 0 && v.videoHeight > 0);
-    const video = (_live.length ? _live : _vids)[0] || null;
-    if (!player && !video) { return {platform: 'youtube', error: 'no_player'}; }
+function pickVideo() {
+    // Conferencing pages carry several <video> elements for the same streams:
+    // 0x0 placeholders, filmstrip thumbnails, the local self-view and the main
+    // speaker view. Picking among them has broken this measurement three times,
+    // so the rules are stated in priority order and each one names its evidence.
+    //
+    //   1. NEVER measure a local self-view. videoOrigin() classifies by
+    //      getUserMedia track identity, not by size: Zoom renders the local fake
+    //      device at a full 1280x720 inside a 207x117 thumbnail, so any
+    //      size-based rule picks the collector's own camera. One sweep reported
+    //      1280x720@207x117 - its own fake camera - in all 168 samples of a
+    //      cell, with 0.0% dropped frames because nothing was crossing a
+    //      network at all.
+    //   2. Prefer the LARGEST RENDERED BOX among remote streams. The box is
+    //      what a viewer actually sees; intrinsic size is not, because Zoom
+    //      downscales a remote tile while leaving its element large.
+    //   3. STICK to that choice while it stays valid, so a tile re-render
+    //      cannot move the measurement mid-call and reset the frame counter
+    //      (it did, in three of six runs of one earlier sweep).
+    //   4. Require the element to be laid out at all: a <video> can report
+    //      1280x720 while occupying a 0x0 box, and Chrome never composites
+    //      such an element, so getVideoPlaybackQuality() counts every frame as
+    //      dropped. That produced 99.971% dropped on two otherwise clean runs.
+    const vids = Array.from(document.querySelectorAll('video'));
+    const boxOf = (v) => {
+        try {
+            const r = v.getBoundingClientRect();
+            return Math.max(0, r.width) * Math.max(0, r.height);
+        } catch (e) { return 0; }
+    };
+    const decoded = vids.filter(v => v.videoWidth > 0 && v.videoHeight > 0);
+    const rendered = decoded.filter(v => boxOf(v) > 0);
+    // Remote-only candidates, best first. `local === null` means the element has
+    // no MediaStream (a file/MSE player such as Vimeo), which is not a self-view
+    // and must stay eligible - otherwise this change would break every
+    // non-conferencing app.
+    const remote = rendered.filter(v => videoOrigin(v).local !== true);
+    const pool = remote.length ? remote : (rendered.length ? rendered : decoded);
+    const better = (a, b) => {
+        const ba = boxOf(a), bb = boxOf(b);
+        if (bb !== ba) { return bb > ba; }
+        return b.videoWidth * b.videoHeight > a.videoWidth * a.videoHeight;
+    };
+    const pinned = window.__netgentPinnedVideo;
+    // The pin must not outlive its own correctness. Drop it if it became a
+    // self-view or stopped being composited, and upgrade it if a clearly larger
+    // remote view appears (twice the area), which means the layout changed.
+    if (pinned && pool.indexOf(pinned) !== -1) {
+        let upgrade = null;
+        for (const v of pool) {
+            if (v !== pinned && boxOf(v) > boxOf(pinned) * 2) {
+                if (!upgrade || better(upgrade, v)) { upgrade = v; }
+            }
+        }
+        if (!upgrade) { return pinned; }
+        try { window.__netgentPinnedVideo = upgrade; } catch (e) { /* advisory */ }
+        return upgrade;
+    }
+    if (!pool.length) { return vids[0] || null; }
+    const best = pool.reduce((a, b) => (better(a, b) ? b : a));
+    if (boxOf(best) > 0) {
+        try { window.__netgentPinnedVideo = best; } catch (e) { /* pin is advisory */ }
+    }
+    return best;
+}
 
-    const out = {platform: 'youtube'};
+// Where a <video>'s pixels come from: the local camera, a remote peer, or an
+// element with no MediaStream at all (a file/MSE player).
+function videoOrigin(v) {
+    const out = { local: null, labels: [], track_ids: [], kind: 'unknown' };
     try {
-        if (player && typeof player.getStatsForNerds === 'function') {
-            Object.assign(out, player.getStatsForNerds());
+        const so = v && v.srcObject;
+        if (!so || typeof so.getTracks !== 'function') {
+            out.kind = 'no-stream';
+            return out;
         }
-    } catch (e) { out.stats_for_nerds_error = String(e); }
-
-    try {
-        if (player && typeof player.getVideoData === 'function') {
-            const d = player.getVideoData();
-            out.video_id = d && d.video_id;
-            out.title = d && d.title;
-        }
-        if (player && typeof player.getCurrentTime === 'function') {
-            out.current_time_secs = player.getCurrentTime();
-        }
-        if (player && typeof player.getDuration === 'function') {
-            out.duration_secs = player.getDuration();
-        }
-        if (player && typeof player.getVideoLoadedFraction === 'function') {
-            out.loaded_fraction = player.getVideoLoadedFraction();
-        }
-        if (player && typeof player.getPlayerState === 'function') {
-            out.player_state = player.getPlayerState();
-        }
-    } catch (e) { out.player_data_error = String(e); }
-
-    addVideoElementStats(out, video);
+        const tracks = so.getTracks() || [];
+        out.track_ids = tracks.map((t) => (t && t.id) || '');
+        out.labels = tracks.map((t) => (t && t.label) || '');
+        const localIds = window.__netgentLocalTrackIds || [];
+        const localLabels = window.__netgentLocalTrackLabels || [];
+        // A stream carrying a locally-captured track is a self-view. Match on id
+        // OR label: the id is exact but is lost when the page re-wraps the track,
+        // and the label survives that. Measured on this host - Zoom's self-view
+        // renders a track labelled 'fake_device_0' whose id is absent from the
+        // captured set, so id-only matching called the collector's own camera a
+        // remote stream in 24 samples of one 12-cell sweep.
+        const byId = out.track_ids.some((id) => id && localIds.indexOf(id) !== -1);
+        const byLabel = out.labels.some(
+            (l) => l && (localLabels.indexOf(l) !== -1 || /fake_device/i.test(l))
+        );
+        out.local = byId || byLabel;
+        out.matched_on = byId ? 'track_id' : (byLabel ? 'track_label' : null);
+        out.kind = out.local ? 'local-capture' : 'remote-stream';
+    } catch (e) { /* classification is observability only */ }
     return out;
 }
 
-function addVideoElementStats(out, video) {
+function detectCodec(video) {
     try {
-        if (!video) { return; }
-        out.video_width = video.videoWidth;
-        out.video_height = video.videoHeight;
-        out.resolution = video.videoWidth + 'x' + video.videoHeight;
-        out.playback_rate = video.playbackRate;
-        out.paused = video.paused;
-        out.muted = video.muted;
-        out.volume = video.volume;
-        out.current_time_secs = out.current_time_secs != null
-            ? out.current_time_secs : video.currentTime;
-        if (video.buffered && video.buffered.length) {
-            const end = video.buffered.end(video.buffered.length - 1);
-            out.buffer_ahead_secs = Math.max(0, end - video.currentTime);
-            // Additive observability only - nothing downstream derives from
-            // these. Without them a stuck element (readyState 1, buffered range
-            // not covering currentTime) is invisible in the per-second samples.
-            out.buffered_start_secs = video.buffered.start(0);
-            out.buffered_end_secs = end;
-            out.buffered_ranges = video.buffered.length;
+        const recorded = window.__netgentCodecs;
+        if (Array.isArray(recorded) && recorded.length) {
+            const v = recorded.filter(m => /video\//i.test(m));
+            return (v.length ? v : recorded).join(', ');
         }
-        out.ready_state = video.readyState;
-        out.network_state = video.networkState;
-        // Viewport + rendered player size. An adaptive player picks its
-        // rendition to fit the element it is drawn into, so without these a
-        // run that was capped by a small window is indistinguishable from one
-        // capped by the shaped link.
-        try {
-            out.window_outer_w = window.outerWidth;
-            out.window_outer_h = window.outerHeight;
-            out.window_inner_w = window.innerWidth;
-            out.window_inner_h = window.innerHeight;
-            const r = video.getBoundingClientRect();
-            out.player_elem_w = Math.round(r.width);
-            out.player_elem_h = Math.round(r.height);
-        } catch (e) { /* geometry is observability only - never fail a sample */ }
-        if (typeof video.getVideoPlaybackQuality === 'function') {
-            const q = video.getVideoPlaybackQuality();
-            out.dropped_video_frames = q.droppedVideoFrames;
-            out.total_video_frames = q.totalVideoFrames;
+        const tracks = video && video.videoTracks;
+        if (tracks && tracks.length) {
+            for (let i = 0; i < tracks.length; i++) {
+                if (tracks[i] && tracks[i].configuration
+                    && tracks[i].configuration.codec) {
+                    return tracks[i].configuration.codec;
+                }
+            }
         }
-    } catch (e) { out.video_element_error = String(e); }
+        // A plain progressive file states its type on the element.
+        if (video && video.currentSrc && /\.(mp4|webm|ogg)(\?|$)/i.test(video.currentSrc)) {
+            return video.currentSrc.replace(/^.*\.([a-z0-9]+)(\?.*)?$/i, '$1');
+        }
+    } catch (e) { /* observability only */ }
+    return null;
 }
 
-if (host.indexOf('youtube.com') !== -1 || host.indexOf('youtu.be') !== -1) {
-    return youtubeStats();
+// The whole measurement. Everything below this line is generic DOM/HTMLMediaElement.
+function genericVideoStats(video) {
+    const out = {};
+    if (!video) { return out; }
+    out.video_width = video.videoWidth;
+    out.video_height = video.videoHeight;
+    out.resolution = video.videoWidth + 'x' + video.videoHeight;
+    out.playback_rate = video.playbackRate;
+    out.paused = video.paused;
+    out.muted = video.muted;
+    out.volume = video.volume;
+    out.current_time_secs = video.currentTime;
+    out.ready_state = video.readyState;
+    out.network_state = video.networkState;
+    out.ended = video.ended;
+    const d = video.duration;
+    if (typeof d === 'number' && isFinite(d) && d > 0) { out.duration_secs = d; }
+    if (video.buffered && video.buffered.length) {
+        const end = video.buffered.end(video.buffered.length - 1);
+        out.buffer_ahead_secs = Math.max(0, end - video.currentTime);
+        out.buffered_start_secs = video.buffered.start(0);
+        out.buffered_end_secs = end;
+        out.buffered_ranges = video.buffered.length;
+    }
+    if (typeof video.getVideoPlaybackQuality === 'function') {
+        const q = video.getVideoPlaybackQuality();
+        out.dropped_video_frames = q.droppedVideoFrames;
+        out.total_video_frames = q.totalVideoFrames;
+    }
+    out.codec = detectCodec(video);
+    // Viewport + rendered player size. An adaptive player picks its rendition
+    // to fit the element it is drawn into, so without these a run capped by a
+    // small window is indistinguishable from one capped by the shaped link.
+    try {
+        out.window_outer_w = window.outerWidth;
+        out.window_outer_h = window.outerHeight;
+        out.window_inner_w = window.innerWidth;
+        out.window_inner_h = window.innerHeight;
+        const r = video.getBoundingClientRect();
+        out.player_elem_w = Math.round(r.width);
+        out.player_elem_h = Math.round(r.height);
+    } catch (e) { /* geometry is observability only - never fail a sample */ }
+    // Census of every <video> on the page, not just the measured one, with each
+    // element's ORIGIN. Size alone cannot distinguish a self-view from a remote
+    // tile, so without the origin "we measured the peer" is an assumption; with
+    // it the record proves which element was measured and why.
+    try {
+        const all = Array.from(document.querySelectorAll('video'));
+        const box = (v) => {
+            try {
+                const b = v.getBoundingClientRect();
+                return {
+                    w: Math.round(Math.max(0, b.width)),
+                    h: Math.round(Math.max(0, b.height))
+                };
+            } catch (e) { return { w: 0, h: 0 }; }
+        };
+        const dec = all.filter(v => v.videoWidth > 0 && v.videoHeight > 0);
+        out.video_element_count = all.length;
+        out.video_decoded_count = dec.length;
+        out.video_rendered_count = dec.filter(v => box(v).w * box(v).h > 0).length;
+        out.video_remote_decoded_count =
+            dec.filter(v => videoOrigin(v).local !== true).length;
+        out.video_local_decoded_count =
+            dec.filter(v => videoOrigin(v).local === true).length;
+        out.video_elements = all.slice(0, 10).map((v) => {
+            const b = box(v);
+            const o = videoOrigin(v);
+            return {
+                stream: v.videoWidth + 'x' + v.videoHeight,
+                box: b.w + 'x' + b.h,
+                origin: o.kind,
+                local: o.local,
+                label: (o.labels[0] || '').slice(0, 40),
+                measured: v === video
+            };
+        });
+        // The measured element, called out explicitly so a reader never has to
+        // infer it from the census.
+        const mo = videoOrigin(video);
+        const mb = box(video);
+        out.measured_element = {
+            stream: video.videoWidth + 'x' + video.videoHeight,
+            box: mb.w + 'x' + mb.h,
+            box_area: mb.w * mb.h,
+            origin: mo.kind,
+            is_local: mo.local,
+            label: (mo.labels[0] || '').slice(0, 40)
+        };
+        out.measured_is_local = mo.local;
+        out.measured_origin = mo.kind;
+        out.measured_box_area = mb.w * mb.h;
+    } catch (e) { /* census is observability only - never fail a sample */ }
+    // ---- uniform streaming-QoE probe readout --------------------------------
+    // Flat keys only, so every existing consumer and the ~400 stored runs keep
+    // working. Null means "not measurable here", never zero.
+    try {
+        const S = window.__netgentProbe;
+        if (S) {
+            let vb = 0, ab = 0, va = 0, aa = 0, vmime = null, amime = null;
+            let switches = [];
+            for (const r of S.buffers) {
+                const m = String(r.mime || '');
+                if (m.indexOf('video/') === 0) {
+                    vb += r.bytes; va += r.appends; vmime = vmime || m;
+                } else if (m.indexOf('audio/') === 0) {
+                    ab += r.bytes; aa += r.appends; amime = amime || m;
+                }
+                if (r.mime_history && r.mime_history.length > 1) {
+                    switches = switches.concat(r.mime_history.slice(1));
+                }
+            }
+            // Audio and video are separate SourceBuffers; a combined total
+            // overstates video bitrate (measured: 26% audio on YouTube).
+            out.mse_video_bytes = vb;
+            out.mse_audio_bytes = ab;
+            out.mse_video_appends = va;
+            out.mse_audio_appends = aa;
+            out.mse_video_mime = vmime;
+            out.mse_audio_mime = amime;
+            out.mse_sourcebuffers = S.buffers.length;
+            out.mse_mime_switches = switches.length;
+            out.mse_mime_switch_log = switches.slice(0, 12);
+            out.mse_appends_total = S.appends;
+
+            // The real rendition history, read from the init segments. This is
+            // reported ALONGSIDE the declared mime rather than instead of it,
+            // because the gap between the two is itself the finding: a player
+            // can change rendition, resolution and even codec without ever
+            // calling changeType(), which leaves mse_mime_switch_log empty.
+            let initLog = [];
+            let vcodec = null, vw = null, vh = null, acodec = null;
+            for (const r of S.buffers) {
+                const m = String(r.mime || '');
+                if (!r.init_history || !r.init_history.length) { continue; }
+                for (const h of r.init_history) { initLog.push({mime: m, ev: h}); }
+                const lastH = r.init_history[r.init_history.length - 1];
+                if (m.indexOf('video/') === 0) {
+                    vcodec = lastH.codec; vw = lastH.w; vh = lastH.h;
+                } else if (m.indexOf('audio/') === 0) {
+                    acodec = lastH.codec;
+                }
+            }
+            out.init_segment_log = initLog.slice(0, 40);
+            out.init_segment_count = initLog.length;
+            // Distinct video configs seen: >1 means the rendition changed, and
+            // is a switch count that does not depend on changeType being used.
+            const sigs = {};
+            for (const e of initLog) {
+                if (String(e.mime).indexOf('video/') === 0) { sigs[e.ev.sig] = 1; }
+            }
+            out.init_video_configs = Object.keys(sigs).length;
+            out.decoding_video_codec = vcodec;
+            out.decoding_video_width = vw;
+            out.decoding_video_height = vh;
+            out.decoding_audio_codec = acodec;
+
+            // presentedFrames is frames submitted for composition - the
+            // rendering rate. totalVideoFrames above counts DECODED frames.
+            out.presented_frames = S.rvfc.installed ? S.rvfc.presented : null;
+            out.rvfc_supported = !!S.rvfc.installed;
+            out.first_presentation_ms = S.rvfc.first_presentation_ms;
+            out.first_presented_media_time = S.rvfc.first_media_time;
+            out.rvfc_frame_w = S.rvfc.width || null;
+            out.rvfc_frame_h = S.rvfc.height || null;
+            out.mean_processing_duration_ms = S.rvfc.processing_n
+                ? (1000.0 * S.rvfc.processing_total / S.rvfc.processing_n) : null;
+            // The page clock at the moment this sample was taken, plus the
+            // probe's own origin. Without these, a page-relative figure such as
+            // first_presentation_ms cannot be placed on the capture's epoch
+            // timeline, so startup delay cannot be checked against the pcap at
+            // all - which is exactly the gap that left startup unvalidated.
+            out.page_now_ms = (performance && performance.now)
+                ? Math.round(performance.now()) : null;
+            out.probe_t0_page_ms = Math.round(S.t0);
+            // Navigation start in the same page clock, so "document start" is
+            // stated rather than assumed to equal the probe's install time.
+            try {
+                const nav = performance.getEntriesByType('navigation')[0];
+                out.nav_start_page_ms = nav ? Math.round(nav.startTime) : 0;
+                out.dom_content_loaded_ms = nav
+                    ? Math.round(nav.domContentLoadedEventEnd) : null;
+            } catch (e) { out.nav_start_page_ms = null; }
+
+            // `waiting` -> `playing` spans are the spec's own definition of a
+            // stall, independent of any progress-counter heuristic.
+            out.media_event_counts = S.events;
+            out.waiting_events = S.events['waiting'] || 0;
+            out.waiting_spans = S.waiting_spans.slice(0, 40);
+            out.waiting_total_ms = S.waiting_spans.reduce(
+                (a, w) => a + (w.during_seek ? 0 : w.dur_ms), 0);
+            out.seeking_events = S.events['seeking'] || 0;
+            out.ratechange_events = S.events['ratechange'] || 0;
+            out.stalled_events = S.events['stalled'] || 0;
+
+            // Why a byte channel may be structurally unavailable here.
+            out.main_world_mediasource_constructions = S.ms_constructions;
+            out.worker_count = S.workers.length;
+            out.uses_worker_media = !!(video && video.srcObject
+                && S.ms_constructions === 0 && S.workers.length > 0);
+        }
+    } catch (e) { /* probe readout is observability only - never fail a sample */ }
+
+    // ---- Resource Timing: an independent delivered-bytes channel -------------
+    // Spec-zeroed for CORS-cross-origin responses, so eligibility is a property
+    // of each CDN's headers. nextHopProtocol is empty exactly when the
+    // timing-allow check fails, which makes it a free per-host eligibility read.
+    try {
+        let list = [];
+        try { list = performance.getEntriesByType('resource') || []; } catch (e) { list = []; }
+        let n = 0, bytes = 0, tao = 0, zero = 0;
+        // Unfiltered accounting alongside the filtered figure. The filtered
+        // total undercounted appended bytes on YouTube (0.75-0.99) and the two
+        // obvious causes were ruled out by the data, leaving THIS filter as the
+        // prime suspect. Counting what it discards, and why, is the only way to
+        // confirm or clear it.
+        let allN = 0, allBytes = 0;
+        let dropInitiator = 0, dropSmall = 0, dropBytes = 0;
+        const byInitiator = {};
+        for (const e of list) {
+            const it = e.initiatorType || '(none)';
+            const enc = e.encodedBodySize || 0;
+            allN += 1; allBytes += enc;
+            byInitiator[it] = (byInitiator[it] || 0) + enc;
+            const okInit = (it === 'xmlhttprequest' || it === 'fetch'
+                            || it === 'video' || it === 'audio');
+            if (!okInit) { dropInitiator += 1; dropBytes += enc; continue; }
+            if (enc < 20000 && (e.transferSize || 0) < 20000) {
+                dropSmall += 1; dropBytes += enc; continue;
+            }
+            n += 1; bytes += enc;
+            if (e.nextHopProtocol) { tao += 1; }
+            if (enc === 0) { zero += 1; }
+        }
+        out.rt_media_entries = n;
+        out.rt_media_bytes = bytes;
+        out.rt_tao_entries = tao;
+        out.rt_size_zeroed_entries = zero;
+        out.rt_sizes_usable = n > 0 && bytes > 0;
+        out.rt_all_entries = allN;
+        out.rt_all_bytes = allBytes;
+        out.rt_dropped_by_initiator = dropInitiator;
+        out.rt_dropped_by_size_floor = dropSmall;
+        out.rt_dropped_bytes = dropBytes;
+        out.rt_bytes_by_initiator = byInitiator;
+        // Chrome's resource-timing buffer evicts silently once full; record the
+        // limit so an undercount can be attributed or cleared.
+        try {
+            out.rt_buffer_full_events = window.__netgentRtBufferFull || 0;
+        } catch (e) { out.rt_buffer_full_events = null; }
+    } catch (e) { /* ditto */ }
+
+    // Any countdown the conferencing UI shows about the meeting ending. A free
+    // Zoom meeting dies at 40 minutes, and a wall-clock timer for that can only
+    // ever be an estimate because the meeting starts before anything here can
+    // observe it. If the page states the remaining time, that is ground truth
+    // and worth capturing; it is NOT assumed to exist, so the field is simply
+    // absent when no such text is present.
+    try {
+        const re = /(\d+)\s*minutes?\s*(left|remaining)|meeting\s+will\s+end|will\s+end\s+in|time\s+is\s+almost\s+up|ending\s+soon/i;
+        const hits = [];
+        const walk = document.body ? document.body.querySelectorAll('*') : [];
+        for (const el of walk) {
+            if (el.children && el.children.length) { continue; }  // leaf text only
+            const t = (el.innerText || el.textContent || '').trim();
+            if (t && t.length < 200 && re.test(t)) {
+                if (hits.indexOf(t) === -1) { hits.push(t); }
+                if (hits.length >= 3) { break; }
+            }
+        }
+        if (hits.length) { out.meeting_notice = hits; }
+    } catch (e) { /* notice scan is observability only */ }
+    return out;
 }
-const video = document.querySelector('video');
-if (!video) { return {platform: 'unknown', error: 'no_video'}; }
-const out = {
-    platform: host.indexOf('meet.google.com') !== -1 ? 'google_meet' : 'unknown'
-};
-addVideoElementStats(out, video);
-return out;
+
+// Optional, additive. Present only on YouTube, and never required: if any of it
+// throws or is missing, the generic numbers above still stand on their own.
+function addYouTubeBonus(out) {
+    const player = document.getElementById('movie_player')
+        || document.querySelector('.html5-video-player');
+    if (!player) { return; }
+    // stats-for-nerds is YouTube's own instrumentation and is the GROUND TRUTH
+    // this tool is validated against. It must therefore never flow into the
+    // generic channel, or the validation would be comparing a measurement with
+    // itself. Every key is namespaced `sfn_` and the un-namespaced merge is
+    // opt-in via window.__netgentMergeVendorStats (off by default), where it
+    // previously dropped all 33 keys straight into the flat namespace.
+    try {
+        if (typeof player.getStatsForNerds === 'function') {
+            const nerds = player.getStatsForNerds();
+            const merge = !!window.__netgentMergeVendorStats;
+            for (const k in nerds) {
+                out['sfn_' + k] = nerds[k];
+                if (merge && !(k in out)) { out[k] = nerds[k]; }
+            }
+            out.sfn_available = true;
+            out.sfn_merged_into_generic = merge;
+        }
+    } catch (e) { out.stats_for_nerds_error = String(e); }
+    try {
+        if (typeof player.getVideoData === 'function') {
+            const vd = player.getVideoData();
+            out.sfn_video_id = vd && vd.video_id;
+            out.sfn_title = vd && vd.title;
+        }
+        if (typeof player.getDuration === 'function') {
+            const dur = player.getDuration();
+            // Kept out of duration_secs: the element's own duration is the
+            // generic signal, and a vendor override would make YouTube's
+            // generic channel differ in kind from every other app's.
+            if (dur > 0) { out.sfn_duration_secs = dur; }
+        }
+        if (typeof player.getVideoLoadedFraction === 'function') {
+            out.sfn_loaded_fraction = player.getVideoLoadedFraction();
+        }
+        if (typeof player.getPlayerState === 'function') {
+            // IFrame-API state codes: 3 == BUFFERING, 1 == PLAYING. An
+            // independent reference for rebuffering, and the only one available
+            // for metrics stats-for-nerds does not cover.
+            out.sfn_player_state = player.getPlayerState();
+        }
+    } catch (e) { out.player_data_error = String(e); }
+}
+
+function standardize(out) {
+    // The documented, app-independent shape. The flat keys above stay exactly
+    // as they were so shared/qoe.py and every stored run keep reading them.
+    const num = v => (typeof v === 'number' && isFinite(v)) ? v : null;
+    let bitrate = null;
+    const nerdsBw = out.bandwidth_kbps;      // YouTube states this as a string
+    if (typeof nerdsBw === 'string') {
+        const m = nerdsBw.match(/([\d.]+)/);
+        if (m) { bitrate = parseFloat(m[1]) / 1000; }
+    }
+    out.video = {
+        width: num(out.video_width),
+        height: num(out.video_height),
+        fps: num(out.frames_per_second),
+        bitrate: bitrate,                     // Mbps, null unless the app states it
+        codec: out.codec || null,
+    };
+    out.playback = {
+        current_time: num(out.current_time_secs),
+        buffer_ahead: num(out.buffer_ahead_secs),
+        rebuffering: (out.player_state === 3)
+            || (out.paused === false && out.ready_state != null && out.ready_state < 3),
+    };
+    out.frames = {
+        total: num(out.total_video_frames),
+        dropped: num(out.dropped_video_frames),
+    };
+    return out;
+}
+
+const video = pickVideo();
+const platform = host.indexOf('youtube.com') !== -1 || host.indexOf('youtu.be') !== -1
+    ? 'youtube'
+    : (host.indexOf('meet.google.com') !== -1 ? 'google_meet' : 'generic');
+if (!video && platform !== 'youtube') {
+    return {platform: platform, error: 'no_video'};
+}
+const out = genericVideoStats(video);
+out.platform = platform;
+if (platform === 'youtube') { addYouTubeBonus(out); }
+if (!video && !out.video_width) { out.error = 'no_video'; }
+// Returned here so the sampler needs ONE WebDriver round trip per sample
+// instead of two. driver.current_url was a second command queued behind the
+// renderer, and on a loaded host it blocked for seconds with nothing
+// attributing the delay to it.
+try { out.page_url = location.href; } catch (e) { /* non-fatal */ }
+return standardize(out);
 """
+
 
 # Installed before any Google Meet page JavaScript runs. Keeping references to
 # the real RTCPeerConnection objects lets the collector query receiver-side
@@ -336,7 +1206,8 @@ ZOOM_JOIN_JS = r"""
 // via /wc/<id>/join?pwd=... - the /j/ invite page offers "Join from browser"
 // but silently swallows the click under automation, so runs must not use it.
 const guestName = arguments[0];
-const out = {typed: false, clicked: null, in_call: false, started_video: false};
+const out = {typed: false, clicked: null, in_call: false, started_video: false,
+             joined_audio: null, unmuted: false};
 
 // Already inside? The meeting toolbar only exists in-call.
 out.in_call = !!document.querySelector(
@@ -362,6 +1233,27 @@ for (const b of document.querySelectorAll('button,[role="button"]')) {
     const l = (b.innerText || b.getAttribute('aria-label') || '').trim().toLowerCase();
     if (l === 'join' || l === 'join meeting' || l === 'join audio by computer') {
         b.click(); out.clicked = l; break;
+    }
+}
+
+// Connect audio. Zoom puts a fresh web-client participant behind an audio
+// prompt ("Join Audio" -> "Join with Computer Audio"); until it is taken the
+// participant is only half-joined, which can hold back the media negotiation.
+// Harika's zoom-data-collection workflow does this same pair of clicks before
+// touching video, so it happens here first too.
+for (const b of document.querySelectorAll('button,[role="button"],a')) {
+    const l = (b.innerText || b.getAttribute('aria-label') || '').trim().toLowerCase();
+    if (l === 'join audio' || l === 'join audio by computer'
+        || l === 'join with computer audio' || l.includes('computer audio')) {
+        b.click(); out.joined_audio = l; break;
+    }
+}
+// Unmute if the mic came up muted - a muted track still negotiates, but Zoom
+// treats a silent participant differently and may suspend the stream.
+for (const b of document.querySelectorAll('button,[role="button"]')) {
+    const l = (b.innerText || b.getAttribute('aria-label') || '').trim().toLowerCase();
+    if (l === 'unmute' || l === 'unmute my audio' || l.startsWith('unmute')) {
+        b.click(); out.unmuted = true; break;
     }
 }
 
@@ -424,6 +1316,11 @@ def wait_for_zoom_join(driver, app, timeout_s=900.0, guest_name="pramana"):
                 print(
                     f"[{app}] clicked Zoom join control: {r.get('clicked')}", flush=True
                 )
+            if r.get("joined_audio"):
+                print(
+                    f"[{app}] connected audio (clicked '{r.get('joined_audio')}')",
+                    flush=True,
+                )
             if r.get("started_video"):
                 # Worth logging: without this the browser sits in the call with
                 # its camera off and never publishes the fake device to the peer.
@@ -476,7 +1373,28 @@ def start_display(dnum: str) -> None:
     time.sleep(1)
 
 
-def build_driver(user_data_dir: str | None = None):
+def build_plain_driver(args: list[str], user_data_dir: str | None = None):
+    """Stock webdriver Chrome, for targets that need working WebRTC.
+
+    Measured on this image: undetected-chromedriver gathers ZERO ICE candidates
+    - iceGatheringState reaches "complete" with an empty list, so no candidate
+    pair can form and no RTP ever flows. The same flags under a stock driver
+    gather 9 candidates on the same host. Consumer sites still need UC mode to
+    get past bot walls, so the choice is per-app (AppSpec.driver_mode) rather
+    than global.
+    """
+    from selenium import webdriver
+    from selenium.webdriver.chrome.options import Options
+
+    opts = Options()
+    for a in args:
+        opts.add_argument(a)
+    if user_data_dir:
+        opts.add_argument(f"--user-data-dir={user_data_dir}")
+    return webdriver.Chrome(options=opts)
+
+
+def build_driver(user_data_dir: str | None = None, mode: str = "uc"):
     from seleniumbase import Driver
 
     args = [
@@ -486,6 +1404,14 @@ def build_driver(user_data_dir: str | None = None):
         "--no-sandbox",
         "--use-fake-ui-for-media-stream",
         "--use-fake-device-for-media-stream",
+        # Chrome withholds host ICE candidates from a page that has not been
+        # granted media access, so a receive-only page gathers zero candidates,
+        # reports gathering 'complete', forms no candidate pairs and never
+        # receives a byte. A page served over plain HTTP cannot earn the
+        # permission either - navigator.mediaDevices only exists in a secure
+        # context. This states the policy directly instead, which is what a
+        # measurement host on a closed link wants anyway.
+        "--force-webrtc-ip-handling-policy=default",
         "--window-size=1920,1080",
         "--start-maximized",
         "--disable-gpu",
@@ -525,12 +1451,21 @@ def build_driver(user_data_dir: str | None = None):
         chromium_arg=chromium_arg,
         use_auto_ext=False,
         undetectable=True,
+        # Chrome's own Network-domain events, drained during the run. This is
+        # the byte reference that does not have to guess which peer IP carried
+        # the media: pcap sees addresses, and a QUIC-only media flow sends no
+        # TLS SNI to name itself, which is why no peer-selection rule put all
+        # 13 earlier runs in band. Chrome knows the URL of every request it
+        # made. Bands pre-registered in THRESHOLDS.md.
+        log_cdp_events=True,
     )
     binary_location = os.environ.get("CHROME_BINARY")
     if binary_location:
         kwargs["binary_location"] = binary_location
     if user_data_dir:
         kwargs["user_data_dir"] = user_data_dir
+    if mode == "plain":
+        return build_plain_driver(args, user_data_dir=user_data_dir)
     return Driver(**kwargs)
 
 
@@ -540,6 +1475,139 @@ def install_webrtc_hook(driver: Any) -> None:
         "Page.addScriptToEvaluateOnNewDocument",
         {"source": WEBRTC_HOOK_JS},
     )
+
+
+# How often the CDP performance log is drained, in samples. See the note at the
+# drain site: draining every sample stalls the sample loop badly enough to show
+# up in the sampling cadence itself.
+CDP_DRAIN_EVERY = 5
+
+# Upper bound on a single page-script call, in seconds. See the note where it
+# is applied: this limits the damage from a starved renderer without masking it.
+SCRIPT_TIMEOUT_S = 10
+
+
+# Makes a codec family look unsupported so an adaptive player never selects it.
+# Needed because a player's ladder is bounded by what it believes it can decode,
+# not by the element it draws into: with a 945x709 element and 10Mbps spare,
+# Vimeo still chose 1440x1080 AV1 (83/117 samples) and then could not decode it
+# in real time on a 2-vCPU host, collapsing to 320x240. Vimeo's own
+# `quality=720p` parameter is not an answer either - it FORCES one rendition and
+# switches ABR off (960x720 for 116/116 samples, zero switches), deleting the
+# adaptive behaviour under test. Removing the undecodable codec family instead
+# leaves ABR free and resolution network-responsive. All three decision points a
+# player may consult are covered.
+CODEC_BLOCK_JS_TMPL = r"""
+(() => {
+    const PATTERNS = __PATTERNS__;
+    const blocked = (s) => {
+        try {
+            const t = String(s || '').toLowerCase();
+            return PATTERNS.some(p => t.indexOf(p) !== -1);
+        } catch (e) { return false; }
+    };
+    try {
+        const MS = window.MediaSource || window.WebKitMediaSource;
+        if (MS && MS.isTypeSupported) {
+            const nativeIs = MS.isTypeSupported.bind(MS);
+            MS.isTypeSupported = (t) => (blocked(t) ? false : nativeIs(t));
+        }
+    } catch (e) { /* leave support reporting alone if it cannot be wrapped */ }
+    try {
+        const proto = window.HTMLMediaElement && window.HTMLMediaElement.prototype;
+        if (proto && proto.canPlayType) {
+            const nativeCan = proto.canPlayType;
+            proto.canPlayType = function (t) {
+                return blocked(t) ? '' : nativeCan.call(this, t);
+            };
+        }
+    } catch (e) { /* ditto */ }
+    try {
+        const mc = navigator.mediaCapabilities;
+        if (mc && mc.decodingInfo) {
+            const nativeInfo = mc.decodingInfo.bind(mc);
+            mc.decodingInfo = (cfg) => {
+                try {
+                    if (cfg && cfg.video && blocked(cfg.video.contentType)) {
+                        return Promise.resolve({
+                            supported: false, smooth: false, powerEfficient: false
+                        });
+                    }
+                } catch (e) { /* fall through to native */ }
+                return nativeInfo(cfg);
+            };
+        }
+    } catch (e) { /* ditto */ }
+})();
+"""
+
+
+def install_codec_block(driver: Any, patterns: list[str]) -> None:
+    """Hide `patterns` codecs from the page, before any page script runs."""
+    if not patterns:
+        return
+    src = CODEC_BLOCK_JS_TMPL.replace("__PATTERNS__", json.dumps(patterns))
+    try:
+        driver.execute_cdp_cmd("Page.addScriptToEvaluateOnNewDocument", {"source": src})
+        print(f"[collector] codecs hidden from page: {patterns}", flush=True)
+    except Exception as exc:  # noqa: BLE001 - never fail a run over this
+        print(f"[collector] codec block unavailable: {type(exc).__name__}", flush=True)
+
+
+def install_vendor_merge_flag(driver: Any, merge: bool) -> None:
+    """Opt in to merging a vendor's own stats into the generic namespace.
+
+    Off for validation runs: stats-for-nerds is the reference the generic channel
+    is measured against, so letting it flow into the generic fields would make
+    the comparison circular.
+    """
+    src = "window.__netgentMergeVendorStats = %s;" % ("true" if merge else "false")
+    try:
+        driver.execute_cdp_cmd("Page.addScriptToEvaluateOnNewDocument", {"source": src})
+    except Exception as exc:  # noqa: BLE001 - never fail a run over a flag
+        print(f"[collector] vendor-merge flag unavailable: {type(exc).__name__}")
+
+
+def install_media_hook(driver: Any) -> None:
+    """Record source-buffer mime types so the generic path can name the codec.
+
+    Must run before the page creates its MediaSource, so it goes in on the same
+    new-document channel as the peer-connection hook. Best effort: a browser
+    that refuses the CDP call still yields every other generic metric.
+    """
+    try:
+        driver.execute_cdp_cmd(
+            "Page.addScriptToEvaluateOnNewDocument",
+            {"source": MEDIA_HOOK_JS},
+        )
+    except Exception as exc:  # noqa: BLE001 - codec is a bonus, never a gate
+        print(f"[collector] codec hook unavailable: {type(exc).__name__}", flush=True)
+
+
+def install_stream_probe(driver: Any, enabled: bool, app: str = "") -> None:
+    """Install the uniform streaming probe, unless this run is the A/B control.
+
+    Separate from the codec hook on purpose. An earlier version installed both
+    inside one try block and referenced `job`, which is not in scope there; the
+    resulting NameError was swallowed by the broad except and silently disabled
+    BOTH hooks, so a whole run produced no probe fields while reporting
+    "codec hook unavailable". One hook's failure must not take the other down,
+    and the message must name the hook that actually failed.
+
+    The opt-out exists so the probe's own cost can be measured: it runs
+    requestVideoFrameCallback every frame, wraps appendBuffer and keeps a
+    MutationObserver alive, which is not free on a 2-vCPU host.
+    """
+    if not enabled:
+        print(f"[{app or 'collector'}] stream probe DISABLED for this run", flush=True)
+        return
+    try:
+        driver.execute_cdp_cmd(
+            "Page.addScriptToEvaluateOnNewDocument",
+            {"source": STREAM_PROBE_JS},
+        )
+    except Exception as exc:  # noqa: BLE001 - never fail a run over the probe
+        print(f"[collector] stream probe unavailable: {type(exc).__name__}", flush=True)
 
 
 def get_google_meet_stats(driver: Any) -> dict[str, Any]:
@@ -846,6 +1914,66 @@ def start_playback(driver, app, attempts=4, settle_s=1.0):
     return last
 
 
+# Floor for "this is the remote peer's main tile", derived from the runs that
+# demonstrably measured the peer: a 1756x988 main view, 1,734,928 px^2. The same
+# view in a different Zoom layout measured 1458x820 (1,195,560), while the local
+# self-view thumbnail that silently replaced it was 207x117 (24,219). A 35% floor
+# therefore accepts both real layouts and rejects the thumbnail by nearly two
+# orders of magnitude.
+REMOTE_TILE_REFERENCE_AREA = 1756 * 988
+REMOTE_TILE_MIN_AREA = int(
+    os.environ.get(
+        "PRAMANA_REMOTE_TILE_MIN_AREA", REMOTE_TILE_REFERENCE_AREA * 35 // 100
+    )
+)
+# How long the page gets to lay the tile out before the gate bites. Joining,
+# the gallery settling and the first remote frame all happen inside this.
+REMOTE_TILE_GRACE_S = float(os.environ.get("PRAMANA_REMOTE_TILE_GRACE_S", "20"))
+
+
+class RemoteTileMissing(RuntimeError):
+    """The measured element is not the remote peer's main tile."""
+
+
+def _assert_remote_tile(
+    app: str, job: dict[str, Any], samples: list[dict], started_at: float
+) -> None:
+    """Fail a conferencing cell early when it is measuring the wrong element.
+
+    Replaces an earlier check that required exactly one <video> on the page.
+    That was never satisfiable: Zoom always exposes several elements for the same
+    streams, so the check could only ever have failed. What actually matters is
+    narrower and checkable - the element being measured must be a REMOTE stream
+    (never the collector's own self-view) and must be laid out at main-view size.
+
+    Raised rather than logged: a cell that is measuring the local camera cannot
+    be salvaged afterwards, and a 180s run plus teardown is most of a free
+    meeting's remaining window.
+    """
+    if not job.get("require_remote_tile"):
+        return
+    if time.time() - started_at < REMOTE_TILE_GRACE_S:
+        return
+    stats = next((s["stats"] for s in reversed(samples) if s.get("stats")), None)
+    if not stats:
+        raise RemoteTileMissing(f"{app}: no player samples within grace period")
+    me = stats.get("measured_element") or {}
+    if stats.get("measured_is_local") is True:
+        raise RemoteTileMissing(
+            f"{app}: measuring the LOCAL self-view "
+            f"({me.get('stream')}@{me.get('box')}, label={me.get('label')!r}); "
+            "the remote peer's tile is not being measured"
+        )
+    area = stats.get("measured_box_area") or 0
+    if area < REMOTE_TILE_MIN_AREA:
+        raise RemoteTileMissing(
+            f"{app}: measured tile too small to be the main view "
+            f"({me.get('stream')}@{me.get('box')}, area {area} < "
+            f"{REMOTE_TILE_MIN_AREA}); remote tiles decoded="
+            f"{stats.get('video_remote_decoded_count')}"
+        )
+
+
 def run_job(
     job: dict[str, Any],
     launch_lock: threading.Lock,
@@ -861,6 +1989,17 @@ def run_job(
     out_path = Path(job["out_path"])
     duration_seconds = float(job["duration_seconds"])
     sample_interval_seconds = float(job.get("sample_interval_seconds", 1.0))
+    # Hosts whose bytes are the media for this app. Explicit per app rather
+    # than inferred, so the figure cannot quietly include the page itself.
+    _CDP_HOSTS = {
+        "youtube": ("googlevideo.com",),
+        "vimeo": ("vimeocdn.com", "akamaized.net"),
+        "twitch": ("ttvnw.net", "twitchcdn.net"),
+        "tubi": ("tubitv.com", "adrise.tv", "cloudfront.net"),
+    }
+    cdp_suffixes = _CDP_HOSTS.get(app, ())
+    cdp_ledger = CdpByteLedger() if cdp_suffixes else None
+    cdp_tick = 0
     user_data_dir = job.get("user_data_dir")
     guest_name = str(job.get("guest_name", "NetGent QoE Collector"))
     meet_join_timeout_seconds = float(job.get("join_timeout_seconds", 180))
@@ -895,14 +2034,34 @@ def run_job(
         print(
             f"[{app}] launching undetected-chromedriver Chrome (headed, DISPLAY=:{display_num})"
         )
-        driver = build_driver(user_data_dir=user_data_dir)
+        driver_mode = str(job.get("driver_mode") or "uc")
+        if driver_mode != "uc":
+            print(f"[{app}] using the {driver_mode} chrome driver", flush=True)
+        driver = build_driver(user_data_dir=user_data_dir, mode=driver_mode)
         # Chrome/SeleniumBase silently ignores --window-size under Xvfb+fluxbox:
         # measured here, the window came up 945x1040 despite the flag asking for
         # 1920x1080. That left YouTube a 922x519 player, for which 480p is the
         # *correct* ABR choice - so the rendition was capped by our viewport, not
         # by the shaped link. Setting the rect after launch makes the window the
         # size we actually asked for.
-        window_geometry = ensure_window_size(driver, app)
+        install_media_hook(driver)
+        install_stream_probe(driver, not job.get("disable_stream_probe"), app)
+        install_vendor_merge_flag(driver, bool(job.get("merge_vendor_stats", False)))
+        install_codec_block(driver, list(job.get("block_codecs") or []))
+        # A per-app viewport cap bounds the top of an adaptive ladder: the
+        # player sizes its rendition to the element, so a smaller window keeps
+        # it off renditions this host cannot decode in real time, without
+        # disabling ABR the way a forced-quality parameter would.
+        want_w, want_h = _WANT_W, _WANT_H
+        _ws = job.get("window_size")
+        if _ws:
+            try:
+                _w, _h = str(_ws).lower().split("x")
+                want_w, want_h = int(_w), int(_h)
+                print(f"[{app}] viewport capped to {want_w}x{want_h}")
+            except Exception:  # noqa: BLE001 - a bad cap must not fail a run
+                print(f"[{app}] warning: bad window_size {_ws!r}, using default")
+        window_geometry = ensure_window_size(driver, app, want_w=want_w, want_h=want_h)
 
     samples: list[dict] = []
     play_trigger_ts: float | None = None
@@ -951,6 +2110,9 @@ def run_job(
         print(f"[{app}] ready; waiting for all applications before sampling")
         sampling_barrier.wait(timeout=barrier_timeout_seconds)
         print(f"[{app}] all applications ready; starting synchronized sampling")
+        # Clock for the remote-tile gate: the page gets REMOTE_TILE_GRACE_S from
+        # here to lay out the peer's main view before a cell is refused.
+        sampling_started_at = time.time()
         if not is_webrtc:
             try:
                 # Wait for the element to actually hold data before asking it to
@@ -965,6 +2127,28 @@ def run_job(
                 play_result["ready_wait"] = ready_state_at_play
                 play_trigger_ts = time.time()
                 print(f"[{app}] synchronized play result: {play_result}")
+                # Drain the page-load backlog BEFORE the first sample.
+                #
+                # The performance log holds every Network event since the page
+                # began loading, and on YouTube that is thousands of them
+                # before sampling even starts. Draining it inside the loop put
+                # that whole parse in the first interval: measured, every
+                # inter-sample gap over 2 s sat at sample index 1 or 2 and
+                # never later, was worst where the event count was highest
+                # (YouTube at 3 Mbps, ~15k events, 3.1-3.2 s) and absent on
+                # Vimeo (~2.8k events). Sampling cadence is part of the
+                # measurement, so the instrument's own start-up cost must not
+                # land inside it.
+                if cdp_ledger is not None:
+                    try:
+                        t_drain = time.time()
+                        n_backlog = drain_performance_log(driver, cdp_ledger)
+                        print(
+                            f"[{app}] drained {n_backlog} buffered CDP message(s) "
+                            f"before sampling in {time.time() - t_drain:.2f}s"
+                        )
+                    except Exception as exc:  # noqa: BLE001
+                        print(f"[{app}] pre-sample CDP drain failed: {exc}")
             except Exception as exc:  # sampling records whether playback recovers
                 print(
                     f"[{app}] synchronized play nudge failed: "
@@ -995,14 +2179,36 @@ def run_job(
         deadline = time.monotonic() + duration_seconds
         previous_meet_stats = meet_ready_stats
         previous_meet_timestamp = meet_ready_timestamp
+        # Bound how long one blocked page script can cost, for EVERY app.
+        #
+        # The only existing set_script_timeout sits behind `if is_webrtc`, so
+        # video runs were on Selenium's 30 s default. A starved renderer used
+        # all of it:
+        # measured, one iteration took 39.1 s and wiped out roughly forty
+        # samples. A shorter bound does NOT hide the problem -- the sample is
+        # still written with stats null and a sample_error, and the cadence
+        # check still fails on the gap -- it just limits how much of the run
+        # one stall destroys. Normal readings take 50-600 ms, so 10 s is far
+        # above anything healthy.
+        try:
+            driver.set_script_timeout(SCRIPT_TIMEOUT_S)
+        except Exception as exc:  # noqa: BLE001
+            print(f"[{app}] could not set script timeout: {exc}")
+        loop_t0 = time.monotonic()
+        tick_index = 0
+        try:
+            last_known_url = driver.current_url
+        except Exception:
+            last_known_url = None
+        _ms_script = 0.0
+        _ms_cdp = 0.0
         with open(out_path, "a", buffering=1) as f:
             while time.monotonic() < deadline:
+                t_iter = time.monotonic()
                 sample = {"timestamp": time.time(), "app": app, "kind": kind}
-                try:
-                    sample["url"] = driver.current_url
-                except Exception as exc:  # noqa: BLE001
-                    sample["url"] = None
-                    sample["url_error"] = str(exc)
+                # URL comes back inside the stats payload (one round trip);
+                # this is the last known value until that lands.
+                sample["url"] = last_known_url
                 try:
                     if is_webrtc:
                         stats = get_google_meet_stats(driver)
@@ -1020,14 +2226,129 @@ def run_job(
                         previous_meet_stats = stats
                         previous_meet_timestamp = sample["timestamp"]
                     else:
+                        _t = time.monotonic()
                         sample["stats"] = driver.execute_script(STATS_JS)
+                        _ms_script = (time.monotonic() - _t) * 1000.0
+                        # Recorded per sample, not just per run: a buffer series
+                        # is uninterpretable without knowing how often it was
+                        # read, and the interval is what makes two apps'
+                        # series comparable.
+                        if isinstance(sample["stats"], dict):
+                            sample["stats"][
+                                "sampling_interval_s"
+                            ] = sample_interval_seconds
+                            # Drained periodically rather than once at
+                            # teardown: the performance log is a bounded buffer
+                            # that silently discards its oldest entries, so a
+                            # 180 s run read only at the end can lose events
+                            # with no error.
+                            #
+                            # NOT every sample, though. get_log("performance")
+                            # is a synchronous WebDriver round-trip returning
+                            # thousands of buffered events, and doing it every
+                            # second measurably stalled the sample loop:
+                            # measured across 17 runs with per-second draining
+                            # against 161 without, intervals longer than 2 s
+                            # went from 0.24 % to 0.80 % and the worst gap from
+                            # 4.19 s to 17.39 s. Sampling cadence is a property
+                            # of the measurement, so the instrument must not
+                            # disturb it. Every CDP_DRAIN_EVERY-th sample keeps
+                            # the buffer well clear of overflow at a fraction of
+                            # the cost, and the totals are cumulative so no
+                            # bytes are lost by draining less often.
+                            if cdp_ledger is not None:
+                                try:
+                                    _t = time.monotonic()
+                                    cdp_tick += 1
+                                    # Also drain on the LAST iteration.
+                                    # Without it, a segment appended in the
+                                    # final second is counted in MSE and not
+                                    # in CDP: measured, the ratio sat at
+                                    # 1.0008 for the whole run and fell to
+                                    # 0.9661 on the final sample alone,
+                                    # breaching a floor the reference cannot
+                                    # physically breach.
+                                    _last_iter = (
+                                        time.monotonic() + sample_interval_seconds
+                                        >= deadline
+                                    )
+                                    # No `or cdp_tick == 1` here: the backlog
+                                    # is drained before the loop, and draining
+                                    # again on the first sample would put that
+                                    # cost straight back inside the window.
+                                    if cdp_tick % CDP_DRAIN_EVERY == 0 or _last_iter:
+                                        drain_performance_log(driver, cdp_ledger)
+                                    sample["stats"].update(
+                                        cdp_ledger.totals(cdp_suffixes)
+                                    )
+                                    _ms_cdp = (time.monotonic() - _t) * 1000.0
+                                except Exception as exc:  # noqa: BLE001
+                                    sample["stats"]["cdp_error"] = str(exc)[:200]
                 except Exception as exc:  # noqa: BLE001
                     sample["stats"] = None
                     sample["sample_error"] = str(exc)
 
+                # What this iteration actually cost, so a cadence problem can
+                # be attributed to a phase instead of guessed at.
+                if isinstance(sample.get("stats"), dict):
+                    _u = sample["stats"].get("page_url")
+                    if _u:
+                        last_known_url = _u
+                        sample["url"] = _u
+                # Host run-queue at this instant. This VM is shared, so a
+                # cadence miss caused by someone else's load is otherwise
+                # invisible in the output.
+                try:
+                    with open("/proc/loadavg") as _lf:
+                        sample["host_load1"] = float(_lf.read().split()[0])
+                except Exception:
+                    pass
+                sample["loop_ms"] = {
+                    "script": round(_ms_script, 1),
+                    "cdp": round(_ms_cdp, 1),
+                    "total_work": round((time.monotonic() - t_iter) * 1000.0, 1),
+                }
+                _ms_script = 0.0
+                _ms_cdp = 0.0
                 f.write(json.dumps(sample) + "\n")
                 samples.append(sample)
-                time.sleep(sample_interval_seconds)
+                _assert_remote_tile(app, job, samples, sampling_started_at)
+                # Sleep to the NEXT TICK, not for a flat interval.
+                #
+                # The loop used to do `time.sleep(interval)` unconditionally,
+                # so the period was work + interval rather than interval, and
+                # every millisecond of work pushed the whole series later.
+                # Measured on YouTube, a ~1.9 s first sample produced a 2.9 s
+                # gap purely from this. Anchoring each tick to the sampling
+                # start keeps the cadence fixed and prevents the error
+                # accumulating across a 180 s run. If an iteration genuinely
+                # overruns a whole interval the loop does not try to catch up
+                # by sleeping zero repeatedly -- it moves to the next tick in
+                # the future, so a late sample costs one interval, not a burst.
+                tick_index += 1
+                next_tick = loop_t0 + tick_index * sample_interval_seconds
+                now = time.monotonic()
+                if next_tick <= now:
+                    # Behind the grid. Take the next sample IMMEDIATELY rather
+                    # than waiting for the next future tick.
+                    #
+                    # The `+ 1` that used to be here forced next_tick strictly
+                    # into the future, which skipped a whole sample period for
+                    # any overrun at all. Measured on YouTube at 3 Mbps: one
+                    # iteration took 1,242 ms during the page's startup burst
+                    # and the skip turned that into a 2.014 s gap -- two ticks
+                    # -- and one sample that was never taken. Firing now caps
+                    # the gap at the overrun itself and loses no period.
+                    #
+                    # Dropping only whole elapsed intervals keeps the grid
+                    # aligned, so lateness does not accumulate across a 180 s
+                    # run, and a long stall still cannot make the loop spin:
+                    # it lands on the first tick at or before now.
+                    missed = int((now - next_tick) // sample_interval_seconds)
+                    if missed:
+                        tick_index += missed
+                        next_tick = loop_t0 + tick_index * sample_interval_seconds
+                time.sleep(max(0.0, next_tick - now))
     finally:
         try:
             driver.quit()

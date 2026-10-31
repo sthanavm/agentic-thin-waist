@@ -101,3 +101,20 @@ def test_a_local_preview_with_no_remote_media_is_still_rejected():
         r["stats"]["inbound_bitrate_mbps"] = 0
     out = qoe.summarize(rows, "meet")
     assert out["status"] != "ok"
+
+
+def test_resolution_is_emitted_as_a_timeline():
+    """A call must get the same resolution panel every HTML5 app gets."""
+    rows = _call(list(range(0, 300, 25)))
+    for i, r in enumerate(rows):  # step down partway through
+        if i >= 6:
+            r["stats"]["frame_height"] = 270
+            r["stats"]["frame_width"] = 480
+            r["stats"]["resolution"] = "480x270"
+    out = qoe.summarize(rows, "meet")
+    series = out["series"]["resolution_p"]
+    assert len(series) == len(rows)
+    assert series[0]["v"] == 360 and series[-1]["v"] == 270
+    assert series[0]["t"] == 0.0  # session-relative, like the HTML5 path
+    assert out["resolution_changes"] == 1
+    assert out["resolutions_observed"] == [270, 360]

@@ -35,10 +35,12 @@ from collect import (  # noqa: E402  - /app is only on the path at runtime
     start_display,
 )
 from make_test_clip import write_clip  # noqa: E402
+from make_test_audio import write_tone  # noqa: E402
 
 ROOM = os.environ.get("BOT_ROOM_URL", "")
 NAME = os.environ.get("BOT_NAME", "pramana-bot")
 CLIP = os.environ.get("BOT_CLIP", "/tmp/bot_clip.y4m")
+AUDIO = os.environ.get("BOT_AUDIO", "/tmp/bot_audio.wav")
 STATUS = os.environ.get("BOT_STATUS", "/out/bot_status.json")
 APP = os.environ.get("BOT_APP", "meet")
 HOLD_S = float(os.environ.get("BOT_HOLD_SECONDS", "600"))
@@ -116,7 +118,7 @@ const done = arguments[arguments.length - 1];
 """
 
 
-def build_bot_driver(clip: str):
+def build_bot_driver(clip: str, audio: str):
     """Chrome that presents `clip` as its webcam.
 
     The flags go to SeleniumBase comma-joined - space-joining silently collapses
@@ -133,6 +135,10 @@ def build_bot_driver(clip: str):
         "--use-fake-ui-for-media-stream",
         "--use-fake-device-for-media-stream",
         f"--use-file-for-fake-video-capture={clip}",
+        # Publish audio as well as video. A real participant negotiates both, and
+        # Zoom treats an audio-less peer differently - borrowed from Harika's
+        # zoom-data-collection branch, which drives WAV + MJPEG together.
+        f"--use-file-for-fake-audio-capture={audio}",
         "--autoplay-policy=no-user-gesture-required",
         "--window-size=1920,1080",
         "--disable-background-networking",
@@ -149,6 +155,31 @@ def build_bot_driver(clip: str):
     )
 
 
+def _own_tx_bytes() -> "int | None":
+    """Total transmitted bytes on this container's real interfaces.
+
+    Read from /proc/net/dev, which inside a bridge-networked container is the
+    peer's own network namespace, so no privileged helper is needed. Loopback is
+    excluded because Chrome's internal traffic would otherwise mask a dead call.
+    Returns None when the file cannot be read, so a caller can tell "no signal"
+    apart from "no bytes".
+    """
+    try:
+        total = 0
+        with open("/proc/net/dev") as fh:
+            for line in fh.read().splitlines()[2:]:
+                name, _, rest = line.partition(":")
+                name = name.strip()
+                if not name or name == "lo":
+                    continue
+                cols = rest.split()
+                if len(cols) >= 9:
+                    total += int(cols[8])
+        return total
+    except Exception:  # noqa: BLE001 - liveness is observability, never fatal
+        return None
+
+
 def main() -> int:
     if not ROOM:
         status("failed", reason="BOT_ROOM_URL not set")
@@ -157,11 +188,17 @@ def main() -> int:
 
     if not os.path.exists(CLIP):
         write_clip(CLIP)
-    status("clip_ready", bytes=os.path.getsize(CLIP))
+    if not os.path.exists(AUDIO):
+        write_tone(AUDIO)
+    status(
+        "clip_ready",
+        bytes=os.path.getsize(CLIP),
+        audio_bytes=os.path.getsize(AUDIO),
+    )
 
     start_display(DISPLAY_NUM)
     os.environ["DISPLAY"] = f":{DISPLAY_NUM}"
-    driver = build_bot_driver(CLIP)
+    driver = build_bot_driver(CLIP, AUDIO)
     driver.set_page_load_timeout(60)
     driver.set_script_timeout(30)
     try:
@@ -231,6 +268,12 @@ def main() -> int:
             return 4
 
         hold_until = time.time() + HOLD_S
+        # Outbound-byte liveness: six consecutive polls (~30s) with no new bytes
+        # means the call is gone, whatever the page still looks like.
+        _last_sent = 0
+        _stall_polls = 0
+        _STALL_LIMIT = 6
+        _MIN_TX_DELTA = 20_000
         while time.time() < hold_until and not _stop:
             time.sleep(5)
             try:
@@ -238,20 +281,64 @@ def main() -> int:
                     # Zoom has no RTCPeerConnection, so outbound-RTP counters are
                     # structurally zero here. Reporting them printed a misleading
                     # "publishing 0x0, bytes_sent 0" every few seconds.
+                    #
+                    # The DOM alone cannot tell a live call from an ended one:
+                    # ZOOM_IN_CALL_JS reports the bot's OWN local preview, which
+                    # keeps rendering 1280x720 after the meeting is over. A peer
+                    # trusted on that basis reported "publishing" through an
+                    # entire dead 40-minute window, and a sweep then recorded a
+                    # cell against a meeting nobody was in. The interface
+                    # counters are the honest witness, and inside this container
+                    # /proc/net/dev IS the peer's own namespace.
                     zin = driver.execute_script(ZOOM_IN_CALL_JS)
-                    status(
-                        "publishing",
-                        in_call=bool(zin.get("in_call")),
-                        local_video=zin.get("size"),
-                        basis="zoom in-call DOM (no WebRTC counters exist)",
-                    )
+                    sent = _own_tx_bytes()
+                    if sent is None:
+                        # No counter to read: fall back to the DOM rather than
+                        # calling a live call dead.
+                        status(
+                            "publishing",
+                            in_call=bool(zin.get("in_call")),
+                            local_video=zin.get("size"),
+                            basis="zoom in-call DOM (tx counter unavailable)",
+                        )
+                    else:
+                        # A threshold, not "any increase": an ended call still
+                        # trickles a few hundred bytes of keepalive and DNS, which
+                        # would reset the stall counter forever. Publishing 720p
+                        # moves ~600kB per 5s poll, so 20kB separates the two by a
+                        # wide margin.
+                        if sent - _last_sent >= _MIN_TX_DELTA:
+                            _stall_polls = 0
+                        else:
+                            _stall_polls += 1
+                        _last_sent = max(_last_sent, sent)
+                        status(
+                            "publishing" if _stall_polls < _STALL_LIMIT else "stalled",
+                            in_call=bool(zin.get("in_call")),
+                            local_video=zin.get("size"),
+                            tx_bytes=sent,
+                            stalled_polls=_stall_polls,
+                            basis="zoom in-call DOM + own interface tx bytes",
+                        )
                 else:
                     ob = driver.execute_async_script(OUTBOUND_JS)
+                    sent = ob.get("bytes_sent") or 0
+                    # "publishing" must mean bytes are moving NOW, not that they
+                    # once did. A peer whose call ended kept reporting
+                    # publishing for an hour with bytes_sent stuck at 0, so runs
+                    # adopted a dead peer and failed with a confusing
+                    # "never produced an advancing inbound stream".
+                    if sent > _last_sent:
+                        _stall_polls = 0
+                    else:
+                        _stall_polls += 1
+                    _last_sent = max(_last_sent, sent)
                     status(
-                        "publishing",
-                        bytes_sent=ob.get("bytes_sent"),
+                        "publishing" if _stall_polls < _STALL_LIMIT else "stalled",
+                        bytes_sent=sent,
                         frames_sent=ob.get("frames_sent"),
                         size=f"{ob.get('width')}x{ob.get('height')}",
+                        stalled_polls=_stall_polls,
                     )
             except Exception:  # noqa: BLE001 - keep holding even if a poll fails
                 pass

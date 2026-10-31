@@ -140,7 +140,49 @@ STRICT_SHAPING = True  # raise on shaping-verification failure
 # Capture timing: the pcap is downloaded over HTTP, which needs the capture to be
 # "finished". We give tshark a duration = run time + this overhead so it stops on
 # its own (then we download). Bump it if long browser warmups truncate captures.
-CAPTURE_OVERHEAD_S = 45
+# Slack between the capture window and the measured window. The capture timer
+# starts when tcpdump does, but the app's join happens inside it, so the window
+# must cover join + duration_s + teardown. Measured on a Meet run: the timer
+# expired 5.4s before the collector's last sample, losing the tail of the call.
+# Conferencing joins can need manual admission, so this is overridable per run.
+CAPTURE_OVERHEAD_S = int(os.environ.get("PRAMANA_CAPTURE_OVERHEAD_S", "45"))
+# Skip the per-app capture split and plot rendering during the run, leaving them
+# to `replot_run(run_dir)` afterwards. Measured at 465-574s per cell on a 2-vCPU
+# host, that work is the dominant cost of a cell and needs no live meeting, so
+# deferring it is what makes a 6-cell sweep fit one 40-minute window.
+DEFER_ANALYSIS = os.environ.get("PRAMANA_DEFER_ANALYSIS") == "1"
+
+
+# Throughput charts share ONE y-axis ceiling across every run, instead of each
+# scaling to its own cap. A 3 Mbps run auto-scaled to ~3.75 and a 10 Mbps run to
+# ~12.5 look identical on screen while showing a 3x difference in rate, so a
+# reader comparing a bandwidth sweep side by side is misled by the axis. Fixed
+# at 11 Mbps: above the 10 Mbps cap used here, with headroom for overshoot.
+# Set PRAMANA_PLOT_YMAX=auto to restore per-run scaling.
+_YMAX_ENV = os.environ.get("PRAMANA_PLOT_YMAX", "11")
+PLOT_YMAX_MBPS: Optional[float] = (
+    None if _YMAX_ENV.strip().lower() == "auto" else float(_YMAX_ENV)
+)
+
+
+# Companion ceiling for the upload charts (see plot_apps_throughput).
+_YMAX_UP_ENV = os.environ.get("PRAMANA_PLOT_YMAX_UPLOAD", "2.5")
+PLOT_YMAX_UPLOAD_MBPS: Optional[float] = (
+    None if _YMAX_UP_ENV.strip().lower() == "auto" else float(_YMAX_UP_ENV)
+)
+
+
+def _throughput_ymax(cap: float, peak: Optional[float]) -> float:
+    """Shared ceiling for every throughput axis, or per-run scaling if disabled.
+
+    A run that somehow exceeds the fixed ceiling still gets a taller axis: the
+    point is comparability, never hiding data above the frame.
+    """
+    measured = max(cap * 1.25, (peak or 0) * 1.15, 0.1)
+    if PLOT_YMAX_MBPS is None:
+        return measured
+    return max(PLOT_YMAX_MBPS, (peak or 0) * 1.05)
+
 
 # HTTP timeouts / polling.
 HTTP_TIMEOUT = 60
@@ -186,6 +228,17 @@ COLLECT_ENABLED = os.environ.get("PRAMANA_COLLECT", "1") not in ("0", "false", "
 # `go_to_url` + `wait`. `url` is the page it opens. Streaming apps autoplay where
 # possible. Calls (zoom/meet) need a join URL supplied via cfg.app_urls.
 APP_REGISTRY: dict[str, dict[str, Any]] = {
+    # Our own WebRTC peer (webrtc_peer_server.py). Reached by IP with no DNS
+    # name, so `domains` is empty and the capture is attributed by connection
+    # affinity instead - a solo run has exactly one app to claim it.
+    "webrtc_peer": {
+        "url": "",  # supplied per run via app_urls
+        "runtime": "browser",
+        "type": "call",
+        "domains": [],
+        "plot_directions": ["download", "upload"],
+        "color": "#8E24AA",
+    },
     "youtube": {
         "url": "https://www.youtube.com/watch?v=dQw4w9WgXcQ&autoplay=1",
         "runtime": "browser",
@@ -384,6 +437,29 @@ class ExperimentConfig:
     # Forced runs get a `_forcedq` slug so they never mix with the auto runs.
     force_max_quality: bool = False
     force_quality_level: str = "hd2160"
+    # Opt-in per-app viewport cap, as {app: "WxH"}. An adaptive player picks
+    # its rendition to fit the element it draws into, so a smaller viewport
+    # bounds the TOP of the ladder while leaving ABR free to adapt below it.
+    # This is the honest way to keep a player off a rendition the host cannot
+    # decode: Vimeo's `quality=720p` parameter FORCES one rendition and turns
+    # ABR off entirely (measured: 960x720 for 116/116 samples, zero switches),
+    # which would delete the adaptive behaviour the experiment exists to
+    # measure. Capped runs get their own slug so they never mix with uncapped.
+    app_window: Optional[dict[str, str]] = None
+    # Opt-in per-app codec block, as {app: ["av01", ...]}. Hides a codec family
+    # from the page so an adaptive player never selects it. This is the only
+    # lever measured to bound a Vimeo ladder without disabling ABR: the
+    # `quality` parameter forces one rendition (ABR off) and a smaller viewport
+    # does not constrain Vimeo's choice at all. Blocked runs get their own slug.
+    app_block_codecs: Optional[dict[str, list[str]]] = None
+    # Let a vendor's own instrumentation (YouTube stats-for-nerds) flow into the
+    # generic sample keys. Default False so the generic channel stays
+    # independent of the reference it is validated against; the vendor values
+    # are always recorded under `sfn_*` regardless.
+    merge_vendor_stats: bool = False
+    # Turn the uniform streaming probe off for this run. Used to measure the
+    # probe's own cost: the same cell with hooks on and off, on a 2-vCPU host.
+    disable_stream_probe: bool = False
 
     experiment_id: str = ""
     slug: str = ""
@@ -418,6 +494,21 @@ class ExperimentConfig:
             # Keeps forced-quality runs from ever being grouped with, or
             # compared against, the auto-ABR runs of the same regime.
             slug += "_forcedq"
+        if self.app_window:
+            # Same reasoning as _forcedq: a viewport-capped ladder is not
+            # comparable with a free one, so the slug says so out loud.
+            caps = "-".join(f"{a}{self.app_window[a]}" for a in sorted(self.app_window))
+            slug += f"_vcap{caps}"
+        if self.app_block_codecs:
+            # A ladder measured without a codec family is not comparable with
+            # one measured with it, so the slug carries the difference.
+            marks = "-".join(
+                f"{a}{'+'.join(sorted(self.app_block_codecs[a]))}"
+                for a in sorted(self.app_block_codecs)
+                if self.app_block_codecs[a]
+            )
+            if marks:
+                slug += f"_noc{marks}"
         return slug.replace("/", "-")
 
 
@@ -691,6 +782,8 @@ def build_collector_jobs(
                 # click-through, so the flow is named explicitly rather than
                 # inferred from `kind`.
                 "join_flow": "zoom" if app == "zoom" else None,
+                # Which Chrome to drive, straight from the registry.
+                "driver_mode": getattr(spec, "driver_mode", "uc"),
                 "join_timeout_seconds": (
                     int(cfg.peer_wait_s) if spec.needs_peer else 180
                 ),
@@ -698,6 +791,22 @@ def build_collector_jobs(
                 # Collector applies this to YouTube only; harmless for other apps.
                 "force_max_quality": bool(cfg.force_max_quality),
                 "force_quality_level": cfg.force_quality_level,
+                # Viewport cap for this app, if one was configured.
+                "window_size": (cfg.app_window or {}).get(app),
+                # Conferencing apps must be measuring the REMOTE peer's main
+                # tile, never the collector's own self-view, and the collector
+                # cannot tell the difference from size alone. Gate it early so a
+                # misaimed cell dies in seconds instead of consuming 180s of a
+                # 40-minute meeting window.
+                "require_remote_tile": bool(spec.needs_peer),
+                # Codec families to hide from this app's page, if any.
+                "block_codecs": list((cfg.app_block_codecs or {}).get(app) or []),
+                # Off for validation runs: a vendor's own stats are the reference
+                # the generic channel is compared against, so merging them into
+                # the generic fields would make that comparison circular.
+                "merge_vendor_stats": bool(cfg.merge_vendor_stats),
+                # A/B control for measuring the probe's own overhead.
+                "disable_stream_probe": bool(cfg.disable_stream_probe),
             }
         )
         display += 1
@@ -712,6 +821,63 @@ def _peer_spec(cfg: "ExperimentConfig", app: str) -> Optional[dict[str, Any]]:
     if isinstance(raw, str):  # older callers passed just a room URL
         return {"join_url": raw}
     return dict(raw)
+
+
+# ── persistent peers ────────────────────────────────────────────────────────
+#
+# A per-run bot has to be launched and, on Meet, manually admitted for every
+# single experiment - which is where 3 of 4 Meet runs were lost. A persistent
+# peer is admitted once and then stays in the room across runs, so a later run
+# simply joins a meeting that already has video in it.
+#
+# Naming is the whole contract: a container called `pramana-peer-<app>` is
+# treated as already-present media. start_bot_peers adopts it instead of
+# launching, and stop_bot_peers leaves it alone.
+
+PERSISTENT_PEER_PREFIX = "pramana-peer-"
+
+
+def persistent_peer_name(app: str) -> str:
+    return PERSISTENT_PEER_PREFIX + app
+
+
+def find_persistent_peer(app: str) -> Optional[str]:
+    """Container name of a running persistent peer for `app`, else None."""
+    name = persistent_peer_name(app)
+    rc, out = _run_cmd(
+        [
+            DOCKER_BIN,
+            "ps",
+            "--filter",
+            "name=^" + name + "$",
+            "--filter",
+            "status=running",
+            "--format",
+            "{{.Names}}",
+        ],
+        timeout=60,
+    )
+    if rc != 0 or name not in (out or ""):
+        return None
+    # Running is not the same as publishing. A peer whose meeting ended keeps
+    # its container up and its last status line forever - measured here, one
+    # reported "publishing" for an hour with bytes_sent stuck at 0, so a run
+    # adopted a dead peer and failed with a confusing "never produced an
+    # advancing inbound stream". Refuse anything the bot itself calls stalled.
+    f = Path.home() / "pramana-assets" / ("peer-" + app) / (app + "_status.json")
+    if f.is_file():
+        try:
+            st = json.loads(f.read_text())
+        except (OSError, json.JSONDecodeError):
+            st = {}
+        if st.get("state") == "stalled":
+            print(
+                "    ! persistent peer '"
+                + name
+                + "' is STALLED (no outbound bytes) - not adopting it"
+            )
+            return None
+    return name
 
 
 def start_bot_peers(
@@ -737,6 +903,27 @@ def start_bot_peers(
             continue
         peer = _peer_spec(cfg, app)
         if not peer:
+            continue
+        existing = find_persistent_peer(app)
+        if existing:
+            # Already in the room and publishing: adopt it, and mark it so the
+            # teardown below does not evict media that later runs still need.
+            print(
+                "    - adopting persistent peer '"
+                + existing
+                + "' for "
+                + app
+                + " (no launch, no admission needed)"
+            )
+            running.append(
+                {
+                    "app": app,
+                    "container": existing,
+                    "name": app,
+                    "room": (peer.get("join_url") or ""),
+                    "persistent": True,
+                }
+            )
             continue
         room = peer.get("join_url") or ""
         # Same normalisation the app under test gets: a Zoom /j/ invite must
@@ -811,7 +998,18 @@ def wait_for_bot_peers(
     """
     if not bots:
         return {}
-    pending = {b["app"]: b for b in bots}
+    # A persistent peer was admitted and verified when it was launched, and it
+    # writes its status into its own output directory, not this run's - polling
+    # for it here would wait out the full timeout on a peer that is already fine.
+    for b in bots:
+        if b.get("persistent"):
+            print(
+                "    - peer '" + b["container"] + "' is persistent and already "
+                "publishing; not waiting for admission"
+            )
+    pending = {b["app"]: b for b in bots if not b.get("persistent")}
+    if not pending:
+        return {}
     failures: dict[str, str] = {}
     deadline = time.time() + timeout_s
     prompted = False
@@ -870,6 +1068,12 @@ def wait_for_bot_peers(
 def stop_bot_peers(bots: list[dict[str, Any]]) -> None:
     """Always called, including on failure: never leave a bot sitting in a room."""
     for b in bots:
+        if b.get("persistent"):
+            print(
+                "    - persistent peer '" + b["container"] + "' left running "
+                "(serves later runs too)"
+            )
+            continue
         rc, _ = _run_cmd([DOCKER_BIN, "stop", "-t", "5", b["container"]], timeout=60)
         note = "" if rc == 0 else " (stop non-zero; may already be gone)"
         print("    - bot peer '" + b["app"] + "' stopped" + note)
@@ -960,6 +1164,16 @@ def run_qoe_collectors(
         src = Path(collector_src).expanduser().resolve()
         args += ["--volume", f"{src}:/app/collect.py:ro"]
         print(f"    · collector source overridden from {src}")
+        # collect.py imports siblings (cdp_bytes), and mounting only collect.py
+        # leaves those unimportable inside the image -- which fails the run at
+        # import time, with the override silently to blame. Mount each sibling
+        # the collector actually imports, so a source override behaves like a
+        # rebuilt image.
+        for sibling in ("cdp_bytes.py",):
+            sp = src.parent / sibling
+            if sp.exists():
+                args += ["--volume", f"{sp}:/app/{sibling}:ro"]
+                print(f"    · mounted sibling {sibling}")
     args += [
         "--entrypoint",
         "nsenter",
@@ -1021,7 +1235,86 @@ def collect_player_qoe(
         per_app[app] = qoelib.summarize(
             run["stats"].get(app, []), app, skipped_reason=reason
         )
+        # Provenance of the measurement itself: which <video> was sampled, how
+        # big it was rendered, and whether it was the remote peer or this
+        # browser's own camera. Without it, "the peer was measured" is an
+        # assumption - and it was the wrong assumption for a whole sweep, where
+        # every sample read a 207x117 local self-view.
+        # run["stats"][app] may be a JSONL PATH rather than a list - summarize()
+        # accepts either, so load_samples() is what normalises it. Passing the
+        # raw value straight in made the reducer iterate a string's characters,
+        # find no dicts, and report "collector predates element census" for runs
+        # whose samples all carried the census.
+        per_app[app]["measured_element"] = _measured_element_summary(
+            qoelib.load_samples(run["stats"].get(app, []))
+        )
     return per_app
+
+
+# Track-label markers for a LOCAL capture device. Chrome's synthetic camera
+# reports "fake_device_N". The label is the only local marker that survives the
+# page cloning the track. A plain substring test rather than a regex, because
+# `re` is imported further down this module than this constant.
+_LOCAL_LABEL_HINTS = ("fake_device",)
+
+
+def _label_is_local(label: str) -> bool:
+    low = (label or "").lower()
+    return any(h in low for h in _LOCAL_LABEL_HINTS)
+
+
+def _measured_element_summary(samples: list[dict[str, Any]]) -> dict[str, Any]:
+    """Reduce the per-sample element census to one auditable block."""
+    seen: dict[str, int] = {}
+    origins: dict[str, int] = {}
+    areas: list[int] = []
+    local_samples = 0
+    counted = 0
+    labels: dict[str, int] = {}
+    for s in samples:
+        st = s.get("stats") if isinstance(s, dict) else None
+        if not isinstance(st, dict):
+            st = s if isinstance(s, dict) else None
+        if not isinstance(st, dict):
+            continue
+        me = st.get("measured_element")
+        if not isinstance(me, dict):
+            continue
+        counted += 1
+        key = f"{me.get('stream')}@{me.get('box')}"
+        seen[key] = seen.get(key, 0) + 1
+        origins[str(me.get("origin"))] = origins.get(str(me.get("origin")), 0) + 1
+        if isinstance(me.get("box_area"), (int, float)):
+            areas.append(int(me["box_area"]))
+        lab = str(me.get("label") or "")
+        if lab:
+            labels[lab] = labels.get(lab, 0) + 1
+        # Count a sample as local on the track label as well as the id flag.
+        # Zoom re-wraps the local camera before rendering its self-view, so the
+        # clone's id is absent from the captured set and `measured_is_local`
+        # reads False for what is demonstrably the collector's own camera - it
+        # carries the fake device's label. Without the label test this reported
+        # "zero local samples" for a sweep that measured the self-view in 24.
+        if st.get("measured_is_local") is True or _label_is_local(lab):
+            local_samples += 1
+    if not counted:
+        # Pre-census runs: say so rather than implying the element is unknown
+        # because nothing was measured.
+        return {"available": False, "reason": "collector predates element census"}
+    dominant = max(seen.items(), key=lambda kv: kv[1])
+    return {
+        "available": True,
+        "samples_with_census": counted,
+        "dominant": dominant[0],
+        "dominant_sample_share": round(dominant[1] / counted, 4),
+        "origins": origins,
+        "local_samples": local_samples,
+        "measured_local_any": local_samples > 0,
+        "box_area_min": min(areas) if areas else None,
+        "box_area_max": max(areas) if areas else None,
+        "distinct_elements": seen,
+        "track_labels": labels,
+    }
 
 
 # ═════════════════════════════════════════════════════════════════════════════
@@ -1715,6 +2008,7 @@ def attribute_capture(
     cap_mbps: float,
     bin_s: float = 1.0,
     local_ip_map: Optional[dict[str, str]] = None,
+    app_endpoint_ips: Optional[dict[str, set[str]]] = None,
 ) -> CaptureAttribution:
     """Split a shared capture into per-app download/upload throughput series.
 
@@ -1815,6 +2109,24 @@ def attribute_capture(
     if res.method == "remote_hostname":
         named_app_ips: dict[str, set[str]] = defaultdict(set)
         app_windows: dict[str, tuple[float, float]] = {}
+        # A target reached by raw IP has no DNS answer and no SNI anywhere in
+        # the capture, so there is nothing for the hostname pass to match and
+        # nothing for the affinity pass to anchor on either. When the caller
+        # knows the endpoint (it is in the run's own URL) that is ground truth,
+        # not a heuristic, so seed it directly.
+        for _app, _ips in (app_endpoint_ips or {}).items():
+            for _ip in _ips:
+                if _ip in local:
+                    continue
+                named_app_ips[_app].add(_ip)
+                _sp = endpoint_span.get(_ip)
+                if _sp:
+                    _cur = app_windows.get(_app)
+                    app_windows[_app] = (
+                        (_sp[0], _sp[1])
+                        if _cur is None
+                        else (min(_cur[0], _sp[0]), max(_cur[1], _sp[1]))
+                    )
         for ip, host in ip_host.items():
             if ip in local:
                 continue
@@ -1843,6 +2155,10 @@ def attribute_capture(
                 f"by connection affinity: "
                 + ", ".join(f"{ip}->{v}" for ip, v in sorted(adopted.items())[:4])
             )
+
+    _explicit_ip_app: dict[str, str] = {
+        ip: app for app, ips in (app_endpoint_ips or {}).items() for ip in ips
+    }
 
     # ── pass 2: bin bytes per (bucket, direction) ────────────────────────────
     buckets: dict[tuple[str, str], dict[int, int]] = defaultdict(
@@ -1883,6 +2199,8 @@ def attribute_capture(
                 host_bytes[host] += ol
                 if bucket in apps:
                     bucket_hosts[bucket].add(host)
+            elif _explicit_ip_app.get(remote):
+                bucket = _explicit_ip_app[remote]
             elif remote in adopted:
                 bucket = adopted[remote].split(":", 1)[0]
             else:
@@ -2240,9 +2558,7 @@ def plot_app_throughput(
     ax.set_ylabel(f"{at.direction.title()} throughput (Mbps)")
     ax.set_title(_plot_title(at.app, cfg, at.direction, both_directions))
     ax.set_xlim(0, max(at.times) if at.times else 1)
-    ax.set_ylim(
-        bottom=0, top=max(cap * 1.25, (at.peak_throughput_mbps or 0) * 1.15, 0.1)
-    )
+    ax.set_ylim(bottom=0, top=_throughput_ymax(cap, at.peak_throughput_mbps))
     ax.grid(True, alpha=0.3)
     ax.legend(loc="upper right", fontsize=8)
     ax.annotate(
@@ -2379,12 +2695,19 @@ def plot_apps_throughput(
     # instead of dictating the scale.
     cap_in_view = cap <= peak * 1.6 or peak >= cap * 0.25
     if cap_in_view:
-        top = max(cap * 1.25, peak * 1.15, 0.1)
+        top = _throughput_ymax(cap, peak)
         ax.axhline(
             cap, color="green", linewidth=1.3, alpha=0.85, label=f"cap {cap:g} Mbps"
         )
     else:
-        top = max(peak * 1.30, 0.05)
+        # Upload keeps its own shared ceiling rather than the download one: a
+        # Meet call uploads ~0.4 Mbps, so drawing it against 11 Mbps would put
+        # all six runs flat on the axis - comparable, but unreadable.
+        top = (
+            max(PLOT_YMAX_UPLOAD_MBPS, peak * 1.05)
+            if PLOT_YMAX_UPLOAD_MBPS is not None
+            else max(peak * 1.30, 0.05)
+        )
         ax.axhline(
             top,
             color="green",
@@ -2457,12 +2780,38 @@ def plot_app_qoe_summary(
 
     buf_series = _shift(series.get("buffer_ahead_secs") or [])
     res_series = _shift(series.get("resolution_p") or [])
+    fps_series = _shift(series.get("fps") or [])
+    drop_series = _shift(series.get("dropped_pct") or [])
+    jit_series = _shift(series.get("jitter_ms") or [])
     rebuffer_spans = [
         (a + x_shift, b + x_shift) for a, b in (pq.get("rebuffer_spans") or [])
     ]
 
+    # Window the whole figure on the measured session rather than the capture.
+    # The capture opens before the app has joined and can outlast it: measured
+    # here, three of six Meet runs put the entire call outside the capture's own
+    # x-range, so their resolution panels came out completely blank while the
+    # numbers underneath were fine. Showing minutes of pre-join dead air also
+    # squeezes the part that matters into a sliver.
+    sess_len = pq.get("session_seconds")
+    x_lo, x_hi = 0.0, (max(at.times) if at.times else 1.0)
+    if real and sess_len:
+        pad = max(2.0, float(sess_len) * 0.03)
+        x_lo = max(0.0, x_shift - pad)
+        x_hi = x_shift + float(sess_len) + pad
+
+    extra = [
+        (fps_series, "fps", "#00838F"),
+        (drop_series, "dropped (%)", "#AD1457"),
+        (jit_series, "jitter (ms)", "#5E35B1"),
+    ]
+    extra = [(pts, lbl, col) for pts, lbl, col in extra if real and pts]
+
     panels = (
-        1 + (1 if (real and buf_series) else 0) + (1 if (real and res_series) else 0)
+        1
+        + (1 if (real and buf_series) else 0)
+        + (1 if (real and res_series) else 0)
+        + len(extra)
     )
     heights = [2] + [1] * (panels - 1)
     # Text below the axes is positioned in INCHES-normalised units: a fixed
@@ -2521,10 +2870,8 @@ def plot_app_qoe_summary(
             label="REBUFFER (player)" if j == 0 else None,
         )
     ax.set_ylabel(f"{at.direction.title()} tput (Mbps)")
-    ax.set_ylim(
-        bottom=0, top=max(cap * 1.25, (at.peak_throughput_mbps or 0) * 1.15, 0.1)
-    )
-    ax.set_xlim(0, max(at.times))
+    ax.set_ylim(bottom=0, top=_throughput_ymax(cap, at.peak_throughput_mbps))
+    ax.set_xlim(x_lo, x_hi)
     ax.grid(True, alpha=0.3)
     ax.legend(loc="upper right", fontsize=8, ncol=2)
     ax.set_title(
@@ -2562,7 +2909,7 @@ def plot_app_qoe_summary(
         idx += 1
         rt = [d["t"] for d in res_series]
         rv = [d["v"] for d in res_series]
-        rt2 = rt + [max(at.times)]
+        rt2 = rt + [x_hi]
         rv2 = rv + [rv[-1]]
         rx.step(rt2, rv2, where="post", linewidth=1.4, color="#2E7D32")
         rx.scatter(rt, rv, s=18, color="#2E7D32", zorder=3)
@@ -2572,8 +2919,34 @@ def plot_app_qoe_summary(
         ys = sorted(set(rv))
         rx.set_yticks(ys)
         rx.set_ylim(min(ys) * 0.8, max(ys) * 1.2)
-    else:
-        axes[-1].set_xlabel("Time (s)")
+
+    # ── per-sample timelines: fps, dropped %, jitter ─────────────────────────
+    # One number per metric at the foot of the chart says a call averaged 23 fps;
+    # it cannot say whether that was steady or swung about. These are the same
+    # measurements over time, from the same samples.
+    for pts, label, colour in extra:
+        px = axes[idx]
+        idx += 1
+        xs = [d["t"] for d in pts]
+        ys2 = [d["v"] for d in pts]
+        px.plot(xs, ys2, linewidth=1.2, color=colour)
+        px.fill_between(xs, ys2, alpha=0.15, color=colour)
+        if ys2:
+            mean_v = sum(ys2) / len(ys2)
+            px.axhline(
+                mean_v,
+                color=colour,
+                linestyle="--",
+                linewidth=0.9,
+                alpha=0.75,
+                label=f"mean {mean_v:.2f}",
+            )
+            px.legend(loc="upper right", fontsize=7)
+        px.set_ylabel(label)
+        px.grid(True, alpha=0.3)
+        px.set_ylim(bottom=0)
+
+    axes[-1].set_xlabel("Time (s)")
 
     # ── metrics panel under the axes ─────────────────────────────────────────
     if real:
@@ -2712,6 +3085,21 @@ def generate_run_plots(
         else:
             print(f"    · {_d}: no merged chart — no traffic attributed")
 
+    # Per-app throughput, one chart per app per direction, alongside the merged
+    # view above. A concurrent run needs both: the merged chart shows how the
+    # apps share the link, the per-app charts let each be read on its own.
+    for app in cfg.apps:
+        for _d in app_plot_directions(app):
+            at_app = attribution.traffic(app, _d)
+            if at_app is None or not at_app.times:
+                continue
+            ap1 = plot_app_throughput(
+                at_app, cfg, run_dir / f"throughput_{_d}_{app}.png"
+            )
+            if ap1:
+                plots[f"throughput_{_d}_{app}"] = str(ap1)
+                print(f"    · {app} {_d}: per-app throughput chart saved")
+
     for app in cfg.apps:
         # QoE summary is unchanged: one per app, built from the direction that
         # defines the verdict (download for video). Adding upload plots above
@@ -2786,6 +3174,11 @@ def replot_run(run_dir: Path | str, bin_s: float = 1.0) -> dict[str, str]:
         at, cfg, run_dir, player_qoe=(rec.get("player_qoe") or {})
     )
     rec.setdefault("artifacts", {})["plots"] = plots
+    # This IS the deferred work, so the run is no longer deferred. Leaving the
+    # flag set would report a finished run as missing its analysis.
+    if rec.get("analysis_deferred"):
+        rec["analysis_deferred"] = False
+        rec["analysis_finalized_at"] = time.time()
     # Preserve the player-aware verdict: recomputing from the pcap alone would
     # silently downgrade a `failed_to_deliver` app back to the network's "served".
     pq_all = rec.get("player_qoe") or {}
@@ -3105,6 +3498,26 @@ def substrate_teardown_per_app_marks() -> None:
         pass
 
 
+def app_endpoint_ips_from_urls(cfg: "ExperimentConfig") -> dict[str, set[str]]:
+    """{app: {ip}} for any app whose URL names a literal IP rather than a host.
+
+    Used for targets we run ourselves (the WebRTC peer server), which are
+    reached by address and therefore leave no DNS or SNI trace to attribute by.
+    """
+    import ipaddress
+    from urllib.parse import urlparse
+
+    out: dict[str, set[str]] = {}
+    for app, url in (cfg.app_urls or {}).items():
+        host = urlparse(url or "").hostname or ""
+        try:
+            ipaddress.ip_address(host)
+        except ValueError:
+            continue
+        out.setdefault(app, set()).add(host)
+    return out
+
+
 def run_direct(cfg: ExperimentConfig) -> dict[str, Any]:
     """Run one experiment (solo or concurrent) on the substrate worker.
 
@@ -3143,7 +3556,16 @@ def run_direct(cfg: ExperimentConfig) -> dict[str, Any]:
             wait_for_bot_peers(prepared_bots, timeout_s=float(cfg.peer_wait_s or 900))
         )
 
-    cap_duration = cfg.duration_s + CAPTURE_OVERHEAD_S + 15 * (len(apps) - 1)
+    # The capture timer starts here, but the app under test still has to launch,
+    # navigate and - for a conferencing app - be admitted by a human, all inside
+    # this window. Measured on a six-run Meet sweep: admission took 210s and
+    # 287s on two runs while the window was 180s, so the capture expired before
+    # the call began and those pcaps recorded only the idle setup period. When a
+    # peer is configured, the window has to carry that wait too.
+    _join_budget = int(cfg.peer_wait_s) if any(_peer_spec(cfg, a) for a in apps) else 0
+    cap_duration = (
+        cfg.duration_s + CAPTURE_OVERHEAD_S + _join_budget + 15 * (len(apps) - 1)
+    )
     print(f"  • capture on {DOWNSTREAM_IFACE} (auto-stop {cap_duration}s) ...")
     cap = substrate_capture_start(cfg.slug, duration_s=cap_duration)
     capture_id = cap["capture_id"]
@@ -3251,10 +3673,27 @@ def run_direct(cfg: ExperimentConfig) -> dict[str, Any]:
         print("  • shaping check: no packets captured")
 
     # ── per-app split (never a combined view) ────────────────────────────────
-    print("  • splitting capture per app ...")
-    attribution = attribute_capture(
-        local_pcap, apps, cfg.bandwidth_mbps, local_ip_map=local_ip_map
-    )
+    # Splitting the capture and rendering the plots takes ~9 minutes on a 2-vCPU
+    # host (measured: 465-574s across three cells), and run_direct does it
+    # serially between cells. Inside a 40-minute free Zoom meeting that is most
+    # of the window spent on work that needs no meeting at all - it capped a
+    # sweep at 4 cells. Deferring it leaves setup + call (~4.7 min) as the only
+    # meeting-time cost, and `replot_run(run_dir)` does the identical work
+    # afterwards: it re-reads record.json and capture.pcap and rebuilds both the
+    # plots and per_app_stats, so nothing is lost by postponing it.
+    if DEFER_ANALYSIS:
+        print("  • per-app split + plots DEFERRED (PRAMANA_DEFER_ANALYSIS=1)")
+        print("    finish with: replot_run(run_dir)")
+        attribution = CaptureAttribution(note="deferred: run replot_run(run_dir)")
+    else:
+        print("  • splitting capture per app ...")
+        attribution = attribute_capture(
+            local_pcap,
+            apps,
+            cfg.bandwidth_mbps,
+            local_ip_map=local_ip_map,
+            app_endpoint_ips=app_endpoint_ips_from_urls(cfg),
+        )
     if attribution.method != "none":
         print(
             f"    method={attribution.method}  local={attribution.local_ips}  "
@@ -3329,16 +3768,19 @@ def run_direct(cfg: ExperimentConfig) -> dict[str, Any]:
         )
 
     # ── plots, automatically, for every run ──────────────────────────────────
-    print("  • generating per-app plots ...")
-    try:
-        plots = generate_run_plots(attribution, cfg, run_dir, player_qoe=player_qoe)
-    except Exception as exc:  # a plotting bug must never lose the run's evidence
+    if DEFER_ANALYSIS:
         plots = {}
-        print(
-            f"    ! plot generation failed ({type(exc).__name__}: {exc}); "
-            f"the pcap, per-app stats and record are still saved — "
-            f"re-render later with replot_run('{run_dir}')"
-        )
+    else:
+        print("  • generating per-app plots ...")
+        try:
+            plots = generate_run_plots(attribution, cfg, run_dir, player_qoe=player_qoe)
+        except Exception as exc:  # a plotting bug must never lose the evidence
+            plots = {}
+            print(
+                f"    ! plot generation failed ({type(exc).__name__}: {exc}); "
+                f"the pcap, per-app stats and record are still saved — "
+                f"re-render later with replot_run('{run_dir}')"
+            )
 
     overall_ok = net.shaping_verified or net.avg_throughput_mbps is None
     for a in apps:
@@ -3374,6 +3816,25 @@ def run_direct(cfg: ExperimentConfig) -> dict[str, Any]:
         # Self-identifying: whether YouTube's rendition was pinned for this run
         # or left to ABR. Forced and auto runs must never be pooled.
         "force_max_quality": bool(cfg.force_max_quality),
+        # Per-app viewport caps in force for this run, as {app: "WxH"}. A cap
+        # bounds the TOP of that app's ABR ladder (the player sizes its
+        # rendition to the element it draws into), so a capped run must never be
+        # pooled with or compared against an uncapped one. Empty means every
+        # app ran at the default viewport with a free ladder. The run slug
+        # carries a matching `_vcap...` marker.
+        "app_window_caps": dict(cfg.app_window or {}),
+        "app_ladder_pinned": sorted((cfg.app_window or {}).keys()),
+        # The rate every player signal was read at. A buffer or bitrate series
+        # cannot be compared across apps or runs without it.
+        "sampling_interval_s": 1.0,
+        "merge_vendor_stats": bool(cfg.merge_vendor_stats),
+        # Codec families hidden per app for this run. A run with a codec family
+        # removed must never be pooled with one that had it available: the
+        # bitrate-per-resolution differs, so both the ladder and the offered
+        # load differ. The run slug carries a matching `_noc...` marker.
+        "app_blocked_codecs": {
+            a: sorted(v) for a, v in (cfg.app_block_codecs or {}).items() if v
+        },
         # Real, player-side QoE per app (shared/qoe.py against the QoEMetrics
         # definition in shared/models/README.md). Null fields are signals the
         # player genuinely does not expose — never placeholders.
@@ -3416,6 +3877,11 @@ def run_direct(cfg: ExperimentConfig) -> dict[str, Any]:
         },
         "network_stats": asdict(net),
         "per_app_stats": per_app_stats,
+        # True when the capture split and plots were postponed to keep a live
+        # meeting window free. per_app_stats and the plots are EMPTY in that
+        # case and must not be read as "no traffic" - run replot_run(run_dir) to
+        # fill them from the capture that is already on disk.
+        "analysis_deferred": bool(DEFER_ANALYSIS),
         "capture_buckets_mb": attribution.bucket_mb,
         "capture_top_hosts_bytes": attribution.host_bytes,
         "shaping_applied": shape.get("bottleneck_state", shape),
