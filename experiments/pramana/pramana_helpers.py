@@ -380,6 +380,22 @@ BROWSER_INFRA_DOMAINS: tuple[str, ...] = (
     "ssl.gstatic.com",
     "connectivitycheck.gstatic.com",
     "dns.google",
+    # Chrome for Testing / chromedriver downloads. Selenium Manager fetches the
+    # driver and, on a cold image, the browser build itself from GitHub Pages
+    # here. On a 10 Mbps shaped link that is a multi-megabyte transfer at the
+    # full cap: in one archived webrtc_peer capture it was 5.48 MB, 74.9% of
+    # every byte in the pcap, and it landed in `other` -- which is why that
+    # run reported only 24% of its bytes attributed. It is the browser's own
+    # setup traffic, not the app's.
+    "googlechromelabs.github.io",
+    # Google Cloud Messaging push channel; Chrome holds it open in the
+    # background for the whole session.
+    "mtalk.google.com",
+    # Chrome's own navigation and connectivity traffic (new-tab page,
+    # generate_204). Matched exactly, so `accounts.google.com` and the rest
+    # keep their own entries above and no app domain is shadowed -- apps are
+    # resolved before browser_infra in `classify_host` either way.
+    "www.google.com",
 )
 
 
