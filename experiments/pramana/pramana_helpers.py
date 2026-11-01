@@ -136,6 +136,29 @@ DATASET_INDEX = RESULTS_ROOT / "dataset_index.jsonl"
 # Correctness thresholds.
 SHAPING_TOLERANCE = 0.15  # measured avg throughput must be within +15% of cap
 STRICT_SHAPING = True  # raise on shaping-verification failure
+# Raise when traffic that is not the app's took more than the budget share of
+# the shaped link DURING the app's measured window. See `link_interference`:
+# the app's numbers would not be a measurement of the configured bottleneck.
+#
+# OFF by default, and that default is a measurement result rather than caution.
+# Run over 31 archived captures (youtube, vimeo, twitch, zoom, and the 2- and
+# 3-app mixes), 22 of them would abort on this test: `browser_infra` -- Chrome's
+# component updater on the `rr*---sn-*.gvt1.com` GGC edges, www.google.com,
+# gstatic, update.googleapis.com -- held more than 10% of the cap for 3+ seconds
+# inside the app's own measured window, peaking at 9.91 Mbps against a 10 Mbps
+# cap on one run. That is the same effect `build_driver`'s
+# `--disable-features=OptimizationGuideModelDownloading,...` block was added for
+# ("a median 65% of the shaped download"), and those flags landed in 9faf035 on
+# 2026-10-18, at or after most of this dataset.
+#
+# So turning the abort on today would invalidate most of the existing dataset,
+# which is a finding about the dataset and NOT a reason to loosen the threshold
+# until it passes. The figures are therefore recorded on every run
+# (`record["link_interference"]`) and warned about on stdout regardless; the
+# abort is opted into with PRAMANA_STRICT_INTERFERENCE=1, which is what a run
+# on a collector image carrying both the suppression flags and the baked
+# `uc_driver` should be able to do quietly.
+STRICT_LINK_INTERFERENCE = os.environ.get("PRAMANA_STRICT_INTERFERENCE") == "1"
 
 # Capture timing: the pcap is downloaded over HTTP, which needs the capture to be
 # "finished". We give tshark a duration = run time + this overhead so it stops on
@@ -2221,6 +2244,12 @@ class CaptureAttribution:
     # that was never named stay OUT, so a lost media flow shows up as a
     # shortfall here instead of being quietly absorbed.
     media_bytes: dict[str, dict[str, int]] = field(default_factory=dict)
+    # bucket -> direction -> per-bin Mbps, for every bucket that is NOT an app:
+    # browser_infra, other, and each declared probe. Totals cannot answer the
+    # only question that matters about this traffic -- was it moving while the
+    # app was being measured -- so the series is kept, on the same bin grid and
+    # the same `t0_epoch` as the per-app series. Read by `link_interference`.
+    nonapp_mbps: dict[str, dict[str, list[float]]] = field(default_factory=dict)
 
     def traffic(self, app: str, direction: str) -> Optional[AppTraffic]:
         return (self.per_app.get(app) or {}).get(direction)
@@ -2630,6 +2659,12 @@ def attribute_capture(
     host_bytes: dict[str, int] = defaultdict(int)
     bucket_bytes: dict[str, int] = defaultdict(int)
     bucket_ips: dict[str, set[str]] = defaultdict(set)
+    # Same grid as `buckets`, for the buckets that are not apps. Kept separate
+    # rather than mixed into `buckets` so that nothing which reads the per-app
+    # series can see a key it did not have before.
+    nonapp_bins: dict[tuple[str, str], dict[int, int]] = defaultdict(
+        lambda: defaultdict(int)
+    )
     total_bytes = 0
 
     for ts, ol, lt, data in iter_capture(str(pcap)):
@@ -2685,15 +2720,17 @@ def attribute_capture(
             _h = ip_host.get(remote, "")
             if _h and _host_matches(_h, media_host_suffixes(bucket)):
                 media_tally[(bucket, direction)] += ol
+        idx = min(int((ts - t0) / bin_s), res.nbins - 1) if ts else 0
         if bucket in apps:
             # Remember which endpoint carried this app's bytes so the capture
             # can later be split into one pcap per app.
             bucket_ips[bucket].add(
                 localside if res.method == "local_alias_ip" else remote
             )
-            idx = min(int((ts - t0) / bin_s), res.nbins - 1) if ts else 0
             buckets[(bucket, direction)][idx] += ol
             pkt_counts[(bucket, direction)] += 1
+        else:
+            nonapp_bins[(bucket, direction)][idx] += ol
 
     res.total_mb = round(total_bytes / 1e6, 3)
     res.bucket_mb = {
@@ -2705,6 +2742,13 @@ def attribute_capture(
     res.app_ips = {a: sorted(bucket_ips.get(a, ())) for a in apps}
     res.media_bytes = {
         a: {d: media_tally.get((a, d), 0) for d in ("download", "upload")} for a in apps
+    }
+    res.nonapp_mbps = {
+        bucket: {
+            d: _series_from_bins(nonapp_bins.get((bucket, d), {}), res.nbins, bin_s)[1]
+            for d in ("download", "upload")
+        }
+        for bucket in sorted({b for b, _d in nonapp_bins})
     }
     # "attributed" means "assigned to a named traffic class". `other` is the
     # explicit unknown, and `off_link`/`intra_local` are packets attribution
@@ -2732,6 +2776,167 @@ def attribute_capture(
             res.per_app[app][direction] = _finalise(
                 at, cap_mbps, buckets.get((app, direction), {}), res.nbins, bin_s
             )
+    return res
+
+
+# ═════════════════════════════════════════════════════════════════════════════
+#  Link-interference guard — did anything but the app use the shaped link?
+# ═════════════════════════════════════════════════════════════════════════════
+# The run this was written for: a webrtc_peer capture on 2026-09-22 in which
+# 5,481,654 bytes -- 74.9% of every byte in the pcap -- were Chrome fetching
+# its own chromedriver from googlechromelabs.github.io at 10.15 Mbps against a
+# 10 Mbps cap. The fetch was inside the CAPTURE window, so it is in the
+# dataset; it finished 3.71 s BEFORE the first media packet, so it did not
+# actually contend with the measurement. The run was therefore valid, by
+# timing, not by design -- and nothing in the record said so.
+#
+# Hence two levels, which are deliberately not the same test:
+#
+#   abort    a non-app bucket moved more than `budget_fraction` of the shaped
+#            capacity DURING the app's measured window. The app's numbers were
+#            taken off a link it did not have to itself, so the run is not a
+#            measurement of the configured bottleneck.
+#   warn     a non-app bucket peaked above `_INTERFERENCE_WARN_FRACTION` of the
+#            cap anywhere in the capture, window or not. The run stands, but it
+#            stands on timing, and the record says so instead of leaving the
+#            next reader to rediscover it from the pcap.
+#
+# Probes are excluded from both. A probe (IRTT, NetVibe) shares the link on
+# purpose and is declared; that is the whole point of `probe_endpoint_ips`.
+#
+# The abort is a PER-BIN test held for `_INTERFERENCE_MIN_BINS` bins, not a mean
+# over the window. A mean hides exactly the shape that does the damage: 5 s of
+# saturation inside a 120 s window is 4% of the window's capacity and 100% of
+# the link while it lasts, and the app rebuffers through it either way.
+_INTERFERENCE_BUDGET = 0.10
+_INTERFERENCE_WARN_FRACTION = 0.50
+_INTERFERENCE_MIN_BINS = 3
+
+
+@dataclass
+class LinkInterference:
+    """What used the shaped link besides the app, and when."""
+
+    ok: bool = True
+    checked: bool = False  # False = nothing to judge, NOT "passed"
+    budget_fraction: float = _INTERFERENCE_BUDGET
+    warn_fraction: float = _INTERFERENCE_WARN_FRACTION
+    min_bins: int = _INTERFERENCE_MIN_BINS
+    cap_mbps: float = 0.0
+    # The app's measured window, in seconds from the capture's own t0: first to
+    # last bin in which any app carried more than `_IDLE_MBPS`.
+    app_window_s: list[float] = field(default_factory=list)
+    app_active_bins: int = 0
+    # bucket -> direction -> {in_window_mb, in_window_share_of_cap, peak_mbps,
+    # peak_share_of_cap, total_mb}
+    buckets: dict[str, dict[str, dict[str, float]]] = field(default_factory=dict)
+    offenders: list[str] = field(default_factory=list)
+    warnings: list[str] = field(default_factory=list)
+    note: str = ""
+
+
+def link_interference(
+    attribution: "CaptureAttribution",
+    apps: Iterable[str],
+    cap_mbps: float,
+    budget_fraction: float = _INTERFERENCE_BUDGET,
+    warn_fraction: float = _INTERFERENCE_WARN_FRACTION,
+    min_bins: int = _INTERFERENCE_MIN_BINS,
+) -> LinkInterference:
+    """Judge whether traffic that was not the app's competed with it.
+
+    Reads `attribution.nonapp_mbps` against the per-app series, both of which
+    are on the same bin grid and the same capture `t0`, so "at the same time"
+    is a bin index rather than a clock comparison across two time bases.
+    """
+    apps = [a for a in apps]
+    res = LinkInterference(
+        budget_fraction=budget_fraction,
+        warn_fraction=warn_fraction,
+        min_bins=min_bins,
+        cap_mbps=cap_mbps,
+    )
+    if cap_mbps <= 0 or not attribution.nbins:
+        res.note = "no shaped capacity or no capture to judge"
+        return res
+
+    bin_s = attribution.bin_s or 1.0
+    active: set[int] = set()
+    for app in apps:
+        for direction in ("download", "upload"):
+            at = attribution.traffic(app, direction)
+            if not at or not at.mbps:
+                continue
+            active.update(i for i, v in enumerate(at.mbps) if v > _IDLE_MBPS)
+
+    probes = set(attribution.probe_ips)
+    # Peaks are reported whether or not there is an app window, because a run
+    # in which the app never moved a byte is exactly the run where knowing what
+    # DID use the link matters most.
+    for bucket, dirs in attribution.nonapp_mbps.items():
+        if bucket in probes:
+            continue
+        per_dir: dict[str, dict[str, float]] = {}
+        for direction, series in dirs.items():
+            if not series:
+                continue
+            peak = max(series)
+            peak_share = peak / cap_mbps
+            in_window = sum(series[i] for i in active if i < len(series))
+            share = in_window / (cap_mbps * len(active)) if active else 0.0
+            # Bins inside the app's window in which this bucket alone took more
+            # than the budget share of the cap. Counted, not averaged.
+            contended = sorted(
+                i
+                for i in active
+                if i < len(series) and series[i] > budget_fraction * cap_mbps
+            )
+            per_dir[direction] = {
+                "in_window_mb": round(in_window * bin_s / 8, 4),
+                "in_window_share_of_cap": round(share, 4),
+                "in_window_contended_bins": len(contended),
+                "in_window_peak_mbps": round(
+                    max((series[i] for i in active if i < len(series)), default=0.0),
+                    3,
+                ),
+                "peak_mbps": round(peak, 3),
+                "peak_share_of_cap": round(peak_share, 4),
+                "total_mb": round(sum(series) * bin_s / 8, 4),
+            }
+            if len(contended) >= min_bins:
+                worst = max(series[i] for i in contended)
+                res.offenders.append(
+                    f"{bucket}/{direction} took more than "
+                    f"{budget_fraction * 100:.0f}% of the {cap_mbps:g} Mbps cap "
+                    f"in {len(contended)} bins inside the app's measured window "
+                    f"(worst {worst:.2f} Mbps at t={contended[0] * bin_s:g}"
+                    f"..{(contended[-1] + 1) * bin_s:g} s), limit "
+                    f"{min_bins} bins"
+                )
+            if peak_share > warn_fraction:
+                res.warnings.append(
+                    f"{bucket}/{direction} peaked at {peak:.2f} Mbps "
+                    f"({peak_share * 100:.0f}% of the {cap_mbps:g} Mbps cap) "
+                    f"somewhere in the capture"
+                )
+        if per_dir:
+            res.buckets[bucket] = per_dir
+
+    if not active:
+        res.note = (
+            "no app bin carried more than "
+            f"{_IDLE_MBPS} Mbps, so there is no measured window to protect; "
+            "peaks below are reported but nothing was judged against a window"
+        )
+        return res
+
+    res.checked = True
+    res.app_active_bins = len(active)
+    res.app_window_s = [
+        round(min(active) * bin_s, 2),
+        round((max(active) + 1) * bin_s, 2),
+    ]
+    res.ok = not res.offenders
     return res
 
 
@@ -4787,6 +4992,18 @@ def run_direct(cfg: ExperimentConfig) -> dict[str, Any]:
         for bucket, mb in list(attribution.bucket_mb.items())[:6]:
             print(f"      {bucket:16s} {mb:9.2f} MB")
 
+    # Did anything but the app use the shaped link, and did it do so while the
+    # app was being measured? Computed here, reported in the record, and -- if
+    # it landed inside the window -- raised below, after the artifacts are on
+    # disk.
+    interference = link_interference(attribution, apps, cfg.bandwidth_mbps)
+    for line in interference.warnings:
+        print(f"    ! {line}")
+    for line in interference.offenders:
+        print(f"    ✗ {line}")
+    if interference.checked and not interference.warnings and interference.ok:
+        print("    · link interference: none above budget")
+
     # One pcap per app, so a concurrent run ships a capture per application
     # rather than one shared file plus attribution metadata.
     if concurrent:
@@ -4974,6 +5191,9 @@ def run_direct(cfg: ExperimentConfig) -> dict[str, Any]:
         # fill them from the capture that is already on disk.
         "analysis_deferred": bool(DEFER_ANALYSIS),
         "capture_buckets_mb": attribution.bucket_mb,
+        # What used the shaped link besides the app, and whether any of it
+        # overlapped the window the app's numbers were taken from.
+        "link_interference": asdict(interference),
         "capture_top_hosts_bytes": attribution.host_bytes,
         "shaping_applied": shape.get("bottleneck_state", shape),
         "per_app": per_app,
@@ -5010,6 +5230,22 @@ def run_direct(cfg: ExperimentConfig) -> dict[str, Any]:
             f"{net.avg_throughput_mbps:.2f} Mbps > {cfg.bandwidth_mbps:g} Mbps "
             f"+{int(SHAPING_TOLERANCE * 100)}%. Not trusting this run. "
             f"Artifacts were still saved to {run_dir}."
+        )
+
+    # Same contract as the shaping abort above: the record, the pcap and the
+    # plots are already written, because a run that failed this check is the
+    # evidence for diagnosing it.
+    if STRICT_LINK_INTERFERENCE and interference.checked and not interference.ok:
+        record["link_interference_failed"] = True
+        _write_record(record, run_dir)
+        print(f"  ✓ saved → {run_dir} (flagged: link interference)")
+        raise RuntimeError(
+            f"Link interference for {cfg.slug}: "
+            + "; ".join(interference.offenders)
+            + f". The app's numbers were taken off a link it did not have to "
+            f"itself, so they are not a measurement of the configured "
+            f"{cfg.bandwidth_mbps:g} Mbps bottleneck. Artifacts were still "
+            f"saved to {run_dir}."
         )
 
     _write_record(record, run_dir)
@@ -5463,6 +5699,9 @@ __all__ = [
     "RESULTS_ROOT",
     "SHAPING_TOLERANCE",
     "STRICT_SHAPING",
+    "STRICT_LINK_INTERFERENCE",
+    "LinkInterference",
+    "link_interference",
     "CAPTURE_OVERHEAD_S",
     "APP_REGISTRY",
     "BROWSER_INFRA_DOMAINS",
