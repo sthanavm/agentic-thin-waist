@@ -1072,14 +1072,63 @@ const done = arguments[arguments.length - 1];
 (async () => {
     const pcs = Array.from(new Set(window.__netgentPeerConnections || []));
     const inbound = [];
+    // The ICE candidate pair actually carrying media. The room URL names a web
+    // server, not the media path: ICE negotiates its own address, and in our
+    // namespace topology that is routinely a different (RFC1918) address. Per-app
+    // capture attribution needs the negotiated one, so report it per sample.
+    const selectedPairs = [];
 
     for (let pcIndex = 0; pcIndex < pcs.length; pcIndex += 1) {
         const pc = pcs[pcIndex];
         const report = await pc.getStats();
         const codecs = {};
+        const byId = {};
         report.forEach(stat => {
+            byId[stat.id] = stat;
             if (stat.type === 'codec') codecs[stat.id] = stat.mimeType || null;
         });
+
+        // `transport.selectedCandidatePairId` is the authoritative pointer.
+        let pairId = null;
+        report.forEach(stat => {
+            if (stat.type === 'transport' && stat.selectedCandidatePairId) {
+                pairId = stat.selectedCandidatePairId;
+            }
+        });
+        let pair = pairId ? byId[pairId] : null;
+        if (!pair) {
+            // No transport pointer (older stats implementations): fall back to
+            // the nominated succeeded pair, busiest first.
+            report.forEach(stat => {
+                if (stat.type !== 'candidate-pair') return;
+                if (stat.state !== 'succeeded') return;
+                if (!stat.nominated && !stat.selected) return;
+                if (!pair || (stat.bytesReceived || 0) > (pair.bytesReceived || 0)) {
+                    pair = stat;
+                }
+            });
+        }
+        if (pair) {
+            const remote = byId[pair.remoteCandidateId] || {};
+            const local = byId[pair.localCandidateId] || {};
+            selectedPairs.push({
+                peer_connection_index: pcIndex,
+                bytes_received: pair.bytesReceived || 0,
+                bytes_sent: pair.bytesSent || 0,
+                // `address` is the modern field; `ip` is the deprecated alias.
+                // Either may be an mDNS "<uuid>.local" name rather than an
+                // address, so the consumer must validate before trusting it.
+                remote_address: remote.address || remote.ip || null,
+                remote_port: remote.port ?? null,
+                remote_candidate_type: remote.candidateType || null,
+                local_address: local.address || local.ip || null,
+                local_port: local.port ?? null,
+                local_candidate_type: local.candidateType || null,
+                protocol: pair.protocol || remote.protocol || null,
+                current_round_trip_time_seconds: pair.currentRoundTripTime ?? null,
+            });
+        }
+
         report.forEach(stat => {
             const mediaKind = stat.kind || stat.mediaType;
             if (stat.type !== 'inbound-rtp' || mediaKind !== 'video' || stat.isRemote) {
@@ -1127,6 +1176,12 @@ const done = arguments[arguments.length - 1];
         null,
     );
     const sum = field => active.reduce((total, stream) => total + (stream[field] || 0), 0);
+    // One pair per peer connection; the busiest is the one carrying the call.
+    const primaryPair = selectedPairs.reduce(
+        (best, candidatePair) => !best || candidatePair.bytes_received > best.bytes_received
+            ? candidatePair : best,
+        null,
+    );
 
     done({
         platform: platform,
@@ -1162,6 +1217,13 @@ const done = arguments[arguments.length - 1];
         resolution: primary ? `${primary.frame_width}x${primary.frame_height}` : '0x0',
         codecs: Array.from(new Set(active.map(stream => stream.codec).filter(Boolean))),
         inbound_streams: active,
+        selected_candidate_pairs: selectedPairs,
+        selected_remote_address: primaryPair ? primaryPair.remote_address : null,
+        selected_remote_port: primaryPair ? primaryPair.remote_port : null,
+        selected_remote_candidate_type: primaryPair
+            ? primaryPair.remote_candidate_type : null,
+        selected_local_address: primaryPair ? primaryPair.local_address : null,
+        ice_protocol: primaryPair ? primaryPair.protocol : null,
     });
 })().catch(error => done({
     platform: platform,

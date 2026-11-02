@@ -316,7 +316,19 @@ def build_run(run_dir: Path, out_root: Path, meta_env: dict, app: str | None = N
         # 198.189.66.13 was adopted to youtube in one pass and to vimeo in the
         # next. With all apps present it has to choose between them, and the
         # per-app IP sets stay disjoint as the attributor intends.
-        at = H.attribute_capture(pcap, list(run_apps) or [app], cap)
+        # Declared locality, matching the run itself. Without it a release
+        # rebuild re-attributes by inference and would disagree with the run's
+        # own record whenever an endpoint was RFC1918.
+        at = H.attribute_capture(
+            pcap,
+            list(run_apps) or [app],
+            cap,
+            app_endpoint_ips=H.merge_endpoint_ips(
+                H.app_endpoint_ips_from_url_map(cfg.get("app_urls")),
+                H.app_endpoint_ips_from_webrtc_stats(run_dir, list(run_apps) or [app]),
+            ),
+            client_ips=H.client_ips_for_capture(),
+        )
         t0 = at.t0_epoch or w0
         lo = max(0, int(math.floor(w0 - t0)))
         hi = max(lo + 1, int(math.ceil(w1 - t0)))

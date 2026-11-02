@@ -1,5 +1,7 @@
+import json
 import os
 import re
+import shutil
 import subprocess
 import threading
 import time
@@ -10,6 +12,11 @@ from typing import Annotated, Dict, List, Literal, Optional
 from fastapi import FastAPI, HTTPException, Header
 from pydantic import BaseModel, Field
 from starlette.responses import FileResponse
+
+# The IRTT probe endpoint is defined once in `substrate.probes` and attached
+# below; `ACTIVE_IRTT` is re-exported because it is this profile's live probe
+# registry, shared by reference rather than copied.
+from substrate.probes import ACTIVE_IRTT, register_irtt_routes
 
 # =========================
 # Global variables
@@ -1239,6 +1246,16 @@ def delete_replay(replay_id: str):
     del ACTIVE_REPLAYS[replay_id]
 
     return {"replay_id": replay_id, "status": "stopped"}
+
+
+# ═════════════════════════════════════════════════════════════════════════════
+#  IRTT — isochronous UDP round-trip probe, server in ns2, client in ns1
+#
+#  Defined once in `substrate.probes` and attached here, because all three
+#  worker profiles need the identical endpoint. See that module for the
+#  lifecycle and why the probe can run concurrently with a browser app.
+# ═════════════════════════════════════════════════════════════════════════════
+register_irtt_routes(app)
 
 
 def _sysctl_get_cca(ns: Optional[str]) -> str:

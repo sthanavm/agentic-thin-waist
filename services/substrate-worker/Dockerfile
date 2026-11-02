@@ -27,6 +27,17 @@ COPY --from=ghcr.io/astral-sh/uv:latest /uv /uvx /bin/
 ENV DEBIAN_FRONTEND=noninteractive
 ENV UV_PROJECT_ENVIRONMENT=/opt/substrate-worker-venv
 
+# irtt (isochronous UDP round-trip probe, serves POST /irtt) is version-pinned
+# deliberately: the probe's own send timing IS the measurement, so a bump that
+# changed its scheduler or its JSON schema would silently change the numbers.
+#
+# 0.9.1-1 is what this base image's suite (Ubuntu 26.04 "resolute", universe)
+# carries. Note that the base is `browserless/chromium:latest`, which is NOT
+# pinned and has already moved 24.04 -> 26.04, so this pin is only as stable as
+# that tag. When the base moves again the build FAILS here with "Version ... was
+# not found" rather than silently installing a different probe, which is the
+# intended behaviour: re-pin deliberately and re-check the JSON schema.
+# Verified: 0.9.1 emits json format version 1, the same as 0.9.0 on the host.
 RUN apt-get update && apt-get install -y \
     python3 python-is-python3 \
     tshark iputils-ping iproute2 \
@@ -34,6 +45,7 @@ RUN apt-get update && apt-get install -y \
     curl wget iptables byobu nano \
     speedtest-cli tcpreplay \
     python3-flask python3-requests \
+    irtt=0.9.1-1 \
     sudo util-linux kmod \
     gcc libc6-dev \
     && rm -rf /var/lib/apt/lists/*

@@ -208,6 +208,48 @@ def test_gvt1_ggc_host_is_browser_infra_not_youtube():
     )
 
 
+def test_chromedriver_download_is_browser_infra_not_other():
+    """`googlechromelabs.github.io` is where Selenium Manager fetches the driver.
+
+    Measured on the archived `webrtc_peer` capture (peer on 10.200.15.104):
+    5 481 654 bytes over TCP 443 from 185.199.109.153, t=0.06..4.69 s at the
+    full 10 Mbps cap -- 74.9% of every byte in the pcap. Left in `other` it
+    made that run report 24.09% of its bytes attributed; classified here the
+    same capture reports 99.46%, with the app's own figures unchanged
+    (1.663 MB / 1488 packets either way).
+    """
+    assert H.classify_host("googlechromelabs.github.io", ["webrtc_peer"]) == (
+        "browser_infra"
+    )
+
+
+def test_chrome_background_channels_are_browser_infra():
+    """Push channel and new-tab/connectivity traffic, held open all session."""
+    for host in ("mtalk.google.com", "www.google.com"):
+        assert H.classify_host(host, ["youtube"]) == "browser_infra", host
+
+
+def test_a_lookalike_of_the_driver_host_is_not_claimed():
+    """Suffix matching is exact-or-subdomain, so a lookalike must not match."""
+    for host in (
+        "evil-googlechromelabs.github.io",
+        "googlechromelabs.github.io.attacker.net",
+        "google.com",
+    ):
+        assert H.classify_host(host, ["youtube"]) == "other", host
+
+
+def test_a_subdomain_of_a_browser_infra_host_still_matches():
+    assert H.classify_host("x.mtalk.google.com", ["youtube"]) == "browser_infra"
+
+
+def test_an_app_still_wins_over_browser_infra():
+    """Apps are resolved first, so widening browser_infra cannot steal media."""
+    assert (
+        H.classify_host("rr2---sn-jxopj-n5oe.googlevideo.com", ["youtube"]) == "youtube"
+    )
+
+
 def test_media_suffixes_match_the_collector_ledger():
     """R4 compares bytes counted with both lists, so they must not drift."""
     src = (
