@@ -1,10 +1,12 @@
-"""All three worker profiles must expose the same /irtt endpoint.
+"""All three worker profiles must expose the same probe endpoints.
 
 The probe used to be a 276-line block copied verbatim into `main`, `main_local`
 and `main_aws`. The profiles genuinely differ in how they *shape* (WAN-interface
 detection, qtrace polling), so they cannot simply be merged -- but the probe
 does not differ at all, and three hand-kept copies drift. It now lives once in
-`substrate.probes` and is attached by `register_irtt_routes`.
+`substrate.probes` and is attached by `register_irtt_routes`. NetVibe
+arrived the same way -- 349 lines copied into all three profiles -- and is
+now attached by `register_netvibe_routes`, so both are checked here.
 
 These tests fail if a profile stops registering the endpoint, if the routes
 disagree, or if the shared probe registry is copied instead of shared -- the
@@ -17,6 +19,20 @@ import pytest
 
 PROFILES = ("substrate.main", "substrate.main_local", "substrate.main_aws")
 
+# probe route prefix -> the routes every profile must expose for it
+PROBES = {
+    "/irtt": [
+        ("DELETE", "/irtt/{irtt_id}"),
+        ("GET", "/irtt/{irtt_id}"),
+        ("POST", "/irtt"),
+    ],
+    "/netvibe": [
+        ("DELETE", "/netvibe/{netvibe_id}"),
+        ("GET", "/netvibe/{netvibe_id}"),
+        ("POST", "/netvibe"),
+    ],
+}
+
 
 def _load(name):
     with patch(
@@ -25,28 +41,23 @@ def _load(name):
         return __import__(name, fromlist=["*"])
 
 
-def _irtt_routes(mod):
+def _probe_routes(mod, prefix):
     return sorted(
         (sorted(r.methods - {"HEAD", "OPTIONS"})[0], r.path)
         for r in mod.app.routes
-        if getattr(r, "methods", None) and "/irtt" in r.path
+        if getattr(r, "methods", None) and r.path.startswith(prefix)
     )
 
 
-EXPECTED = [
-    ("DELETE", "/irtt/{irtt_id}"),
-    ("GET", "/irtt/{irtt_id}"),
-    ("POST", "/irtt"),
-]
-
-
+@pytest.mark.parametrize("prefix", sorted(PROBES))
 @pytest.mark.parametrize("name", PROFILES)
-def test_every_profile_registers_the_probe(name):
-    assert _irtt_routes(_load(name)) == EXPECTED
+def test_every_profile_registers_the_probe(name, prefix):
+    assert _probe_routes(_load(name), prefix) == PROBES[prefix]
 
 
-def test_profiles_agree_on_the_routes():
-    shapes = {name: _irtt_routes(_load(name)) for name in PROFILES}
+@pytest.mark.parametrize("prefix", sorted(PROBES))
+def test_profiles_agree_on_the_routes(prefix):
+    shapes = {n: _probe_routes(_load(n), prefix) for n in PROFILES}
     assert len(set(map(tuple, shapes.values()))) == 1, shapes
 
 
@@ -57,10 +68,12 @@ def test_profile_shares_the_probe_registry_rather_than_copying_it(name):
     # Shared by reference: a test (or a handler) that mutates the registry
     # through the profile must be mutating the one the endpoint actually reads.
     assert _load(name).ACTIVE_IRTT is probes.ACTIVE_IRTT
+    assert _load(name).ACTIVE_NETVIBE is probes.ACTIVE_NETVIBE
 
 
+@pytest.mark.parametrize("prefix", sorted(PROBES))
 @pytest.mark.parametrize("name", PROFILES)
-def test_profile_does_not_keep_its_own_copy_of_the_handlers(name):
+def test_profile_does_not_keep_its_own_copy_of_the_handlers(name, prefix):
     """The point of the extraction: no profile defines the probe itself.
 
     Asserted on the functions the routes are actually bound to, not on the
@@ -71,9 +84,9 @@ def test_profile_does_not_keep_its_own_copy_of_the_handlers(name):
     bound = {
         r.path: r.endpoint
         for r in mod.app.routes
-        if getattr(r, "methods", None) and "/irtt" in r.path
+        if getattr(r, "methods", None) and r.path.startswith(prefix)
     }
-    assert bound, f"{name} registered no /irtt routes at all"
+    assert bound, f"{name} registered no {prefix} routes at all"
     for path, fn in bound.items():
         assert fn.__module__ == "substrate.probes", (
             f"{name} serves {path} from {fn.__module__}; it should come from "
@@ -93,4 +106,20 @@ def test_response_models_are_attached():
     assert by_path[("POST", "/irtt")].response_model is probes.IrttResponse
     assert (
         by_path[("GET", "/irtt/{irtt_id}")].response_model is probes.IrttStatusResponse
+    )
+
+
+def test_netvibe_response_models_are_attached():
+    from substrate import probes
+
+    mod = _load("substrate.main")
+    by_path = {
+        (sorted(r.methods - {"HEAD", "OPTIONS"})[0], r.path): r
+        for r in mod.app.routes
+        if getattr(r, "methods", None) and r.path.startswith("/netvibe")
+    }
+    assert by_path[("POST", "/netvibe")].response_model is probes.NetvibeResponse
+    assert (
+        by_path[("GET", "/netvibe/{netvibe_id}")].response_model
+        is probes.NetvibeStatusResponse
     )
