@@ -1,0 +1,30 @@
+{
+ "url": "https://www.youtube.com/watch?v=dQw4w9WgXcQ&autoplay=1&mute=1",
+ "current": "large",
+ "levels": [
+  "hd2160",
+  "hd1440",
+  "hd1080",
+  "hd720",
+  "large",
+  "medium",
+  "small",
+  "tiny",
+  "auto"
+ ],
+ "ok": true,
+ "video_h": 480,
+ "video_w": 854,
+ "rendition_heights": [
+  2160,
+  1440,
+  1080,
+  720,
+  480,
+  360,
+  240,
+  144
+ ],
+ "max_rendition_p": 2160,
+ "has_1080p_plus": true
+}
