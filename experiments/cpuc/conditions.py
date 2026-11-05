@@ -411,3 +411,107 @@ def meet_plan(
             plans.append(RunPlan(MEET_APP, cond, rep, "app"))
             plans.append(RunPlan("", cond, rep, "ndt"))
     return plans
+
+
+# ── Teams: Stage 1 + Stage 2, deduped, three RTTs (Sthanav's build) ─────────
+# The plan doc's full conferencing design (not the simplified single-sweep Meet
+# used above): Stage 1 runs IQB's own min/high corners with loss, Stage 2 sweeps
+# below the minimum with no induced loss. RTTs are IQB's two conferencing
+# latencies (50 ms min, 20 ms high) plus 100 ms, added on top of the plan doc's
+# original two-RTT Stage 1 table -- same three-RTT treatment meet_plan() already
+# gives Meet via its `rtt_ms` parameter, just run at all three at once here
+# instead of one invocation per RTT.
+TEAMS_APP = "teams"
+TEAMS_RTTS_MS = (20.0, 50.0, 100.0)
+# Plan doc Stage 2 conferencing rates (4, 6, 8 Mb/s) plus 25 Mb/s as the
+# Stage 2 reference point, symmetric, highest first.
+TEAMS_STAGE2_RATES_MBPS = (25.0, 8.0, 6.0, 4.0)
+
+
+def stage1_conferencing_conditions(
+    rtts: tuple[float, ...] = TEAMS_RTTS_MS,
+) -> list[Condition]:
+    """Stage 1 conferencing: 2 rates x len(rtts) RTTs x 2 loss modes.
+
+    Corners and the loss pairing are IQB_VIDEO_CONFERENCING's two rows --
+    25/25 Mb/s at the min-corner loss (0.5%), 100/100 Mb/s at the high-corner
+    loss (0.1%) -- the same assumption `stage1_streaming_conditions` makes for
+    streaming: loss follows the rate corner, flagged there and here as an
+    assumption, not a fact from the plan doc.
+    """
+    corners = [
+        (25.0, 25.0, IQB_VIDEO_CONFERENCING["loss_min_pct"]),
+        (100.0, 100.0, IQB_VIDEO_CONFERENCING["loss_high_pct"]),
+    ]
+    out: list[Condition] = []
+    for down, up, iqb_loss in corners:
+        for rtt in rtts:
+            out.append(Condition(down, up, rtt, 0.0, "none", label="stage1_noloss"))
+            out.append(
+                Condition(down, up, rtt, iqb_loss, "iqb", label="stage1_iqbloss")
+            )
+    return out
+
+
+def stage2_conferencing_conditions(
+    rates: tuple[float, ...] = TEAMS_STAGE2_RATES_MBPS,
+    rtts: tuple[float, ...] = TEAMS_RTTS_MS,
+) -> list[Condition]:
+    """Stage 2 conferencing: below-minimum rates x RTTs, no induced loss.
+
+    Generalizes `meet_conditions` (one RTT per call) to the full RTT set this
+    build sweeps, so Stage 2 can cover all three latencies from one call.
+    """
+    return [
+        Condition(r, r, rtt, 0.0, "none", label="stage2_sweep")
+        for rtt in rtts
+        for r in rates
+    ]
+
+
+def _is_teams_reference(cond: Condition) -> bool:
+    """Does this condition coincide with the plan doc's reference (100/100,
+    no loss)? The reference is not a separate run -- see `teams_plan`."""
+    return (
+        cond.rate_down_mbps == MEET_REFERENCE.rate_down_mbps
+        and cond.rate_up_mbps == MEET_REFERENCE.rate_up_mbps
+        and cond.loss_mode == "none"
+    )
+
+
+def teams_plan(
+    rates: tuple[float, ...] = TEAMS_STAGE2_RATES_MBPS,
+    rtts: tuple[float, ...] = TEAMS_RTTS_MS,
+    reps: int = 1,
+) -> list[RunPlan]:
+    """Stage 1 + Stage 2 conferencing for Teams, deduped, one Teams run and one
+    NDT run per condition and rep.
+
+    DEDUPE: Stage 1's 100/100 Mb/s no-loss corner is the same network state as
+    the plan doc's reference run (100 Mb/s, each RTT) at every RTT in `rtts`,
+    and Stage 1's 25/25 Mb/s no-loss corner is the same state as Stage 2's
+    25 Mb/s reference point at every RTT. Both are written once: a condition is
+    deduped by `slug()`, which already encodes rate/RTT/loss, so two Condition
+    objects describing the same physical link collapse to one entry regardless
+    of which stage produced them. This means NO separate reference run is
+    scheduled -- the 100/100 Mb/s no-loss conditions are simply flagged
+    `is_reference=True` in place, which is what keeps the total at 21 unique
+    conditions (not 21 + 3 extra reference runs).
+    """
+    seen: dict[str, Condition] = {}
+    for cond in (
+        *stage1_conferencing_conditions(rtts),
+        *stage2_conferencing_conditions(rates, rtts),
+    ):
+        seen.setdefault(cond.slug(), cond)
+    conditions = sorted(
+        seen.values(), key=lambda c: (-c.rate_down_mbps, c.rtt_ms, c.loss_pct)
+    )
+
+    plans: list[RunPlan] = []
+    for rep in range(1, reps + 1):
+        for cond in conditions:
+            is_ref = _is_teams_reference(cond)
+            plans.append(RunPlan(TEAMS_APP, cond, rep, "app", is_reference=is_ref))
+            plans.append(RunPlan("", cond, rep, "ndt", is_reference=is_ref))
+    return plans
