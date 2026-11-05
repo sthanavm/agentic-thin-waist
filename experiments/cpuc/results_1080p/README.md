@@ -36,6 +36,18 @@ All three runs valid; the element box was verified at 1920x1080 in every row
 before the result was accepted. 720p in 60 of 60 samples at every point, with
 no rebuffering anywhere.
 
+## Charts
+
+| chart | what it shows |
+|---|---|
+| `viewport_vs_rendition.png` | the element the player was given (1920x1080) against the rendition it served (720p), with the main sweep's 749px element and its identical 720p on the same axes. The box grew 44% in height and the rendition did not move. |
+| `optimal_vs_served.png` | the player's own "optimal" for this viewport (1080p) against what it served (720p), with the gap shaded. Optimal tracks the viewport, so the player noticed the bigger element and declined to use it. |
+| `dropped_frames.png` | the decode evidence: 11.8-16.1% of frames dropped at 720p. Dropped frames rise with capacity, because more headroom means a higher-bitrate 720p stream and more decode work per frame -- not less. |
+
+A resolution-vs-bandwidth line is deliberately not among them: all three points
+delivered 720p, so that chart would be a flat line carrying no information.
+Each chart marks IQB's 25 Mb/s minimum.
+
 ## What this shows
 
 **The 720p ceiling is not the viewport, and it is not the link.** With a
@@ -69,6 +81,6 @@ in the main sweep. That makes those rows conservative, not optimistic.
 | file | what it is |
 |---|---|
 | `supp1080_runs.csv` | one row per run, with the measured element box, the player's serving/optimal pair, codec and dropped-frame counts |
-| `run.log.txt` | the batch log. Named `.txt` because the repo's .gitignore excludes `*.log`; the manifests list it under its original name `run.log` and its sha256 is unchanged |
+| `run.log` | the batch log |
 | `COMPLETE` | end-of-batch marker with the delivered resolution per point |
 | `manifest.remote.txt` / `manifest.local.txt` | sha256 of every file on vm4 and after transfer; 3 files, 3 matched, 0 missing, 0 mismatched |

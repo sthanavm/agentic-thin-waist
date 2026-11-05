@@ -19,6 +19,7 @@ import matplotlib
 
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt  # noqa: E402
+import matplotlib.ticker as ticker  # noqa: E402
 
 # Tiers, worst to best, so "higher on the chart is better" holds on both axes.
 QOE_TIERS = ["unusable", "acceptable", "high"]
@@ -45,6 +46,10 @@ def _logx(ax, xs) -> None:
     ax.set_xscale("log")
     ax.set_xticks(xs)
     ax.set_xticklabels([f"{x:g}" for x in xs])
+    # Matplotlib keeps labelling log MINOR ticks ("6 x 10^0") underneath the
+    # rate labels set above, which collide with them whenever the points are
+    # few or close together. The majors are the rates we actually ran.
+    ax.xaxis.set_minor_formatter(ticker.NullFormatter())
     ax.grid(alpha=0.25, which="both")
 
 
@@ -100,6 +105,7 @@ def contrast(rows, path, iqb_min, rate_key, iqb_key, title):
     )
 
     # Ring the disagreements: IQB fails, QoE high.
+    ring = 0
     for x, q, i in zip(xs, qoe, iqb):
         if q == 2 and i == 0:
             ax.scatter(
@@ -111,13 +117,20 @@ def contrast(rows, path, iqb_min, rate_key, iqb_key, title):
                 lw=3,
                 zorder=4,
             )
-            # Nudge the callout off the threshold line when the point sits
-            # on top of it, so the text stays readable at slide size.
+            # Two readability problems at slide size, and fixing one by
+            # itself causes the other. Adjacent ringed points are close
+            # enough on a log axis that their callouts overlap, so they
+            # alternate height; and a callout centred on a point that sits
+            # under the IQB line runs straight through it, so that one also
+            # shifts left. Shifting left alone pushed this label onto its
+            # neighbour, which is what the stagger is for.
             near = abs(math.log10(x) - math.log10(iqb_min)) < 0.08
+            dy = 26 if ring % 2 == 0 else 52
+            ring += 1
             ax.annotate(
                 "IQB fails,\nQoE high",
                 xy=(x, 2),
-                xytext=(-34 if near else 0, 26),
+                xytext=(-26 if near else 0, dy),
                 textcoords="offset points",
                 ha="right" if near else "center",
                 fontsize=8.5,
