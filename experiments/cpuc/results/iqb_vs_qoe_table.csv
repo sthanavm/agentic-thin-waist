@@ -1,9 +1,9 @@
-rate_down_mbps,is_reference,ndt_down_mbps,ndt_up_mbps,ndt_minrtt_ms,iqb_verdict,iqb_decided_by,iqb_verdict_download_only,resolution_p,rebuffer_events,rebuffer_ratio,startup_s,qoe_label,suspect,app_valid,shaper_avg_mbps,app_demand_mbps,app_peak_mbps,source_max_rendition_p,source_renditions
-100.0,True,91.2761470664619,9.529420479844646,22.7,fails minimum,upload,meets high,720.0,0.0,0.0,2.49,deferred,False,True,2.587,2.238,33.803,2160.0,"2160,1440,1080,720,480,360,240,144"
-25.0,False,23.21041096139601,9.263029392851859,22.826,fails minimum,download,fails minimum,720.0,0.0,0.0,3.014,high,False,True,2.498,2.318,22.927,2160.0,"2160,1440,1080,720,480,360,240,144"
-12.5,False,11.705417261672235,9.526436827709592,22.722,fails minimum,download,fails minimum,720.0,0.0,0.0,2.239,high,True,True,2.539,4.087,12.075,2160.0,"2160,1440,1080,720,480,360,240,144"
-6.25,False,5.844863078157761,9.5261102756683,23.246,fails minimum,download,fails minimum,720.0,0.0,0.0,4.067,high,True,True,2.399,3.346,6.256,2160.0,"2160,1440,1080,720,480,360,240,144"
-3.0,False,2.850725420949781,9.52016478701855,23.065,fails minimum,download,fails minimum,720.0,0.0,0.0,7.596,acceptable,True,True,2.333,2.09,3.009,2160.0,"2160,1440,1080,720,480,360,240,144"
-1.5,False,1.4297913898981762,9.512496524986371,23.283,fails minimum,download,fails minimum,240.0,0.0,0.0,14.004,unusable,True,True,1.354,1.156,1.501,2160.0,"2160,1440,1080,720,480,360,240,144"
-1.0,False,0.9552298934066588,9.526925810462302,22.948,fails minimum,download,fails minimum,240.0,1.0,0.16048,21.468,unusable,True,True,0.939,0.84,1.013,2160.0,"2160,1440,1080,720,480,360,240,144"
-0.5,False,0.4772195128995391,9.52379652813555,22.919,fails minimum,download,fails minimum,144.0,1.0,0.27447,38.895,unusable,True,True,0.493,0.398,0.509,2160.0,"2160,1440,1080,720,480,360,240,144"
+rate_down_mbps,rtt_configured_ms,is_reference,ndt_down_mbps,ndt_up_mbps,ndt_minrtt_ms,iqb_verdict,iqb_decided_by,iqb_verdict_download_only,resolution_p,rebuffer_events,rebuffer_ratio,startup_s,qoe_label,suspect,app_valid,shaper_avg_mbps,app_demand_mbps,app_peak_mbps,source_max_rendition_p,source_renditions
+100.0,20.0,True,91.2761470664619,9.529420479844646,22.7,fails minimum,upload,meets high,720.0,0.0,0.0,2.49,deferred,False,True,2.587,2.238,33.803,2160.0,"2160,1440,1080,720,480,360,240,144"
+25.0,20.0,False,23.21041096139601,9.263029392851859,22.826,fails minimum,download,fails minimum,720.0,0.0,0.0,3.014,high,False,True,2.498,2.318,22.927,2160.0,"2160,1440,1080,720,480,360,240,144"
+12.5,20.0,False,11.705417261672235,9.526436827709592,22.722,fails minimum,download,fails minimum,720.0,0.0,0.0,2.239,high,True,True,2.539,4.087,12.075,2160.0,"2160,1440,1080,720,480,360,240,144"
+6.25,20.0,False,5.844863078157761,9.5261102756683,23.246,fails minimum,download,fails minimum,720.0,0.0,0.0,4.067,high,True,True,2.399,3.346,6.256,2160.0,"2160,1440,1080,720,480,360,240,144"
+3.0,20.0,False,2.850725420949781,9.52016478701855,23.065,fails minimum,download,fails minimum,720.0,0.0,0.0,7.596,acceptable,True,True,2.333,2.09,3.009,2160.0,"2160,1440,1080,720,480,360,240,144"
+1.5,20.0,False,1.4297913898981762,9.512496524986371,23.283,fails minimum,download,fails minimum,240.0,0.0,0.0,14.004,unusable,True,True,1.354,1.156,1.501,2160.0,"2160,1440,1080,720,480,360,240,144"
+1.0,20.0,False,0.9552298934066588,9.526925810462302,22.948,fails minimum,download,fails minimum,240.0,1.0,0.16048,21.468,unusable,True,True,0.939,0.84,1.013,2160.0,"2160,1440,1080,720,480,360,240,144"
+0.5,20.0,False,0.4772195128995391,9.52379652813555,22.919,fails minimum,download,fails minimum,144.0,1.0,0.27447,38.895,unusable,True,True,0.493,0.398,0.509,2160.0,"2160,1440,1080,720,480,360,240,144"

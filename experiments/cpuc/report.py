@@ -120,7 +120,11 @@ def build_table(rows):
     """Join the app row and the NDT row for each bandwidth point."""
     apps, ndts = {}, {}
     for r in rows:
-        key = _f(r.get("rate_down"))
+        # Keyed by (capacity, configured RTT). Keying on capacity alone was
+        # safe only while every run was 20 ms; once a second latency is
+        # appended to the same CSV, a 50 ms row would silently overwrite the
+        # 20 ms row at the same capacity and the table would mix regimes.
+        key = (_f(r.get("rate_down")), _f(r.get("rtt")))
         if r.get("run_type") == "app":
             # keep the last valid attempt per point
             if r.get("valid") in ("True", "true", "1") or key not in apps:
@@ -129,14 +133,16 @@ def build_table(rows):
             if r.get("valid") in ("True", "true", "1") or key not in ndts:
                 ndts[key] = r
     out = []
-    for rate in sorted(set(apps) | set(ndts), reverse=True):
-        a, n = apps.get(rate, {}), ndts.get(rate, {})
+    for key in sorted(set(apps) | set(ndts), key=lambda k: (k[1] or 0, -(k[0] or 0))):
+        rate, rtt_cfg = key
+        a, n = apps.get(key, {}), ndts.get(key, {})
         dl, ul = _f(n.get("ndt_down")), _f(n.get("ndt_up"))
         lat = _f(n.get("ndt_minrtt"))
         verdict, which = iqb_verdict(dl, ul, lat)
         out.append(
             {
                 "rate_down_mbps": rate,
+                "rtt_configured_ms": rtt_cfg,
                 "is_reference": a.get("is_reference") in ("True", "true", "1"),
                 "ndt_down_mbps": dl,
                 "ndt_up_mbps": ul,
@@ -170,21 +176,53 @@ def build_table(rows):
     return out
 
 
+def latency_caption(table) -> str:
+    """ "20 ms set, 22.6-23.3 ms measured" -- both numbers, from the data.
+
+    Jaber asked for the configured and the measured RTT together wherever
+    latency appears. A chart title that says only "20 ms" is a statement
+    about the shaper; what the speed test saw on the same link is the one a
+    reader can check, and the two are not equal (netem adds its delay on top
+    of the real path).
+    """
+    cfg = sorted({r["rtt_configured_ms"] for r in table if r.get("rtt_configured_ms")})
+    meas = [r["ndt_minrtt_ms"] for r in table if r.get("ndt_minrtt_ms")]
+    if not cfg:
+        return "no induced loss"
+    setpart = ", ".join(f"{c:g}" for c in cfg) + " ms set"
+    if not meas:
+        return f"{setpart}, no loss"
+    lo, hi = min(meas), max(meas)
+    span = f"{lo:.1f} ms" if abs(hi - lo) < 0.05 else f"{lo:.1f}-{hi:.1f} ms"
+    return f"{setpart}, {span} measured, no loss"
+
+
 def markdown_table(table):
     hdr = (
-        "| down Mb/s | NDT down | IQB (download) | IQB (all legs) | "
-        "source offers | resolution chosen | rebuffers | startup | QoE |\n"
-        "|---|---|---|---|---|---|---|---|---|\n"
+        "| down Mb/s | RTT set | RTT measured | NDT down | IQB (download) "
+        "| IQB (all legs) | source offers | resolution chosen | rebuffers "
+        "| startup | QoE |\n"
+        "|---|---|---|---|---|---|---|---|---|---|---|\n"
     )
     lines = []
     for t in table:
         tag = " *(ref)*" if t["is_reference"] else ""
         sus = " ⚠" if t["suspect"] else ""
         lines.append(
-            "| {r:g}{tag} | {dl} | {vd} | {v} ({by}) | {src} | {res} | {reb} | "
-            "{su} | {q}{sus} |".format(
+            "| {r:g}{tag} | {rset} | {rmeas} | {dl} | {vd} | {v} ({by}) "
+            "| {src} | {res} | {reb} | {su} | {q}{sus} |".format(
                 r=t["rate_down_mbps"],
                 tag=tag,
+                rset=(
+                    f"{t['rtt_configured_ms']:g} ms"
+                    if t.get("rtt_configured_ms") is not None
+                    else "—"
+                ),
+                rmeas=(
+                    f"{t['ndt_minrtt_ms']:.1f} ms"
+                    if t.get("ndt_minrtt_ms") is not None
+                    else "—"
+                ),
                 dl=(
                     f"{t['ndt_down_mbps']:.2f}"
                     if t["ndt_down_mbps"] is not None
@@ -325,7 +363,7 @@ def plot(table, path):
     h2, l2 = ax2.get_legend_handles_labels()
     ax1.legend(h1 + h2, l1 + l2, loc="lower right", fontsize=9)
     ax1.set_title(
-        "YouTube QoE against shaped capacity (auto quality, 20 ms RTT, no induced loss)"
+        f"YouTube QoE against shaped capacity (auto quality, {latency_caption(table)})"
     )
     fig.tight_layout()
     fig.savefig(path, dpi=150)
@@ -365,7 +403,7 @@ def main() -> int:
             DL_MIN,
             "rate_down_mbps",
             "iqb_verdict_download_only",
-            "IQB's verdict against measured YouTube QoE (20 ms RTT, no loss)",
+            f"IQB's verdict against measured YouTube QoE ({latency_caption(table)})",
         )
     )
     made.append(
