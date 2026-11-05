@@ -1,0 +1,10 @@
+{
+ "points": 3,
+ "valid": 3,
+ "viewport": "fullscreen, element 1920x1080",
+ "delivered": {
+  "25": "1280x720",
+  "12.5": "1280x720",
+  "6.25": "1280x720"
+ }
+}

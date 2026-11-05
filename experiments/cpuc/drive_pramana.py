@@ -50,6 +50,13 @@ COLLECTOR_SRC = os.environ.get(
 )
 PROBE_MARKER = "STREAM_PROBE_JS"
 
+# Per-app viewport, as {app: "WxH"} or {app: "fullscreen"}. None for every
+# normal run, so the main sweep's geometry is untouched. The 1080p-viewport
+# supplementary set sets it to fullscreen: the window is already 1920x1080,
+# but YouTube's watch layout leaves the player element 1331x749, and an
+# adaptive player sizes its rendition to that element.
+APP_WINDOW: dict | None = None
+
 
 class CollectorImageUnusable(RuntimeError):
     pass
@@ -108,6 +115,7 @@ def drive(
         duration_s=duration_s,
         trial=condition.trial_for(app),
         force_max_quality=FORCE_MAX_QUALITY,
+        app_window=APP_WINDOW,
     )
 
     restore = netns.install_shape_hook(H, condition.loss_pct, condition.rtt_ms)
