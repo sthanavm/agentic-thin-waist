@@ -409,6 +409,18 @@ def main() -> int:
     ap = argparse.ArgumentParser()
     ap.add_argument("--limit", type=int, default=0, help="stop after N plans (0 = all)")
     ap.add_argument("--extra", action="store_true", help="add 12.5 and 0.5 Mb/s")
+    ap.add_argument(
+        "--rates",
+        default="",
+        help="comma-separated capacities to run instead of the default set, "
+        "e.g. '1,0.5' to fill in the low end",
+    )
+    ap.add_argument(
+        "--skip-reference",
+        action="store_true",
+        help="do not re-run the reference; labels then resolve against the "
+        "reference row already in the CSV",
+    )
     ap.add_argument("--out-root", default="/home/student/cpuc_data/meet/runs")
     ap.add_argument("--csv", default="/home/student/cpuc_data/meet/cpuc_runs.csv")
     ap.add_argument("--marker", default="/home/student/cpuc_data/meet/COMPLETE")
@@ -428,8 +440,23 @@ def main() -> int:
     log(f"collector OK: {drive_pramana.REQUIRED_COLLECTOR_IMAGE}")
     log(f"room: {ROOM}")
 
-    rates = C.MEET_RATES_MBPS + (C.MEET_EXTRA_RATES_MBPS if args.extra else ())
+    if args.rates:
+        rates = tuple(float(x) for x in args.rates.split(",") if x.strip())
+    else:
+        rates = C.MEET_RATES_MBPS + (C.MEET_EXTRA_RATES_MBPS if args.extra else ())
     plans = C.meet_plan(rates=tuple(sorted(rates, reverse=True)))
+    if args.skip_reference:
+        # The reference is only needed to resolve labels, and a valid reference
+        # row already in the CSV serves that. Re-running it would cost a run of
+        # a finite meeting for a number we already have.
+        plans = [p for p in plans if not p.is_reference]
+        ref = meet_reference(args.csv)
+        if not ref:
+            ap.error(
+                "--skip-reference needs a reference row already in "
+                f"{args.csv}; none found, so labels could not resolve"
+            )
+        log(f"using existing reference from the CSV: {ref}")
     # ALL Meet runs first, then all NDT runs. The meeting has a finite life and
     # only the Meet runs need it: an NDT run measures the shaped link and would
     # happily run after the call has ended. Interleaving them would risk losing

@@ -4,4 +4,4 @@
 | 25 Mb/s | 23.28 | 23.54 | fails minimum (upload) | 720p | 23.9 | 0 (0.00%) | 2.15 | high ⚠ |
 | 6 Mb/s | 5.66 | 5.72 | fails minimum (download) | 720p | 23.0 | 0 (0.00%) | 1.78 | high ⚠ |
 | 3 Mb/s | 2.85 | 2.86 | fails minimum (download) | 720p | 22.7 | 2 (0.70%) | 1.56 | high ⚠ |
-| 1 Mb/s | 0.96 | 0.96 | fails minimum (download) | — | — | — | 0.23 | not collected |
+| 1 Mb/s | 0.96 | 0.96 | fails minimum (download) | — | — | — | — | not collected |

@@ -25,6 +25,7 @@ import sys
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
+from cpuc import plots  # noqa: E402
 from cpuc.conditions import IQB_VIDEO_CONFERENCING as IQB  # noqa: E402
 
 DL_MIN, DL_HIGH = IQB["download_min_mbps"], IQB["download_high_mbps"]  # 10, 100
@@ -66,7 +67,7 @@ def iqb_verdict(dl, ul, lat):
 DEMAND_SIDECAR = "/home/student/cpuc_data/meet/meet_demand.json"
 
 
-def load_demand(path: str = DEMAND_SIDECAR) -> dict:
+def load_demand(path: str | None = None) -> dict:
     """Meet's OWN throughput per capacity point, from run_direct's attribution.
 
     The row's `shaper_avg_mbps` is the whole shaped download direction, which
@@ -76,6 +77,7 @@ def load_demand(path: str = DEMAND_SIDECAR) -> dict:
     the link total as "what Meet demanded" overstates it by ~30%. This sidecar
     carries the per-app figure so the demand claim is about the application.
     """
+    path = path or DEMAND_SIDECAR
     try:
         with open(path) as fh:
             return json.load(fh)
@@ -140,10 +142,18 @@ def build_table(rows):
             or demand.get(str(t["rate_mbps_symmetric"]))
             or {}
         )
-        t["meet_demand_mbps"] = d.get("meet_avg_mbps")
-        t["meet_peak_mbps"] = d.get("meet_peak_mbps")
         t["browser_infra_mb"] = d.get("bucket_browser_infra_mb")
-        if not t["app_valid"]:
+        if t["app_valid"]:
+            t["meet_demand_mbps"] = d.get("meet_avg_mbps")
+            t["meet_peak_mbps"] = d.get("meet_peak_mbps")
+        else:
+            # A run that never established remote media still moved some
+            # bytes while it tried to join. Reporting those bytes as "what
+            # Meet demanded" would draw a demand curve that appears to scale
+            # gracefully down to 0.23 Mb/s, when in fact the call failed. If
+            # the QoE is not collected, neither is the demand.
+            t["meet_demand_mbps"] = None
+            t["meet_peak_mbps"] = None
             t["qoe_label"] = "not collected"
     for rate in EXPECTED_RATES:
         if rate not in seen:
@@ -419,9 +429,66 @@ def main() -> int:
         fh.write(text + "\n")
     png = plot(table, os.path.join(args.outdir, "meet_qoe_vs_bandwidth.png"))
 
+    # One chart per claim; see cpuc/plots.py.
+    made = [png]
+    made.append(
+        plots.contrast(
+            table,
+            os.path.join(args.outdir, "contrast_iqb_vs_qoe.png"),
+            BINDING_MIN,
+            "rate_mbps_symmetric",
+            "iqb_verdict",
+            "IQB's verdict against measured Meet QoE (20 ms RTT, no loss)",
+        )
+    )
+    made.append(
+        plots.demand_vs_capacity(
+            table,
+            os.path.join(args.outdir, "demand_vs_capacity.png"),
+            BINDING_MIN,
+            "rate_mbps_symmetric",
+            "meet_demand_mbps",
+            "Meet",
+            "What Meet actually used against what the link offered",
+            peak_key="meet_peak_mbps",
+        )
+    )
+    made.append(
+        plots.single_metric(
+            table,
+            os.path.join(args.outdir, "fps_vs_bandwidth.png"),
+            BINDING_MIN,
+            "rate_mbps_symmetric",
+            "fps",
+            "received frame rate (fps)",
+            "Frame rate against capacity",
+            colour="#2E7D32",
+        )
+    )
+    made.append(
+        plots.single_metric(
+            table,
+            os.path.join(args.outdir, "freezes_vs_bandwidth.png"),
+            BINDING_MIN,
+            "rate_mbps_symmetric",
+            "freeze_ratio",
+            "freeze time (% of call)",
+            "Freezing against capacity",
+            scale=100.0,
+            colour="#C62828",
+            thresholds=(
+                (1.0, "1% -- above this a call cannot be High", "--"),
+                (10.0, "10% -- above this a call is Unusable", "-."),
+            ),
+        )
+    )
+    made = [m for m in made if m]
+
     print(markdown_table(table))
     print("\nFINDING\n" + text)
-    print("\nwrote table.csv / table.md / finding.json / finding.txt / " + str(png))
+    print("\nwrote table.csv / table.md / finding.json / finding.txt")
+    for m in made:
+        print(f"       {m}")
     return 0
 
 
