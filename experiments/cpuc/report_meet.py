@@ -87,7 +87,7 @@ def load_demand(path: str | None = None) -> dict:
 
 # Points the matrix asked for, so a missing one is reported as NOT COLLECTED
 # rather than silently absent from the curve.
-EXPECTED_RATES = (100.0, 25.0, 6.0, 3.0, 1.0)
+EXPECTED_RATES = (100.0, 25.0, 6.0, 3.0, 1.0, 0.5)
 
 
 def build_table(rows):
@@ -154,7 +154,17 @@ def build_table(rows):
             # the QoE is not collected, neither is the demand.
             t["meet_demand_mbps"] = None
             t["meet_peak_mbps"] = None
-            t["qoe_label"] = "not collected"
+            # "Not collected" and "we ran it and no video ever arrived" are
+            # different claims, and only the second one is evidence about the
+            # link. A run that reached NoRemoteInboundMedia on every attempt
+            # IS a measurement: the call did not carry remote video at that
+            # capacity. Collapsing it into "not collected" would throw away
+            # the lowest point on the curve.
+            reason = t.get("invalid_reason") or ""
+            if "NoRemoteInboundMedia" in reason:
+                t["qoe_label"] = "no remote media"
+            else:
+                t["qoe_label"] = "not collected"
     for rate in EXPECTED_RATES:
         if rate not in seen:
             out.append(
@@ -321,19 +331,80 @@ def sentences(f, table=None):
             continue
         (cap_ltd if pk >= 0.95 * cap else demand_ltd).append(cap)
     if demand_ltd and cap_ltd:
-        s.append(
+        # Being capacity-limited and still looking good is the interesting
+        # claim, and it stops being true at the point where quality breaks.
+        # Splitting the capacity-limited points by their own label keeps the
+        # sentence from sweeping an unusable point into "still delivered
+        # reference quality".
+        good_cap = sorted(
+            (
+                r["rate_mbps_symmetric"]
+                for r in table
+                if r.get("meet_peak_mbps") is not None
+                and r.get("rate_mbps_symmetric")
+                and r.get("app_valid")
+                and r["meet_peak_mbps"] >= 0.95 * r["rate_mbps_symmetric"]
+                and r.get("qoe_label") == "high"
+            ),
+            reverse=True,
+        )
+        line = (
             "Meet was demand-limited at "
             + ", ".join(f"{c:g}" for c in sorted(demand_ltd, reverse=True))
             + " Mb/s, where its peak stayed well under the cap, but "
             "capacity-limited at "
             + ", ".join(f"{c:g}" for c in sorted(cap_ltd, reverse=True))
-            + " Mb/s, where its peak reached the cap and it still delivered "
-            "reference quality."
+            + " Mb/s, where its peak reached the cap"
         )
+        if good_cap:
+            line += (
+                " and it still delivered reference quality at "
+                + ", ".join(f"{c:g}" for c in good_cap)
+                + " Mb/s."
+            )
+        else:
+            line += "."
+        s.append(line)
     elif demand_ltd:
         s.append(
             "Meet never reached the cap at any measured point, so it was "
             "demand-limited throughout."
+        )
+
+    # Where the call actually breaks. This is the question the low end was
+    # run to answer, so it is stated outright rather than left to the table.
+    broke = sorted(
+        (
+            r["rate_mbps_symmetric"]
+            for r in table
+            if r.get("qoe_label") == "unusable" and r.get("rate_mbps_symmetric")
+        ),
+        reverse=True,
+    )
+    nomedia = sorted(
+        (
+            r["rate_mbps_symmetric"]
+            for r in table
+            if r.get("qoe_label") == "no remote media" and r.get("rate_mbps_symmetric")
+        ),
+        reverse=True,
+    )
+    if broke:
+        line = f"Quality breaks between {lg:g} and {broke[0]:g} Mb/s: " if lg else ""
+        r1 = next(r for r in table if r["rate_mbps_symmetric"] == broke[0])
+        line += (
+            f"at {broke[0]:g} Mb/s the call fell to "
+            f"{r1['resolution_p']:.0f}p at {r1['fps']:.0f} fps with "
+            f"{r1['freeze_ratio'] * 100:.0f}% of the session frozen, which is "
+            "Unusable by the pre-registered thresholds."
+        )
+        s.append(line)
+    if nomedia:
+        s.append(
+            "At "
+            + ", ".join(f"{c:g}" for c in nomedia)
+            + " Mb/s no remote video arrived at all, in two attempts, so the "
+            "call did not carry video rather than carrying it badly."
         )
 
     missing = [
@@ -343,11 +414,7 @@ def sentences(f, table=None):
         s.append(
             "The "
             + ", ".join(f"{c:g}" for c in sorted(missing))
-            + " Mb/s point was NOT collected (the meeting ended before a valid "
-            "run completed), so the quality breakpoint is below "
-            f"{lg:g} Mb/s rather than at it."
-            if lg
-            else "points were not collected."
+            + " Mb/s point was not collected."
         )
     return " ".join(s)
 
