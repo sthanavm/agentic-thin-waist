@@ -93,7 +93,12 @@ EXPECTED_RATES = (100.0, 25.0, 6.0, 3.0, 1.0, 0.5)
 def build_table(rows):
     apps, ndts = {}, {}
     for r in rows:
-        key = _f(r.get("rate_down"))
+        # Keyed by (capacity, configured RTT). Keying on capacity alone was
+        # safe only while every run was 20 ms; once a second latency is
+        # appended to the same CSV, a 50 ms row would silently overwrite the
+        # 20 ms row at the same capacity and the table would mix regimes
+        # without saying so.
+        key = (_f(r.get("rate_down")), _f(r.get("rtt")))
         valid = r.get("valid") in ("True", "true", "1")
         if r.get("run_type") == "app":
             if valid or key not in apps:
@@ -102,8 +107,9 @@ def build_table(rows):
             if valid or key not in ndts:
                 ndts[key] = r
     out = []
-    for rate in sorted(set(apps) | set(ndts), reverse=True):
-        a, n = apps.get(rate, {}), ndts.get(rate, {})
+    for key in sorted(set(apps) | set(ndts), key=lambda k: (k[1] or 0, -(k[0] or 0))):
+        rate, rtt_cfg = key
+        a, n = apps.get(key, {}), ndts.get(key, {})
         dl, ul, lat = (
             _f(n.get("ndt_down")),
             _f(n.get("ndt_up")),
@@ -113,6 +119,7 @@ def build_table(rows):
         out.append(
             {
                 "rate_mbps_symmetric": rate,
+                "rtt_configured_ms": rtt_cfg,
                 "is_reference": a.get("is_reference") in ("True", "true", "1"),
                 "ndt_down_mbps": dl,
                 "ndt_up_mbps": ul,
@@ -170,6 +177,7 @@ def build_table(rows):
             out.append(
                 {
                     "rate_mbps_symmetric": rate,
+                    "rtt_configured_ms": None,
                     "is_reference": rate == 100.0,
                     "ndt_down_mbps": None,
                     "ndt_up_mbps": None,
@@ -195,21 +203,52 @@ def build_table(rows):
     return out
 
 
+def latency_caption(table) -> str:
+    """ "20 ms set, 22.6-23.3 ms measured" -- both numbers, from the data.
+
+    Jaber asked for the configured and the measured RTT together wherever
+    latency appears. A chart title that says only "20 ms" is a statement
+    about the shaper; what the speed test saw on the same link is the one a
+    reader can check, and the two are not equal (netem adds its delay on top
+    of the real path).
+    """
+    cfg = sorted({r["rtt_configured_ms"] for r in table if r.get("rtt_configured_ms")})
+    meas = [r["ndt_minrtt_ms"] for r in table if r.get("ndt_minrtt_ms")]
+    if not cfg:
+        return "no induced loss"
+    setpart = ", ".join(f"{c:g}" for c in cfg) + " ms set"
+    if not meas:
+        return f"{setpart}, no loss"
+    lo, hi = min(meas), max(meas)
+    span = f"{lo:.1f} ms" if abs(hi - lo) < 0.05 else f"{lo:.1f}-{hi:.1f} ms"
+    return f"{setpart}, {span} measured, no loss"
+
+
 def markdown_table(t):
     hdr = (
-        "| capacity (sym) | NDT down | NDT up | IQB verdict | resolution | fps "
-        "| freezes | Meet demand | QoE |\n"
-        "|---|---|---|---|---|---|---|---|---|\n"
+        "| capacity (sym) | RTT set | RTT measured | NDT down | NDT up "
+        "| IQB verdict | resolution | fps | freezes | Meet demand | QoE |\n"
+        "|---|---|---|---|---|---|---|---|---|---|---|\n"
     )
     lines = []
     for r in t:
         tag = " *(ref)*" if r["is_reference"] else ""
         sus = " ⚠" if r["suspect"] else ""
         lines.append(
-            "| {c:g} Mb/s{tag} | {dl} | {ul} | {v} ({by}) | {res} | {fps} | "
-            "{fz} | {dem} | {q}{sus} |".format(
+            "| {c:g} Mb/s{tag} | {rset} | {rmeas} | {dl} | {ul} | {v} ({by}) "
+            "| {res} | {fps} | {fz} | {dem} | {q}{sus} |".format(
                 c=r["rate_mbps_symmetric"],
                 tag=tag,
+                rset=(
+                    f"{r['rtt_configured_ms']:g} ms"
+                    if r.get("rtt_configured_ms") is not None
+                    else "—"
+                ),
+                rmeas=(
+                    f"{r['ndt_minrtt_ms']:.1f} ms"
+                    if r.get("ndt_minrtt_ms") is not None
+                    else "—"
+                ),
                 dl=(
                     f"{r['ndt_down_mbps']:.2f}"
                     if r["ndt_down_mbps"] is not None
@@ -462,9 +501,7 @@ def plot(table, path):
     h1, l1 = ax1.get_legend_handles_labels()
     h2, l2 = ax2.get_legend_handles_labels()
     ax1.legend(h1 + h2, l1 + l2, loc="lower right", fontsize=9)
-    ax1.set_title(
-        "Google Meet QoE against shaped capacity (20 ms RTT, no induced loss)"
-    )
+    ax1.set_title(f"Google Meet QoE against shaped capacity ({latency_caption(table)})")
     fig.tight_layout()
     fig.savefig(path, dpi=150)
     plt.close(fig)
@@ -505,7 +542,7 @@ def main() -> int:
             BINDING_MIN,
             "rate_mbps_symmetric",
             "iqb_verdict",
-            "IQB's verdict against measured Meet QoE (20 ms RTT, no loss)",
+            f"IQB's verdict against measured Meet QoE ({latency_caption(table)})",
         )
     )
     made.append(
