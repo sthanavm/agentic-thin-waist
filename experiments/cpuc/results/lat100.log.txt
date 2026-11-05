@@ -1,0 +1,342 @@
+[19:59:27] bot clip OK: 1280x720 (/home/student/pramana-assets/bbb_720p24_10s.y4m)
+[19:59:27] collector OK: video-qoe-collector:latest
+[19:59:27] room: https://meet.google.com/gjr-qgyb-wus
+[19:59:27] === MEET SWEEP: 12 runs (6 meet + 6 ndt)
+[19:59:27] [1/12] app meet 100/100 Mb/s
+▶ DIRECT run: meet_100mbps_100ms_0pct_pfifo_cubic_solo_t13435
+  cap=100.0Mbps lat=100.0ms loss=0.0% aqm=pfifo cca=cubic dur=60s apps=['meet']
+  • shaping ...
+    - adopting persistent peer 'pramana-peer-meet' for meet (no launch, no admission needed)
+    - peer 'pramana-peer-meet' is persistent and already publishing; not waiting for admission
+  • capture on veth2 (auto-stop 135s) ...
+  • real QoE collector for ['meet'] ...
+    · collector source overridden from /home/student/cpuc/services/orchestration/scripts/selenium_video_qoe/collect.py
+    · mounted sibling cdp_bytes.py
+    · mounted sibling inpage_log.py
+    · driving 1 browser app(s) in real Chrome inside ns1 (meet) ...
+    - persistent peer 'pramana-peer-meet' left running (serves later runs too)
+      [meet] collector failed: RuntimeError: meet never produced an advancing inbound video RTP stream. Confirm the profile is logged in, the browser joined the room,
+    ! collector exited 1 (see /home/student/cpuc/experiments/pramana/results/pramana_runs/meet_100mbps_100ms_0pct_pfifo_cubic_solo_t13435_009238ec02/collector.log)
+  • finalising capture + downloading pcap ...
+  • pcap saved → /home/student/cpuc/experiments/pramana/results/pramana_runs/meet_100mbps_100ms_0pct_pfifo_cubic_solo_t13435_009238ec02/capture.pcap (9.0 MB)
+  • shaping check: avg 1.63 / cap 100 Mbps (-98.4%) → OK
+  • splitting capture per app ...
+    method=remote_hostname  local=['172.16.1.1']  (declared_client_ips)  91.6% of bytes attributed
+      browser_infra         4.23 MB
+      meet                  3.76 MB
+      other                 0.73 MB
+    · link interference: none above budget
+    · meet: starved (dl avg 0.70 / peak 8.53 Mbps, delivered 23%)
+  • generating per-app plots ...
+    · download: merged throughput chart saved
+    · upload: merged throughput chart saved
+    · meet download: per-app throughput chart saved
+    · meet upload: per-app throughput chart saved
+    · meet: qoe_summary saved
+  ! telemetry store failed for meet: HTTPConnectionPool(host='localhost', port=8004): Max retries exceeded with url: /results (Caused by NewConnectionError('<urllib3.connection.HTTPConnection object at 0x735ef9acc3e0>: Failed to establish a new connection: [Errno 111] Connection refused'))
+  ✓ saved → /home/student/cpuc/experiments/pramana/results/pramana_runs/meet_100mbps_100ms_0pct_pfifo_cubic_solo_t13435_009238ec02
+    pcap: capture.pcap | plots: 5 | record.json
+[20:02:08]   attempt 1: valid=False label=- publishing=- NoRemoteInboundMedia: meet: no remote inbound video to measure (availa
+▶ DIRECT run: meet_100mbps_100ms_0pct_pfifo_cubic_solo_t13435
+  cap=100.0Mbps lat=100.0ms loss=0.0% aqm=pfifo cca=cubic dur=60s apps=['meet']
+  • shaping ...
+    - adopting persistent peer 'pramana-peer-meet' for meet (no launch, no admission needed)
+    - peer 'pramana-peer-meet' is persistent and already publishing; not waiting for admission
+  • capture on veth2 (auto-stop 135s) ...
+  • real QoE collector for ['meet'] ...
+    · collector source overridden from /home/student/cpuc/services/orchestration/scripts/selenium_video_qoe/collect.py
+    · mounted sibling cdp_bytes.py
+    · mounted sibling inpage_log.py
+    · driving 1 browser app(s) in real Chrome inside ns1 (meet) ...
+    - persistent peer 'pramana-peer-meet' left running (serves later runs too)
+      [meet] summary: 60 samples written to /out/meet_stats.jsonl | frames_decoded range=[23, 1429] | advanced=True | final_resolution=1280x720
+  • finalising capture + downloading pcap ...
+  • pcap saved → /home/student/cpuc/experiments/pramana/results/pramana_runs/meet_100mbps_100ms_0pct_pfifo_cubic_solo_t13435_ef45e0adba/capture.pcap (33.9 MB)
+  • shaping check: avg 2.42 / cap 100 Mbps (-97.6%) → OK
+  • splitting capture per app ...
+    · meet: ICE negotiated ['74.125.250.130'] (used as attribution ground truth)
+    method=remote_hostname  local=['172.16.1.1']  (declared_client_ips)  98.9% of bytes attributed
+      meet                 26.79 MB
+      browser_infra         5.16 MB
+      other                 0.34 MB
+    · link interference: none above budget
+    · meet: served (dl avg 1.90 / peak 8.54 Mbps, delivered 97%)
+  • generating per-app plots ...
+    · download: merged throughput chart saved
+    · upload: merged throughput chart saved
+    · meet download: per-app throughput chart saved
+    · meet upload: per-app throughput chart saved
+    · meet: qoe_summary saved
+  ! telemetry store failed for meet: HTTPConnectionPool(host='localhost', port=8004): Max retries exceeded with url: /results (Caused by NewConnectionError('<urllib3.connection.HTTPConnection object at 0x735ef99bcda0>: Failed to establish a new connection: [Errno 111] Connection refused'))
+  ✓ saved → /home/student/cpuc/experiments/pramana/results/pramana_runs/meet_100mbps_100ms_0pct_pfifo_cubic_solo_t13435_ef45e0adba
+    pcap: capture.pcap | plots: 5 | record.json
+[20:04:52]   attempt 2: valid=True label=deferred publishing=- 
+[20:04:52] [2/12] app meet 25/25 Mb/s
+▶ DIRECT run: meet_25mbps_100ms_0pct_pfifo_cubic_solo_t11841
+  cap=25.0Mbps lat=100.0ms loss=0.0% aqm=pfifo cca=cubic dur=60s apps=['meet']
+  • shaping ...
+    - adopting persistent peer 'pramana-peer-meet' for meet (no launch, no admission needed)
+    - peer 'pramana-peer-meet' is persistent and already publishing; not waiting for admission
+  • capture on veth2 (auto-stop 135s) ...
+  • real QoE collector for ['meet'] ...
+    · collector source overridden from /home/student/cpuc/services/orchestration/scripts/selenium_video_qoe/collect.py
+    · mounted sibling cdp_bytes.py
+    · mounted sibling inpage_log.py
+    · driving 1 browser app(s) in real Chrome inside ns1 (meet) ...
+    - persistent peer 'pramana-peer-meet' left running (serves later runs too)
+      [meet] collector failed: RuntimeError: meet never produced an advancing inbound video RTP stream. Confirm the profile is logged in, the browser joined the room,
+    ! collector exited 1 (see /home/student/cpuc/experiments/pramana/results/pramana_runs/meet_25mbps_100ms_0pct_pfifo_cubic_solo_t11841_f3b6d943cd/collector.log)
+  • finalising capture + downloading pcap ...
+  • pcap saved → /home/student/cpuc/experiments/pramana/results/pramana_runs/meet_25mbps_100ms_0pct_pfifo_cubic_solo_t11841_f3b6d943cd/capture.pcap (10.7 MB)
+  • shaping check: avg 1.87 / cap 25 Mbps (-92.5%) → OK
+  • splitting capture per app ...
+    method=remote_hostname  local=['172.16.1.1']  (declared_client_ips)  96.9% of bytes attributed
+      browser_infra         5.43 MB
+      meet                  4.59 MB
+      other                 0.32 MB
+    ! browser_infra/download peaked at 15.70 Mbps (63% of the 25 Mbps cap) somewhere in the capture
+    ✗ browser_infra/download took more than 10% of the 25 Mbps cap in 3 bins inside the app's measured window (worst 15.70 Mbps at t=7..11 s), limit 3 bins
+    · meet: starved (dl avg 0.83 / peak 9.18 Mbps, delivered 22%)
+  • generating per-app plots ...
+    · download: merged throughput chart saved
+    · upload: merged throughput chart saved
+    · meet download: per-app throughput chart saved
+    · meet upload: per-app throughput chart saved
+    · meet: qoe_summary saved
+  ! telemetry store failed for meet: HTTPConnectionPool(host='localhost', port=8004): Max retries exceeded with url: /results (Caused by NewConnectionError('<urllib3.connection.HTTPConnection object at 0x735ef9a8dc70>: Failed to establish a new connection: [Errno 111] Connection refused'))
+  ✓ saved → /home/student/cpuc/experiments/pramana/results/pramana_runs/meet_25mbps_100ms_0pct_pfifo_cubic_solo_t11841_f3b6d943cd
+    pcap: capture.pcap | plots: 5 | record.json
+[20:07:35]   attempt 1: valid=False label=- publishing=- NoRemoteInboundMedia: meet: no remote inbound video to measure (availa
+▶ DIRECT run: meet_25mbps_100ms_0pct_pfifo_cubic_solo_t11841
+  cap=25.0Mbps lat=100.0ms loss=0.0% aqm=pfifo cca=cubic dur=60s apps=['meet']
+  • shaping ...
+    - adopting persistent peer 'pramana-peer-meet' for meet (no launch, no admission needed)
+    - peer 'pramana-peer-meet' is persistent and already publishing; not waiting for admission
+  • capture on veth2 (auto-stop 135s) ...
+  • real QoE collector for ['meet'] ...
+    · collector source overridden from /home/student/cpuc/services/orchestration/scripts/selenium_video_qoe/collect.py
+    · mounted sibling cdp_bytes.py
+    · mounted sibling inpage_log.py
+    · driving 1 browser app(s) in real Chrome inside ns1 (meet) ...
+    - persistent peer 'pramana-peer-meet' left running (serves later runs too)
+      [meet] summary: 60 samples written to /out/meet_stats.jsonl | frames_decoded range=[10, 1424] | advanced=True | final_resolution=1280x720
+  • finalising capture + downloading pcap ...
+  • pcap saved → /home/student/cpuc/experiments/pramana/results/pramana_runs/meet_25mbps_100ms_0pct_pfifo_cubic_solo_t11841_cda911011b/capture.pcap (36.0 MB)
+  • shaping check: avg 2.58 / cap 25 Mbps (-89.7%) → OK
+  • splitting capture per app ...
+    · meet: ICE negotiated ['74.125.250.130'] (used as attribution ground truth)
+    method=remote_hostname  local=['172.16.1.1']  (declared_client_ips)  99.0% of bytes attributed
+      meet                 28.98 MB
+      browser_infra         5.11 MB
+      other                 0.34 MB
+    · link interference: none above budget
+    · meet: served (dl avg 2.04 / peak 8.35 Mbps, delivered 97%)
+  • generating per-app plots ...
+    · download: merged throughput chart saved
+    · upload: merged throughput chart saved
+    · meet download: per-app throughput chart saved
+    · meet upload: per-app throughput chart saved
+    · meet: qoe_summary saved
+  ! telemetry store failed for meet: HTTPConnectionPool(host='localhost', port=8004): Max retries exceeded with url: /results (Caused by NewConnectionError('<urllib3.connection.HTTPConnection object at 0x735ef890d430>: Failed to establish a new connection: [Errno 111] Connection refused'))
+  ✓ saved → /home/student/cpuc/experiments/pramana/results/pramana_runs/meet_25mbps_100ms_0pct_pfifo_cubic_solo_t11841_cda911011b
+    pcap: capture.pcap | plots: 5 | record.json
+[20:10:29]   attempt 2: valid=True label=high publishing=- 
+[20:10:29] [3/12] app meet 6/6 Mb/s
+▶ DIRECT run: meet_6mbps_100ms_0pct_pfifo_cubic_solo_t12163
+  cap=6.0Mbps lat=100.0ms loss=0.0% aqm=pfifo cca=cubic dur=60s apps=['meet']
+  • shaping ...
+    - adopting persistent peer 'pramana-peer-meet' for meet (no launch, no admission needed)
+    - peer 'pramana-peer-meet' is persistent and already publishing; not waiting for admission
+  • capture on veth2 (auto-stop 135s) ...
+  • real QoE collector for ['meet'] ...
+    · collector source overridden from /home/student/cpuc/services/orchestration/scripts/selenium_video_qoe/collect.py
+    · mounted sibling cdp_bytes.py
+    · mounted sibling inpage_log.py
+    · driving 1 browser app(s) in real Chrome inside ns1 (meet) ...
+    - persistent peer 'pramana-peer-meet' left running (serves later runs too)
+      [meet] summary: 60 samples written to /out/meet_stats.jsonl | frames_decoded range=[27, 1439] | advanced=True | final_resolution=1280x720
+  • finalising capture + downloading pcap ...
+  • pcap saved → /home/student/cpuc/experiments/pramana/results/pramana_runs/meet_6mbps_100ms_0pct_pfifo_cubic_solo_t12163_6dd0b6638d/capture.pcap (34.8 MB)
+  • shaping check: avg 2.31 / cap 6 Mbps (-61.5%) → OK
+  • splitting capture per app ...
+    · meet: ICE negotiated ['74.125.250.130'] (used as attribution ground truth)
+    method=remote_hostname  local=['172.16.1.1']  (declared_client_ips)  99.0% of bytes attributed
+      meet                 27.84 MB
+      browser_infra         5.14 MB
+      other                 0.33 MB
+    ! browser_infra/download peaked at 5.93 Mbps (99% of the 6 Mbps cap) somewhere in the capture
+    ✗ browser_infra/download took more than 10% of the 6 Mbps cap in 10 bins inside the app's measured window (worst 5.93 Mbps at t=2..75 s), limit 3 bins
+    ✗ browser_infra/upload took more than 10% of the 6 Mbps cap in 3 bins inside the app's measured window (worst 1.47 Mbps at t=8..16 s), limit 3 bins
+    · meet: served (dl avg 1.82 / peak 5.88 Mbps, delivered 96%)
+  • generating per-app plots ...
+    · download: merged throughput chart saved
+    · upload: merged throughput chart saved
+    · meet download: per-app throughput chart saved
+    · meet upload: per-app throughput chart saved
+    · meet: qoe_summary saved
+  ! telemetry store failed for meet: HTTPConnectionPool(host='localhost', port=8004): Max retries exceeded with url: /results (Caused by NewConnectionError('<urllib3.connection.HTTPConnection object at 0x735ef88a9e20>: Failed to establish a new connection: [Errno 111] Connection refused'))
+  ✓ saved → /home/student/cpuc/experiments/pramana/results/pramana_runs/meet_6mbps_100ms_0pct_pfifo_cubic_solo_t12163_6dd0b6638d
+    pcap: capture.pcap | plots: 5 | record.json
+[20:13:59]   attempt 1: valid=True label=high SUSPECT publishing=- 
+[20:13:59] [4/12] app meet 3/3 Mb/s
+▶ DIRECT run: meet_3mbps_100ms_0pct_pfifo_cubic_solo_t10342
+  cap=3.0Mbps lat=100.0ms loss=0.0% aqm=pfifo cca=cubic dur=60s apps=['meet']
+  • shaping ...
+    - adopting persistent peer 'pramana-peer-meet' for meet (no launch, no admission needed)
+    - peer 'pramana-peer-meet' is persistent and already publishing; not waiting for admission
+  • capture on veth2 (auto-stop 135s) ...
+  • real QoE collector for ['meet'] ...
+    · collector source overridden from /home/student/cpuc/services/orchestration/scripts/selenium_video_qoe/collect.py
+    · mounted sibling cdp_bytes.py
+    · mounted sibling inpage_log.py
+    · driving 1 browser app(s) in real Chrome inside ns1 (meet) ...
+    - persistent peer 'pramana-peer-meet' left running (serves later runs too)
+      [meet] summary: 60 samples written to /out/meet_stats.jsonl | frames_decoded range=[5, 1158] | advanced=True | final_resolution=1280x720
+  • finalising capture + downloading pcap ...
+  • pcap saved → /home/student/cpuc/experiments/pramana/results/pramana_runs/meet_3mbps_100ms_0pct_pfifo_cubic_solo_t10342_2318205c50/capture.pcap (34.5 MB)
+  • shaping check: avg 1.97 / cap 3 Mbps (-34.2%) → OK
+  • splitting capture per app ...
+    · meet: ICE negotiated ['74.125.250.130'] (used as attribution ground truth)
+    method=remote_hostname  local=['172.16.1.1']  (declared_client_ips)  99.5% of bytes attributed
+      meet                 25.98 MB
+      browser_infra         6.72 MB
+      other                 0.15 MB
+    ! browser_infra/download peaked at 2.83 Mbps (94% of the 3 Mbps cap) somewhere in the capture
+    ✗ browser_infra/download took more than 10% of the 3 Mbps cap in 27 bins inside the app's measured window (worst 2.83 Mbps at t=2..86 s), limit 3 bins
+    ✗ browser_infra/upload took more than 10% of the 3 Mbps cap in 7 bins inside the app's measured window (worst 1.22 Mbps at t=11..28 s), limit 3 bins
+    · meet: served (dl avg 1.46 / peak 3.00 Mbps, delivered 98%)
+  • generating per-app plots ...
+    · download: merged throughput chart saved
+    · upload: merged throughput chart saved
+    · meet download: per-app throughput chart saved
+    · meet upload: per-app throughput chart saved
+    · meet: qoe_summary saved
+  ! telemetry store failed for meet: HTTPConnectionPool(host='localhost', port=8004): Max retries exceeded with url: /results (Caused by NewConnectionError('<urllib3.connection.HTTPConnection object at 0x735ef9bf9fa0>: Failed to establish a new connection: [Errno 111] Connection refused'))
+  ✓ saved → /home/student/cpuc/experiments/pramana/results/pramana_runs/meet_3mbps_100ms_0pct_pfifo_cubic_solo_t10342_2318205c50
+    pcap: capture.pcap | plots: 5 | record.json
+[20:18:17]   attempt 1: valid=True label=acceptable SUSPECT publishing=- 
+[20:18:17] [5/12] app meet 1/1 Mb/s
+▶ DIRECT run: meet_1mbps_100ms_0pct_pfifo_cubic_solo_t9128
+  cap=1.0Mbps lat=100.0ms loss=0.0% aqm=pfifo cca=cubic dur=60s apps=['meet']
+  • shaping ...
+    ! persistent peer 'pramana-peer-meet' is STALLED (no outbound bytes) - not adopting it
+    - bot peer for 'meet' started (unshaped) -> pramana-bot-meet-exp-23c64d0654
+    - still waiting for bot peer(s): ['meet'] (29s left)
+
+==================================================================
+  ACTION NEEDED: the bot peer is waiting to be admitted.
+    admit 'meet' in: https://meet.google.com/gjr-qgyb-wus
+  The run continues automatically once it is let in.
+==================================================================
+
+    ! bot peer never confirmed publishing within 30s
+  • capture on veth2 (auto-stop 135s) ...
+  • real QoE collector for ['meet'] ...
+    - bot peer 'meet' stopped
+    - meet: SKIPPED - peer bot unavailable: bot peer never confirmed publishing within 30s
+  • finalising capture + downloading pcap ...
+  • pcap saved → /home/student/cpuc/experiments/pramana/results/pramana_runs/meet_1mbps_100ms_0pct_pfifo_cubic_solo_t9128_23c64d0654/capture.pcap (0.0 MB)
+  • shaping check: no packets captured
+  • splitting capture per app ...
+    · meet: no_traffic
+  • generating per-app plots ...
+    · download: no merged chart — no traffic attributed
+    · upload: no merged chart — no traffic attributed
+  ! telemetry store failed for meet: HTTPConnectionPool(host='localhost', port=8004): Max retries exceeded with url: /results (Caused by NewConnectionError('<urllib3.connection.HTTPConnection object at 0x735ef9b4dd90>: Failed to establish a new connection: [Errno 111] Connection refused'))
+  ✓ saved → /home/student/cpuc/experiments/pramana/results/pramana_runs/meet_1mbps_100ms_0pct_pfifo_cubic_solo_t9128_23c64d0654
+    pcap: capture.pcap | plots: 0 | record.json
+[20:21:25]   attempt 1: valid=False label=- publishing=- NoRemoteInboundMedia: meet: no remote inbound video to measure (availa
+▶ DIRECT run: meet_1mbps_100ms_0pct_pfifo_cubic_solo_t9128
+  cap=1.0Mbps lat=100.0ms loss=0.0% aqm=pfifo cca=cubic dur=60s apps=['meet']
+  • shaping ...
+    ! persistent peer 'pramana-peer-meet' is STALLED (no outbound bytes) - not adopting it
+    - bot peer for 'meet' started (unshaped) -> pramana-bot-meet-exp-f0b8aef6e4
+    - still waiting for bot peer(s): ['meet'] (29s left)
+
+==================================================================
+  ACTION NEEDED: the bot peer is waiting to be admitted.
+    admit 'meet' in: https://meet.google.com/gjr-qgyb-wus
+  The run continues automatically once it is let in.
+==================================================================
+
+    ! bot peer never confirmed publishing within 30s
+  • capture on veth2 (auto-stop 135s) ...
+  • real QoE collector for ['meet'] ...
+    - bot peer 'meet' stopped
+    - meet: SKIPPED - peer bot unavailable: bot peer never confirmed publishing within 30s
+  • finalising capture + downloading pcap ...
+  • pcap saved → /home/student/cpuc/experiments/pramana/results/pramana_runs/meet_1mbps_100ms_0pct_pfifo_cubic_solo_t9128_f0b8aef6e4/capture.pcap (0.0 MB)
+  • shaping check: no packets captured
+  • splitting capture per app ...
+    · meet: no_traffic
+  • generating per-app plots ...
+    · download: no merged chart — no traffic attributed
+    · upload: no merged chart — no traffic attributed
+  ! telemetry store failed for meet: HTTPConnectionPool(host='localhost', port=8004): Max retries exceeded with url: /results (Caused by NewConnectionError('<urllib3.connection.HTTPConnection object at 0x735ef9c579e0>: Failed to establish a new connection: [Errno 111] Connection refused'))
+  ✓ saved → /home/student/cpuc/experiments/pramana/results/pramana_runs/meet_1mbps_100ms_0pct_pfifo_cubic_solo_t9128_f0b8aef6e4
+    pcap: capture.pcap | plots: 0 | record.json
+[20:24:33]   attempt 2: valid=False label=- publishing=- NoRemoteInboundMedia: meet: no remote inbound video to measure (availa
+[20:24:33] [6/12] app meet 0.5/0.5 Mb/s
+▶ DIRECT run: meet_0.5mbps_100ms_0pct_pfifo_cubic_solo_t15276
+  cap=0.5Mbps lat=100.0ms loss=0.0% aqm=pfifo cca=cubic dur=60s apps=['meet']
+  • shaping ...
+    ! persistent peer 'pramana-peer-meet' is STALLED (no outbound bytes) - not adopting it
+    - bot peer for 'meet' started (unshaped) -> pramana-bot-meet-exp-2629ef247b
+    - still waiting for bot peer(s): ['meet'] (29s left)
+
+==================================================================
+  ACTION NEEDED: the bot peer is waiting to be admitted.
+    admit 'meet' in: https://meet.google.com/gjr-qgyb-wus
+  The run continues automatically once it is let in.
+==================================================================
+
+    ! bot peer never confirmed publishing within 30s
+  • capture on veth2 (auto-stop 135s) ...
+  • real QoE collector for ['meet'] ...
+    - bot peer 'meet' stopped
+    - meet: SKIPPED - peer bot unavailable: bot peer never confirmed publishing within 30s
+  • finalising capture + downloading pcap ...
+  • pcap saved → /home/student/cpuc/experiments/pramana/results/pramana_runs/meet_0.5mbps_100ms_0pct_pfifo_cubic_solo_t15276_2629ef247b/capture.pcap (0.0 MB)
+  • shaping check: no packets captured
+  • splitting capture per app ...
+    method=remote_hostname  local=['172.16.1.1']  (declared_client_ips)  0.0% of bytes attributed
+      off_link              0.00 MB
+    · meet: no_traffic
+  • generating per-app plots ...
+    · download: no merged chart — no traffic attributed
+    · upload: no merged chart — no traffic attributed
+  ! telemetry store failed for meet: HTTPConnectionPool(host='localhost', port=8004): Max retries exceeded with url: /results (Caused by NewConnectionError('<urllib3.connection.HTTPConnection object at 0x735ef9b8d8e0>: Failed to establish a new connection: [Errno 111] Connection refused'))
+  ✓ saved → /home/student/cpuc/experiments/pramana/results/pramana_runs/meet_0.5mbps_100ms_0pct_pfifo_cubic_solo_t15276_2629ef247b
+    pcap: capture.pcap | plots: 0 | record.json
+[20:27:41]   attempt 1: valid=False label=- publishing=- NoRemoteInboundMedia: meet: no remote inbound video to measure (availa
+▶ DIRECT run: meet_0.5mbps_100ms_0pct_pfifo_cubic_solo_t15276
+  cap=0.5Mbps lat=100.0ms loss=0.0% aqm=pfifo cca=cubic dur=60s apps=['meet']
+  • shaping ...
+    ! persistent peer 'pramana-peer-meet' is STALLED (no outbound bytes) - not adopting it
+    - bot peer for 'meet' started (unshaped) -> pramana-bot-meet-exp-70b8cb8954
+    - still waiting for bot peer(s): ['meet'] (29s left)
+
+==================================================================
+  ACTION NEEDED: the bot peer is waiting to be admitted.
+    admit 'meet' in: https://meet.google.com/gjr-qgyb-wus
+  The run continues automatically once it is let in.
+==================================================================
+
+    ! bot peer never confirmed publishing within 30s
+  • capture on veth2 (auto-stop 135s) ...
+  • real QoE collector for ['meet'] ...
+    - bot peer 'meet' stopped
+    - meet: SKIPPED - peer bot unavailable: bot peer never confirmed publishing within 30s
+  • finalising capture + downloading pcap ...
+  • pcap saved → /home/student/cpuc/experiments/pramana/results/pramana_runs/meet_0.5mbps_100ms_0pct_pfifo_cubic_solo_t15276_70b8cb8954/capture.pcap (0.0 MB)
+  • shaping check: no packets captured
+  • splitting capture per app ...
+    · meet: no_traffic
+  • generating per-app plots ...
+    · download: no merged chart — no traffic attributed
+    · upload: no merged chart — no traffic attributed
+  ! telemetry store failed for meet: HTTPConnectionPool(host='localhost', port=8004): Max retries exceeded with url: /results (Caused by NewConnectionError('<urllib3.connection.HTTPConnection object at 0x735ef9d76270>: Failed to establish a new connection: [Errno 111] Connection refused'))
+  ✓ saved → /home/student/cpuc/experiments/pramana/results/pramana_runs/meet_0.5mbps_100ms_0pct_pfifo_cubic_solo_t15276_70b8cb8954
+    pcap: capture.pcap | plots: 0 | record.json
+[20:30:50]   attempt 2: valid=False label=- publishing=- NoRemoteInboundMedia: meet: no remote inbound video to measure (availa
+[20:30:50] === MEETING DROPPED: two consecutive Meet runs received no remote media (last: NoRemoteInboundMedia: meet: no remote inbound video to measure (available=False, resolution=None, fps=None, session=None)) and the peer is not publishing (peer stalled 0x0 5s ago). Stopping rather than burning the remaining runs.
