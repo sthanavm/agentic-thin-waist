@@ -1,0 +1,6 @@
+rate_mbps_symmetric,is_reference,ndt_down_mbps,ndt_up_mbps,ndt_minrtt_ms,iqb_verdict,iqb_decided_by,resolution_p,fps,freeze_count,freeze_ratio,mean_jitter_ms,qoe_label,suspect,link_total_avg_mbps,app_valid,invalid_reason,meet_demand_mbps,meet_peak_mbps,browser_infra_mb
+100.0,True,92.59967581481567,93.11588126694618,22.572,meets minimum only,download,720.0,23.97,0.0,0.0,8.7,deferred,False,2.869,True,,3.689,13.767,5.263
+25.0,False,23.281020287933956,23.544822767996216,22.626,fails minimum,upload,720.0,23.95,0.0,0.0,9.6,high,True,2.863,True,,2.155,10.6,6.531
+6.0,False,5.65520488098825,5.7172695295011335,23.173,fails minimum,download,720.0,22.96,0.0,0.0,28.2,high,True,2.382,True,,1.783,5.996,6.614
+3.0,False,2.851400140298418,2.8634367289974,22.873,fails minimum,download,720.0,22.68,2.0,0.007,32.8,high,True,2.031,True,,1.561,3.0,5.419
+1.0,False,0.9561986870365881,0.9558728317061436,23.087,fails minimum,download,,,,,,not collected,False,0.696,False,"NoRemoteInboundMedia: meet: no remote inbound video to measure (available=False, resolution=None, fps=None, session=None)",0.226,1.004,4.224

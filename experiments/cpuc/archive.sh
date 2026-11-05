@@ -18,7 +18,8 @@ ssh "$VM" "cd '$REMOTE_DIR' && find . -type f \( -name '*.csv' -o -name '*.json'
 echo "   $(wc -l < "$LOCAL_DIR/manifest.remote.txt") files"
 
 echo "== transfer (no delete) =="
-rsync -a --info=stats2 "$VM:$REMOTE_DIR/" "$LOCAL_DIR/" --exclude 'manifest.*.txt' | tail -4
+# --stats, not --info=stats2: macOS ships rsync 2.6.9, which has no --info.
+rsync -a --stats "$VM:$REMOTE_DIR/" "$LOCAL_DIR/" --exclude 'manifest.*.txt' 2>&1 | tail -5
 
 echo "== verify locally =="
 ( cd "$LOCAL_DIR" && awk '{print $2}' manifest.remote.txt | tr -d '\r' \

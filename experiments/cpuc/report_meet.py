@@ -63,6 +63,31 @@ def iqb_verdict(dl, ul, lat):
     return {2: "meets high", 1: "meets minimum only", 0: "fails minimum"}[worst], which
 
 
+DEMAND_SIDECAR = "/home/student/cpuc_data/meet/meet_demand.json"
+
+
+def load_demand(path: str = DEMAND_SIDECAR) -> dict:
+    """Meet's OWN throughput per capacity point, from run_direct's attribution.
+
+    The row's `shaper_avg_mbps` is the whole shaped download direction, which
+    includes Chrome's page and infrastructure traffic -- fonts.gstatic.com,
+    www.google.com and the gvt1 component updater. Measured on the 3 Mb/s run
+    the link total was 2.031 Mb/s while Meet's own stream was 1.561, so using
+    the link total as "what Meet demanded" overstates it by ~30%. This sidecar
+    carries the per-app figure so the demand claim is about the application.
+    """
+    try:
+        with open(path) as fh:
+            return json.load(fh)
+    except Exception:
+        return {}
+
+
+# Points the matrix asked for, so a missing one is reported as NOT COLLECTED
+# rather than silently absent from the curve.
+EXPECTED_RATES = (100.0, 25.0, 6.0, 3.0, 1.0)
+
+
 def build_table(rows):
     apps, ndts = {}, {}
     for r in rows:
@@ -99,16 +124,62 @@ def build_table(rows):
                 "mean_jitter_ms": _f(a.get("qoe_mean_jitter_ms")),
                 "qoe_label": a.get("qoe_label") or "",
                 "suspect": a.get("suspect") in ("True", "true", "1"),
-                "meet_demand_mbps": _f(a.get("shaper_avg_mbps")),
+                "link_total_avg_mbps": _f(a.get("shaper_avg_mbps")),
+                "app_valid": a.get("valid") in ("True", "true", "1"),
+                "invalid_reason": (a.get("invalid_reason") or "")[:160],
             }
         )
+
+    # Attach Meet's own throughput, and add a NOT COLLECTED row for any
+    # expected capacity point that produced no valid app run.
+    demand = load_demand()
+    seen = {t["rate_mbps_symmetric"] for t in out}
+    for t in out:
+        d = (
+            demand.get(f"{t['rate_mbps_symmetric']:g}")
+            or demand.get(str(t["rate_mbps_symmetric"]))
+            or {}
+        )
+        t["meet_demand_mbps"] = d.get("meet_avg_mbps")
+        t["meet_peak_mbps"] = d.get("meet_peak_mbps")
+        t["browser_infra_mb"] = d.get("bucket_browser_infra_mb")
+        if not t["app_valid"]:
+            t["qoe_label"] = "not collected"
+    for rate in EXPECTED_RATES:
+        if rate not in seen:
+            out.append(
+                {
+                    "rate_mbps_symmetric": rate,
+                    "is_reference": rate == 100.0,
+                    "ndt_down_mbps": None,
+                    "ndt_up_mbps": None,
+                    "ndt_minrtt_ms": None,
+                    "iqb_verdict": "no ndt",
+                    "iqb_decided_by": "not collected",
+                    "resolution_p": None,
+                    "fps": None,
+                    "freeze_count": None,
+                    "freeze_ratio": None,
+                    "mean_jitter_ms": None,
+                    "qoe_label": "not collected",
+                    "suspect": False,
+                    "link_total_avg_mbps": None,
+                    "app_valid": False,
+                    "invalid_reason": "no valid run",
+                    "meet_demand_mbps": None,
+                    "meet_peak_mbps": None,
+                    "browser_infra_mb": None,
+                }
+            )
+    out.sort(key=lambda t: -t["rate_mbps_symmetric"])
     return out
 
 
 def markdown_table(t):
     hdr = (
         "| capacity (sym) | NDT down | NDT up | IQB verdict | resolution | fps "
-        "| freezes | QoE |\n|---|---|---|---|---|---|---|---|\n"
+        "| freezes | Meet demand | QoE |\n"
+        "|---|---|---|---|---|---|---|---|---|\n"
     )
     lines = []
     for r in t:
@@ -116,7 +187,7 @@ def markdown_table(t):
         sus = " ⚠" if r["suspect"] else ""
         lines.append(
             "| {c:g} Mb/s{tag} | {dl} | {ul} | {v} ({by}) | {res} | {fps} | "
-            "{fz} | {q}{sus} |".format(
+            "{fz} | {dem} | {q}{sus} |".format(
                 c=r["rate_mbps_symmetric"],
                 tag=tag,
                 dl=(
@@ -132,6 +203,11 @@ def markdown_table(t):
                 fz=(
                     f"{r['freeze_count']:.0f} ({r['freeze_ratio']:.2%})"
                     if r["freeze_count"] is not None and r["freeze_ratio"] is not None
+                    else "—"
+                ),
+                dem=(
+                    f"{r['meet_demand_mbps']:.2f}"
+                    if r.get("meet_demand_mbps") is not None
                     else "—"
                 ),
                 q=r["qoe_label"] or "—",
@@ -191,41 +267,77 @@ def find_breakpoint(table):
     }
 
 
-def sentences(f):
+def sentences(f, table=None):
+    """The finding, stated so it cannot be overturned by the data behind it.
+
+    Two things are deliberately NOT claimed. First, that the call is simply
+    "demand-limited": that holds only where Meet's peak stayed below the cap
+    (100 and 25 Mb/s). At 6, 3 and 1 Mb/s its peak equalled the cap, so it was
+    capacity-limited there and still delivered reference quality -- a stronger
+    statement, but a different one. Second, that quality broke at the bottom:
+    the 1 Mb/s point produced no valid run, so the breakpoint is below the
+    lowest point actually measured, not at it.
+    """
+    table = table or []
     lg = f["lowest_capacity_still_good_mbps"]
     fac = f["factor_below_iqb_minimum"]
-    bad = f["highest_capacity_degraded_mbps"]
-    dmin, dmax = f["meet_observed_demand_mbps_min"], f["meet_observed_demand_mbps_max"]
+    iqb = f["iqb_conferencing_binding_minimum_mbps"]
     s = []
     if lg:
         s.append(
-            f"Google Meet held reference-quality video ({f['reference_resolution_p']}p "
-            f"at {f['reference_fps']:.0f} fps, no freezes) down to {lg:g} Mb/s "
-            f"symmetric, which is {fac:.0f}x below IQB's "
-            f"{f['iqb_conferencing_binding_minimum_mbps']:g} Mb/s conferencing minimum."
+            f"Google Meet held reference-quality video "
+            f"({f['reference_resolution_p']:.0f}p at {f['reference_fps']:.0f} fps, "
+            f"freezes under 1%) down to {lg:g} Mb/s symmetric, "
+            f"{fac:.0f}x below IQB's {iqb:g} Mb/s conferencing minimum."
         )
     else:
         s.append("No capacity point held reference quality; see the table.")
-    if bad:
-        s.append(f"Quality first degraded at {bad:g} Mb/s.")
-    else:
-        s.append(
-            "No tested capacity degraded quality, so the breakpoint is below the "
-            "lowest point measured."
-        )
-    if dmin is not None:
-        s.append(
-            f"Across every point Meet drew only {dmin:.2f}-{dmax:.2f} Mb/s of the "
-            f"capacity available to it, so the call is demand-limited rather than "
-            f"capacity-limited, and IQB's minimum is set against a demand the "
-            f"application never makes."
-        )
-    if f["capacities_iqb_fails_but_call_good"]:
+
+    contrast = f.get("capacities_iqb_fails_but_call_good") or []
+    if contrast:
         s.append(
             "At "
-            + ", ".join(f"{c:g}" for c in f["capacities_iqb_fails_but_call_good"])
-            + " Mb/s a speed test puts the link below IQB's minimum while the call "
-            "is still reference quality -- the contrast the argument rests on."
+            + ", ".join(f"{c:g}" for c in sorted(contrast, reverse=True))
+            + " Mb/s a speed test puts the link below IQB's minimum while the "
+            "call is still reference quality, which is the contrast the "
+            "argument rests on."
+        )
+
+    # Demand-limited vs capacity-limited, decided per point rather than asserted.
+    demand_ltd, cap_ltd = [], []
+    for r in table:
+        pk, cap = r.get("meet_peak_mbps"), r.get("rate_mbps_symmetric")
+        if pk is None or not cap or not r.get("app_valid"):
+            continue
+        (cap_ltd if pk >= 0.95 * cap else demand_ltd).append(cap)
+    if demand_ltd and cap_ltd:
+        s.append(
+            "Meet was demand-limited at "
+            + ", ".join(f"{c:g}" for c in sorted(demand_ltd, reverse=True))
+            + " Mb/s, where its peak stayed well under the cap, but "
+            "capacity-limited at "
+            + ", ".join(f"{c:g}" for c in sorted(cap_ltd, reverse=True))
+            + " Mb/s, where its peak reached the cap and it still delivered "
+            "reference quality."
+        )
+    elif demand_ltd:
+        s.append(
+            "Meet never reached the cap at any measured point, so it was "
+            "demand-limited throughout."
+        )
+
+    missing = [
+        r["rate_mbps_symmetric"] for r in table if r.get("qoe_label") == "not collected"
+    ]
+    if missing:
+        s.append(
+            "The "
+            + ", ".join(f"{c:g}" for c in sorted(missing))
+            + " Mb/s point was NOT collected (the meeting ended before a valid "
+            "run completed), so the quality breakpoint is below "
+            f"{lg:g} Mb/s rather than at it."
+            if lg
+            else "points were not collected."
         )
     return " ".join(s)
 
@@ -292,7 +404,7 @@ def main() -> int:
         rows = list(csv.DictReader(fh))
     table = build_table(rows)
     finding = find_breakpoint(table)
-    text = sentences(finding)
+    text = sentences(finding, table)
 
     os.makedirs(args.outdir, exist_ok=True)
     with open(os.path.join(args.outdir, "iqb_vs_qoe_table.csv"), "w", newline="") as fh:

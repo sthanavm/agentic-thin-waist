@@ -71,9 +71,20 @@ CLIP = os.environ.get(
 # Floor for "the bot is not the binding cap". Meet tops out well below this for
 # one remote participant.
 MIN_CLIP_HEIGHT = int(os.environ.get("CPUC_MEET_MIN_CLIP_H", "720"))
-ROOM = os.environ.get("CPUC_MEET_ROOM", "https://meet.google.com/sgg-hmgg-iix")
+# A Calendar-event meeting, NOT an instant one. An instant meeting ends when
+# everyone leaves, and the bot leaves between runs, so the room died mid-batch
+# and later runs had nothing to join. A Calendar meeting can be rejoined.
+ROOM = os.environ.get("CPUC_MEET_ROOM", "https://meet.google.com/kiu-amox-fbz")
 BOT_NAME = "pramana-bot"
 JOIN_DEADLINE_S = int(os.environ.get("CPUC_MEET_JOIN_DEADLINE_S", "150"))
+
+
+class MeetingUnreachable(RuntimeError):
+    """The room URL itself did not answer, so there is nothing to join."""
+
+
+class MeetingLikelyDropped(RuntimeError):
+    """Consecutive runs produced no remote media: treat the room as gone."""
 
 
 class NoRemoteInboundMedia(RuntimeError):
@@ -101,6 +112,30 @@ os.environ.setdefault("PRAMANA_REMOTE_TILE_MIN_AREA", "0")
 
 def log(msg: str) -> None:
     print(f"[{time.strftime('%H:%M:%S')}] {msg}", flush=True)
+
+
+def assert_room_reachable(room: str = ROOM) -> dict:
+    """Check the meeting URL answers from ns1 before spending a run on it.
+
+    This is a reachability check, not a proof that the meeting is live: Meet is
+    a JS application and its HTML says nothing useful about whether a room is
+    joinable. It catches the cheap failures -- a dead or mistyped URL, DNS or
+    egress broken in ns1 -- before a six-minute run is spent discovering them.
+    Whether the room is actually joinable is proven only by the bot joining,
+    which is why `MeetingLikelyDropped` below watches for consecutive runs that
+    receive no media and stops the batch rather than burning the rest.
+    """
+    cmd = (
+        f"docker exec {netns.WORKER_CONTAINER} ip netns exec {netns.CLIENT_NS} "
+        f"timeout 20 curl -s -o /dev/null -w '%{{http_code}}' -L {room}"
+    )
+    out = subprocess.run(cmd, shell=True, capture_output=True, text=True, timeout=60)
+    code = (out.stdout or "").strip()
+    if code != "200":
+        raise MeetingUnreachable(
+            f"meeting URL {room} returned HTTP {code!r} from ns1; not starting a run"
+        )
+    return {"room": room, "room_http": code}
 
 
 def clip_header(path: str) -> dict:
@@ -144,6 +179,15 @@ def assert_remote_inbound_media(record: dict, app: str) -> dict:
     decoded frame rate.
     """
     pq = (record.get("player_qoe") or {}).get(app) or {}
+    res = pq.get("video_resolution_p")
+    fps = pq.get("frame_rate_fps")
+    sess = pq.get("session_seconds")
+    # `inbound_streams` is a PER-SAMPLE field and shared/qoe.py does not carry it
+    # into the aggregate, so it reads 0 even on a healthy run -- requiring a byte
+    # count from it failed a run that had 720p at 23.85 fps over 58.99 s. The
+    # three fields below are themselves derived from inbound-rtp, so they
+    # establish remote media on their own; bytes are recorded when present but
+    # never required.
     streams = pq.get("inbound_streams") or []
     bytes_rx = 0
     for s in streams if isinstance(streams, list) else []:
@@ -152,20 +196,19 @@ def assert_remote_inbound_media(record: dict, app: str) -> dict:
                 bytes_rx = max(bytes_rx, int(s.get("bytes_received") or 0))
             except (TypeError, ValueError):
                 pass
-    res = pq.get("video_resolution_p")
-    fps = pq.get("frame_rate_fps")
     info = {
-        "remote_bytes_received": bytes_rx,
-        "remote_inbound_streams": len(streams) if isinstance(streams, list) else 0,
+        "remote_bytes_received": bytes_rx or None,
         "remote_media_basis": (
-            "inbound-rtp getStats; remote by construction (local video is "
-            "outbound-rtp), which is why the DOM tile gate does not apply"
+            "inbound-rtp getStats (resolution/fps/session); remote by "
+            "construction, since local video is outbound-rtp -- which is why "
+            "the DOM tile gate does not apply to Meet"
         ),
     }
-    if not bytes_rx or not res or not fps:
+    if not pq.get("player_qoe_available") or not res or not fps or not sess:
         raise NoRemoteInboundMedia(
-            f"{app}: no remote inbound video to measure "
-            f"(bytes_received={bytes_rx}, resolution={res}, fps={fps})"
+            f"{app}: no remote inbound video to measure (available="
+            f"{pq.get('player_qoe_available')}, resolution={res}, fps={fps}, "
+            f"session={sess})"
         )
     return info
 
@@ -210,6 +253,12 @@ def drive_meet(app: str, condition, duration_s: int, out_dir: str) -> AppRunResu
         duration_s=duration_s,
         trial=condition.trial_for(app),
         app_urls={app: ROOM},
+        # The persistent peer is already in the call, so there is nothing to
+        # wait for. This matters for speed, not just tidiness: the capture's
+        # auto-stop is duration_s + overhead + peer_wait_s, so the default
+        # 15-minute join budget made every 60 s run occupy ~17 minutes of
+        # wall clock (measured: 15:19 -> 15:36 for one run).
+        peer_wait_s=30,
         peers={
             app: {
                 "join_url": ROOM,
@@ -286,6 +335,9 @@ def run_app_point(plan, adapter, out_root, csv_path, reference, attempt, clip_in
     row.update({"suspect": False, "suspect_reason": "", "attempt": attempt})
     row.update(clip_info)
 
+    # Checked before EVERY run, not once per batch: the previous room died
+    # mid-batch and the remaining runs had nothing to join.
+    row.update(assert_room_reachable())
     runner.apply_condition(cond)
     quiet, mbps = netns.link_idle_wait()
     row["link_idle_mbps_before"] = round(mbps, 3)
@@ -378,6 +430,12 @@ def main() -> int:
 
     rates = C.MEET_RATES_MBPS + (C.MEET_EXTRA_RATES_MBPS if args.extra else ())
     plans = C.meet_plan(rates=tuple(sorted(rates, reverse=True)))
+    # ALL Meet runs first, then all NDT runs. The meeting has a finite life and
+    # only the Meet runs need it: an NDT run measures the shaped link and would
+    # happily run after the call has ended. Interleaving them would risk losing
+    # a bandwidth point to an expiring meeting in order to take a speed test
+    # that could have been taken later.
+    plans.sort(key=lambda p: (p.run_type != "app", -p.condition.rate_down_mbps))
     if args.limit:
         plans = plans[: args.limit]
     adapter = MeetAdapter()
@@ -386,6 +444,7 @@ def main() -> int:
 
     stats = {"total": len(plans), "valid": 0, "invalid": 0, "suspect": 0, "flagged": []}
     apps_done, started = 0, time.time()
+    no_media_streak = 0
     try:
         for i, plan in enumerate(plans, 1):
             if shutil.disk_usage(args.out_root).free < MIN_FREE_BYTES:
@@ -425,6 +484,24 @@ def main() -> int:
                 )
                 if row.get("valid"):
                     break
+            # If the room has gone, every remaining run is wasted. Two app runs
+            # in a row with no remote media is the signal; one alone is ordinary
+            # Meet flakiness.
+            if plan.run_type == "app":
+                reason = str(row.get("invalid_reason") or "")
+                no_media = (not row.get("valid")) and (
+                    "NoRemoteInboundMedia" in reason
+                    or "MeetingUnreachable" in reason
+                    or "advancing inbound video" in reason
+                )
+                no_media_streak = no_media_streak + 1 if no_media else 0
+                if no_media_streak >= 2:
+                    raise MeetingLikelyDropped(
+                        "two consecutive Meet runs received no remote media "
+                        f"(last: {reason[:160]}). Stopping rather than burning "
+                        "the remaining runs; the meeting has probably ended."
+                    )
+
             stats["valid" if row.get("valid") else "invalid"] += 1
             if row.get("suspect"):
                 stats["suspect"] += 1
@@ -447,6 +524,11 @@ def main() -> int:
             json.dump(payload, fh, indent=1)
         log(f"=== MEET DONE: {json.dumps(payload)}")
         return 0
+    except MeetingLikelyDropped as exc:
+        with open(args.marker + ".MEETING_DROPPED", "w") as fh:
+            json.dump({"error": str(exc), **stats}, fh, indent=1)
+        log(f"=== MEETING DROPPED: {exc}")
+        return 2
     except Exception:
         with open(args.marker + ".FAILED", "w") as fh:
             fh.write(traceback.format_exc())

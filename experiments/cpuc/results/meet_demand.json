@@ -1,0 +1,47 @@
+{
+ "100.0": {
+  "meet_avg_mbps": 3.689,
+  "meet_peak_mbps": 13.767,
+  "meet_total_mb": 32.277,
+  "bucket_meet_mb": 42.441,
+  "bucket_browser_infra_mb": 5.263,
+  "total_link_avg_mbps": 4.294,
+  "run": "meet_100mbps_20ms_0pct_pfifo_cubic_solo_t9893_b9b8e2db3e"
+ },
+ "3.0": {
+  "meet_avg_mbps": 1.561,
+  "meet_peak_mbps": 3.0,
+  "meet_total_mb": 16.779,
+  "bucket_meet_mb": 25.915,
+  "bucket_browser_infra_mb": 5.419,
+  "total_link_avg_mbps": 2.031,
+  "run": "meet_3mbps_20ms_0pct_pfifo_cubic_solo_t11562_228788dcf0"
+ },
+ "1.0": {
+  "meet_avg_mbps": 0.226,
+  "meet_peak_mbps": 1.004,
+  "meet_total_mb": 2.319,
+  "bucket_meet_mb": 2.517,
+  "bucket_browser_infra_mb": 4.224,
+  "total_link_avg_mbps": 0.613,
+  "run": "meet_1mbps_20ms_0pct_pfifo_cubic_solo_t14273_4af6bd4709"
+ },
+ "25.0": {
+  "meet_avg_mbps": 2.155,
+  "meet_peak_mbps": 10.6,
+  "meet_total_mb": 18.86,
+  "bucket_meet_mb": 28.959,
+  "bucket_browser_infra_mb": 6.531,
+  "total_link_avg_mbps": 2.863,
+  "run": "meet_25mbps_20ms_0pct_pfifo_cubic_solo_t12722_b57bae7db5"
+ },
+ "6.0": {
+  "meet_avg_mbps": 1.783,
+  "meet_peak_mbps": 5.996,
+  "meet_total_mb": 18.719,
+  "bucket_meet_mb": 28.5,
+  "bucket_browser_infra_mb": 6.614,
+  "total_link_avg_mbps": 2.382,
+  "run": "meet_6mbps_20ms_0pct_pfifo_cubic_solo_t11455_ca74677b1f"
+ }
+}

@@ -522,3 +522,25 @@ def run_ndt_point(plan, out_root, csv_path, attempt):
         row["invalid_reason"] = f"ndt: {res.error}"
     write_row(csv_path, row)
     return row
+
+
+def tc_drop_stats() -> dict:
+    """netem/qdisc counters, to confirm no loss was induced on this sweep.
+
+    The sweep configures no loss, so this is a check that none is present --
+    a leftover netem from an earlier loss condition would otherwise be
+    invisible and would corrupt every point.
+    """
+    out = {}
+    for ns, iface in (
+        (netns.SERVER_NS, netns.SERVER_IFACE),
+        (netns.CLIENT_NS, netns.CLIENT_IFACE),
+    ):
+        try:
+            r = netns.ns_exec(ns, f"tc -s qdisc show dev {iface}", check=False)
+            txt = r.stdout.strip()
+        except Exception as exc:  # noqa: BLE001
+            txt = f"<{type(exc).__name__}>"
+        out[f"{ns}:{iface}"] = txt.replace("\n", " ")[:300]
+        out[f"{ns}:{iface}:has_loss"] = " loss " in txt
+    return out
