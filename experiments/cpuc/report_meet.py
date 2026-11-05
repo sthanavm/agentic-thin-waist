@@ -66,6 +66,21 @@ def iqb_verdict(dl, ul, lat):
 
 DEMAND_SIDECAR = "/home/student/cpuc_data/meet/meet_demand.json"
 
+# Per-(capacity, RTT) demand. The rate-only sidecar above predates the latency
+# sweeps and cannot tell them apart, so reading it across latencies printed the
+# 20 ms figure in all three rows: Meet drew 3.689 Mb/s on a 100 Mb/s link at
+# 20 ms but 1.449 at 50 ms, and the table claimed both were 3.689.
+DEMAND_BYLAT_SIDECAR = "/home/student/cpuc_data/meet/meet_demand_bylat.json"
+
+
+def load_demand_bylat(path: str | None = None) -> dict:
+    path = path or DEMAND_BYLAT_SIDECAR
+    try:
+        with open(path) as fh:
+            return json.load(fh)
+    except Exception:  # noqa: BLE001 - absent sidecar just means no column
+        return {}
+
 
 def load_demand(path: str | None = None) -> dict:
     """Meet's OWN throughput per capacity point, from run_direct's attribution.
@@ -142,13 +157,21 @@ def build_table(rows):
     # Attach Meet's own throughput, and add a NOT COLLECTED row for any
     # expected capacity point that produced no valid app run.
     demand = load_demand()
+    bylat = load_demand_bylat()
     seen = {t["rate_mbps_symmetric"] for t in out}
     for t in out:
-        d = (
-            demand.get(f"{t['rate_mbps_symmetric']:g}")
-            or demand.get(str(t["rate_mbps_symmetric"]))
-            or {}
-        )
+        rtt = t.get("rtt_configured_ms")
+        d = {}
+        if rtt is not None:
+            d = bylat.get(f"{t['rate_mbps_symmetric']:g}@{rtt:g}") or {}
+        if not d and rtt in (None, 20.0):
+            # The rate-only sidecar describes the 20 ms pass, so it is never
+            # used to fill a row measured at another latency.
+            d = (
+                demand.get(f"{t['rate_mbps_symmetric']:g}")
+                or demand.get(str(t["rate_mbps_symmetric"]))
+                or {}
+            )
         t["browser_infra_mb"] = d.get("bucket_browser_infra_mb")
         if t["app_valid"]:
             t["meet_demand_mbps"] = d.get("meet_avg_mbps")
@@ -274,6 +297,55 @@ def markdown_table(t):
             )
         )
     return hdr + "\n".join(lines)
+
+
+def by_latency(table):
+    """[(rtt, rows)] ascending, or [(None, table)] when nothing is tagged."""
+    lats = sorted({r["rtt_configured_ms"] for r in table if r.get("rtt_configured_ms")})
+    if not lats:
+        return [(None, table)]
+    return [
+        (lat, [r for r in table if r.get("rtt_configured_ms") == lat]) for lat in lats
+    ]
+
+
+def latency_sentences(table) -> str:
+    """How the curve moves with RTT, one clause per latency.
+
+    find_breakpoint() answers "where does the call stop being good", and that
+    question has a different answer at each latency. Run over the whole table
+    it would mix three regimes and report one number that describes none of
+    them, so each latency is summarised from its own rows.
+    """
+    groups = [(lat, g) for lat, g in by_latency(table) if lat is not None]
+    if len(groups) < 2:
+        return ""
+    parts = []
+    for lat, g in groups:
+        good = [
+            r["rate_mbps_symmetric"]
+            for r in g
+            if r.get("qoe_label") == "high" and r.get("rate_mbps_symmetric")
+        ]
+        bad = [
+            r["rate_mbps_symmetric"]
+            for r in g
+            if r.get("qoe_label") in ("unusable", "no remote media")
+            and r.get("rate_mbps_symmetric")
+        ]
+        if good:
+            clause = f"at {lat:g} ms it held reference quality to {min(good):g} Mb/s"
+            if bad:
+                clause += f" and failed by {max(bad):g} Mb/s"
+            parts.append(clause)
+    if not parts:
+        return ""
+    return (
+        "Across latency, "
+        + "; ".join(parts)
+        + ". Every latency was measured on the same capacities, so the "
+        "comparison is like for like."
+    )
 
 
 def find_breakpoint(table):
@@ -517,8 +589,16 @@ def main() -> int:
     with open(args.csv, newline="") as fh:
         rows = list(csv.DictReader(fh))
     table = build_table(rows)
-    finding = find_breakpoint(table)
-    text = sentences(finding, table)
+    # The headline comes from the 20 ms set, which is the one with a complete
+    # curve; the latency comparison is then stated across all three.
+    groups = by_latency(table)
+    primary = next((g for lat, g in groups if lat == 20.0), table)
+    finding = find_breakpoint(primary)
+    finding["latencies_ms"] = [lat for lat, _ in groups if lat is not None]
+    text = sentences(finding, primary)
+    extra = latency_sentences(table)
+    if extra:
+        text = text + " " + extra
 
     os.makedirs(args.outdir, exist_ok=True)
     with open(os.path.join(args.outdir, "iqb_vs_qoe_table.csv"), "w", newline="") as fh:

@@ -15,5 +15,10 @@
   25.0
  ],
  "meet_observed_demand_mbps_min": 0.5,
- "meet_observed_demand_mbps_max": 3.689
+ "meet_observed_demand_mbps_max": 3.689,
+ "latencies_ms": [
+  20.0,
+  50.0,
+  100.0
+ ]
 }

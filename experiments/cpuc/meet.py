@@ -303,8 +303,54 @@ class MeetAdapter:
         return lab, reason, m.as_row()
 
 
-def meet_reference(csv_path: str) -> dict:
-    """Reference resolution AND fps, read back from the rows already written."""
+PEER_STATUS = os.environ.get(
+    "CPUC_MEET_PEER_STATUS", "/home/student/pramana-assets/peer-meet/meet_status.json"
+)
+PEER_FRESH_S = 180.0
+
+
+def peer_is_publishing(path: str = PEER_STATUS, fresh_s: float = PEER_FRESH_S) -> dict:
+    """Is the persistent peer still in the call and sending video?
+
+    The no-media streak cannot tell "the meeting ended" apart from "this link
+    is too slow to carry video", and the two want opposite responses: stop
+    everything, or record the failure and carry on. The peer settles it. It
+    sits in the room for the whole batch and writes its own outbound state,
+    so if it is still publishing recently then the meeting exists and the
+    failure belongs to the condition under test.
+
+    Measured: at 20 ms the 0.5 Mb/s point produced two consecutive no-media
+    runs on a meeting that was demonstrably alive, and at 50 ms so did 1 and
+    0.5 Mb/s -- which stopped the batch and cost six NDT runs that do not
+    even need the meeting.
+    """
+    try:
+        with open(path) as fh:
+            d = json.load(fh)
+    except Exception:  # noqa: BLE001 - no status file means no evidence
+        return {"known": False, "publishing": False, "note": "no peer status file"}
+    age = time.time() - float(d.get("ts") or 0)
+    pub = d.get("state") == "publishing" and age <= fresh_s
+    return {
+        "known": True,
+        "publishing": bool(pub),
+        "age_s": round(age, 1),
+        "state": d.get("state"),
+        "size": d.get("size"),
+        "frames_sent": d.get("frames_sent"),
+        "note": f"peer {d.get('state')} {d.get('size')} {age:.0f}s ago",
+    }
+
+
+def meet_reference(csv_path: str, rtt_ms: float | None = None) -> dict:
+    """Reference resolution AND fps, read back from the rows already written.
+
+    Filtered by configured RTT when one is given. High is defined as a
+    fraction of the reference's resolution and fps, so a 100 ms call graded
+    against a 20 ms reference would charge the latency's effect to the
+    capacity. Once a CSV holds more than one latency, an unfiltered lookup
+    returns whichever reference happened to be written last.
+    """
     import csv as _csv
 
     out: dict = {}
@@ -316,6 +362,12 @@ def meet_reference(csv_path: str) -> dict:
                 continue
             if r.get("is_reference") not in ("True", "true", "1"):
                 continue
+            if rtt_ms is not None:
+                try:
+                    if abs(float(r.get("rtt") or -1) - rtt_ms) > 1e-6:
+                        continue
+                except ValueError:
+                    continue
             try:
                 res = int(float(r.get("qoe_resolution_p") or 0)) or None
                 fps = float(r.get("qoe_fps") or 0) or None
@@ -331,7 +383,9 @@ def run_app_point(plan, adapter, out_root, csv_path, reference, attempt, clip_in
     group = runner.group_id_for(cond, plan.rep)
     run_id = f"meet_{group}_a{attempt}_{os.urandom(3).hex()}"
     out_dir = os.path.join(out_root, run_id)
-    row = runner._base_row(plan, run_id, group, out_dir, "meet_20ms", time.gmtime())
+    row = runner._base_row(
+        plan, run_id, group, out_dir, f"meet_{cond.rtt_ms:g}ms", time.gmtime()
+    )
     row.update({"suspect": False, "suspect_reason": "", "attempt": attempt})
     row.update(clip_info)
 
@@ -421,6 +475,23 @@ def main() -> int:
         help="do not re-run the reference; labels then resolve against the "
         "reference row already in the CSV",
     )
+    ap.add_argument(
+        "--rtt",
+        type=float,
+        default=C.MEET_RTT_MS,
+        help="configured RTT in ms for every run in this batch (default 20). "
+        "IQB conferencing: 50 ms minimum, 20 ms high; 100 ms is Jaber's "
+        "third point. The RTT is part of the condition slug, so latencies "
+        "never collide in the CSV.",
+    )
+    ap.add_argument(
+        "--ndt-only",
+        action="store_true",
+        help="run only the NDT half of the matrix. An NDT run measures the "
+        "shaped link and needs no meeting, so this recovers the speed tests "
+        "for a batch whose Meet runs already happened without spending "
+        "meeting time re-running them.",
+    )
     ap.add_argument("--out-root", default="/home/student/cpuc_data/meet/runs")
     ap.add_argument("--csv", default="/home/student/cpuc_data/meet/cpuc_runs.csv")
     ap.add_argument("--marker", default="/home/student/cpuc_data/meet/COMPLETE")
@@ -444,14 +515,18 @@ def main() -> int:
         rates = tuple(float(x) for x in args.rates.split(",") if x.strip())
     else:
         rates = C.MEET_RATES_MBPS + (C.MEET_EXTRA_RATES_MBPS if args.extra else ())
-    plans = C.meet_plan(rates=tuple(sorted(rates, reverse=True)))
+    plans = C.meet_plan(rates=tuple(sorted(rates, reverse=True)), rtt_ms=args.rtt)
     if args.skip_reference:
         # The reference is only needed to resolve labels, and a valid reference
         # row already in the CSV serves that. Re-running it would cost a run of
         # a finite meeting for a number we already have.
         plans = [p for p in plans if not p.is_reference]
-        ref = meet_reference(args.csv)
-        if not ref:
+        ref = meet_reference(args.csv, rtt_ms=args.rtt)
+        if not ref and args.ndt_only:
+            # Nothing here gets a QoE label, so there is nothing to resolve.
+            log("--ndt-only: no reference needed, no Meet run will be graded")
+            ref = {}
+        elif not ref:
             ap.error(
                 "--skip-reference needs a reference row already in "
                 f"{args.csv}; none found, so labels could not resolve"
@@ -462,6 +537,8 @@ def main() -> int:
     # happily run after the call has ended. Interleaving them would risk losing
     # a bandwidth point to an expiring meeting in order to take a speed test
     # that could have been taken later.
+    if args.ndt_only:
+        plans = [p for p in plans if p.run_type == "ndt"]
     plans.sort(key=lambda p: (p.run_type != "app", -p.condition.rate_down_mbps))
     if args.limit:
         plans = plans[: args.limit]
@@ -490,7 +567,7 @@ def main() -> int:
                             adapter,
                             args.out_root,
                             args.csv,
-                            meet_reference(args.csv),
+                            meet_reference(args.csv, rtt_ms=args.rtt),
                             attempt,
                             clip_info,
                         )
@@ -523,11 +600,25 @@ def main() -> int:
                 )
                 no_media_streak = no_media_streak + 1 if no_media else 0
                 if no_media_streak >= 2:
-                    raise MeetingLikelyDropped(
-                        "two consecutive Meet runs received no remote media "
-                        f"(last: {reason[:160]}). Stopping rather than burning "
-                        "the remaining runs; the meeting has probably ended."
-                    )
+                    # Ask the peer before declaring the meeting dead: a slow
+                    # link produces exactly the same symptom, and stopping on
+                    # it throws away the rest of the matrix for nothing.
+                    peer = peer_is_publishing()
+                    if peer["publishing"]:
+                        log(
+                            f"  no-media streak at {plan.condition.rate_down_mbps:g} Mb/s, but "
+                            f"the meeting is live ({peer['note']}) -- treating this "
+                            "as the link being too slow to carry video, not a "
+                            "dropped meeting, and continuing"
+                        )
+                        no_media_streak = 0
+                    else:
+                        raise MeetingLikelyDropped(
+                            "two consecutive Meet runs received no remote media "
+                            f"(last: {reason[:160]}) and the peer is not "
+                            f"publishing ({peer['note']}). Stopping rather than "
+                            "burning the remaining runs."
+                        )
 
             stats["valid" if row.get("valid") else "invalid"] += 1
             if row.get("suspect"):
