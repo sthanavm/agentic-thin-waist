@@ -24,6 +24,7 @@ import sys
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
+from cpuc import plots  # noqa: E402
 from cpuc.conditions import IQB_VIDEO_STREAMING  # noqa: E402
 
 DL_MIN = IQB_VIDEO_STREAMING["download_min_mbps"]  # 25
@@ -90,6 +91,26 @@ def iqb_download_verdict(dl):
     return "fails minimum"
 
 
+DEMAND_SIDECAR = os.environ.get(
+    "CPUC_YT_DEMAND", "/home/student/cpuc_data/sweep/youtube_demand.json"
+)
+
+
+def load_demand(path: str | None = None) -> dict:
+    """YouTube's OWN throughput per point, from run_direct's attribution.
+
+    The link total includes Chrome's page and infrastructure traffic, so it
+    overstates what the player asked for. Measured at 3 Mb/s: the link carried
+    2.333 Mb/s against YouTube's own 2.090.
+    """
+    path = path or DEMAND_SIDECAR
+    try:
+        with open(path) as fh:
+            return json.load(fh)
+    except Exception:
+        return {}
+
+
 def load(csv_path):
     with open(csv_path, newline="") as fh:
         return list(csv.DictReader(fh))
@@ -131,10 +152,21 @@ def build_table(rows):
                 "suspect": a.get("suspect") in ("True", "true", "1"),
                 "app_valid": a.get("valid") in ("True", "true", "1"),
                 "shaper_avg_mbps": _f(a.get("shaper_avg_mbps")),
+                "app_demand_mbps": None,
+                "app_peak_mbps": None,
                 "source_max_rendition_p": _f(a.get("source_max_rendition_p")),
                 "source_renditions": a.get("source_renditions") or "",
             }
         )
+    demand = load_demand()
+    for row in out:
+        d = (
+            demand.get(f"{row['rate_down_mbps']:g}")
+            or demand.get(str(row["rate_down_mbps"]))
+            or {}
+        )
+        row["app_demand_mbps"] = d.get("youtube_avg_mbps")
+        row["app_peak_mbps"] = d.get("youtube_peak_mbps")
     return out
 
 
@@ -324,13 +356,79 @@ def main() -> int:
 
     png = plot(table, os.path.join(args.outdir, "qoe_vs_bandwidth.png"))
 
+    # One chart per claim; see cpuc/plots.py for why each one exists.
+    made = [png]
+    made.append(
+        plots.contrast(
+            table,
+            os.path.join(args.outdir, "contrast_iqb_vs_qoe.png"),
+            DL_MIN,
+            "rate_down_mbps",
+            "iqb_verdict_download_only",
+            "IQB's verdict against measured YouTube QoE (20 ms RTT, no loss)",
+        )
+    )
+    made.append(
+        plots.demand_vs_capacity(
+            table,
+            os.path.join(args.outdir, "demand_vs_capacity.png"),
+            DL_MIN,
+            "rate_down_mbps",
+            "app_demand_mbps",
+            "YouTube",
+            "What YouTube actually used against what the link offered",
+            peak_key="app_peak_mbps",
+        )
+    )
+    made.append(
+        plots.single_metric(
+            table,
+            os.path.join(args.outdir, "startup_vs_bandwidth.png"),
+            DL_MIN,
+            "rate_down_mbps",
+            "startup_s",
+            "startup delay (s)",
+            "Startup delay against capacity",
+            thresholds=(
+                (5.0, "5 s -- above this a run cannot be High", "--"),
+                (10.0, "10 s -- above this a run is Unusable", "-."),
+            ),
+        )
+    )
+    made.append(
+        plots.single_metric(
+            table,
+            os.path.join(args.outdir, "rebuffer_vs_bandwidth.png"),
+            DL_MIN,
+            "rate_down_mbps",
+            "rebuffer_ratio",
+            "rebuffer ratio (% of session)",
+            "Rebuffering against capacity",
+            scale=100.0,
+            colour="#C62828",
+            thresholds=((5.0, "5% -- above this a run is Unusable", "-."),),
+        )
+    )
+    made.append(
+        plots.source_vs_delivered(
+            table,
+            os.path.join(args.outdir, "source_vs_delivered.png"),
+            DL_MIN,
+            "rate_down_mbps",
+            "What the source offered against what the player chose",
+        )
+    )
+    made = [m for m in made if m]
+
     with open(os.path.join(args.outdir, "finding.json"), "w") as fh:
         json.dump(finding, fh, indent=1)
 
     print(markdown_table(table))
     print()
     print("FINDING:", json.dumps(finding, indent=1))
-    print(f"\nwrote: {tbl_csv}\n       {md}\n       {png}")
+    print(f"\nwrote: {tbl_csv}\n       {md}")
+    for m in made:
+        print(f"       {m}")
     return 0
 
 

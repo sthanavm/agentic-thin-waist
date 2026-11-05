@@ -1,0 +1,66 @@
+{
+ "100": {
+  "youtube_avg_mbps": 2.238,
+  "youtube_peak_mbps": 33.803,
+  "bucket_youtube_mb": 19.555,
+  "bucket_browser_infra_mb": 2.326,
+  "total_link_avg_mbps": 2.52,
+  "provenance": "transcribed from vm4 backfill of run_direct per_app_stats"
+ },
+ "25": {
+  "youtube_avg_mbps": 2.318,
+  "youtube_peak_mbps": 22.927,
+  "bucket_youtube_mb": 20.309,
+  "bucket_browser_infra_mb": 2.338,
+  "total_link_avg_mbps": 2.498,
+  "provenance": "transcribed from vm4 backfill of run_direct per_app_stats"
+ },
+ "12.5": {
+  "youtube_avg_mbps": 4.087,
+  "youtube_peak_mbps": 12.075,
+  "bucket_youtube_mb": 39.516,
+  "bucket_browser_infra_mb": 4.738,
+  "total_link_avg_mbps": 4.886,
+  "provenance": "transcribed from vm4 backfill of run_direct per_app_stats"
+ },
+ "6.25": {
+  "youtube_avg_mbps": 3.346,
+  "youtube_peak_mbps": 6.256,
+  "bucket_youtube_mb": 36.383,
+  "bucket_browser_infra_mb": 4.872,
+  "total_link_avg_mbps": 3.95,
+  "provenance": "transcribed from vm4 backfill of run_direct per_app_stats"
+ },
+ "3": {
+  "youtube_avg_mbps": 2.09,
+  "youtube_peak_mbps": 3.009,
+  "bucket_youtube_mb": 22.806,
+  "bucket_browser_infra_mb": 2.711,
+  "total_link_avg_mbps": 2.333,
+  "provenance": "transcribed from vm4 backfill of run_direct per_app_stats"
+ },
+ "1.5": {
+  "youtube_avg_mbps": 1.156,
+  "youtube_peak_mbps": 1.501,
+  "bucket_youtube_mb": 15.013,
+  "bucket_browser_infra_mb": 2.58,
+  "total_link_avg_mbps": 1.354,
+  "provenance": "transcribed from vm4 backfill of run_direct per_app_stats"
+ },
+ "1": {
+  "youtube_avg_mbps": 0.84,
+  "youtube_peak_mbps": 1.013,
+  "bucket_youtube_mb": 10.978,
+  "bucket_browser_infra_mb": 1.41,
+  "total_link_avg_mbps": 0.939,
+  "provenance": "transcribed from vm4 backfill of run_direct per_app_stats"
+ },
+ "0.5": {
+  "youtube_avg_mbps": 0.398,
+  "youtube_peak_mbps": 0.509,
+  "bucket_youtube_mb": 5.255,
+  "bucket_browser_infra_mb": 1.377,
+  "total_link_avg_mbps": 0.493,
+  "provenance": "transcribed from vm4 backfill of run_direct per_app_stats"
+ }
+}
