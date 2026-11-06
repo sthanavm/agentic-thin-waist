@@ -301,7 +301,16 @@ def main() -> int:
     ap.add_argument(
         "--ndt-only",
         action="store_true",
-        help="run only the NDT half of the matrix",
+        help="run only the NDT half of the matrix -- no meeting needed, so "
+        "this can be run any time (e.g. after an M-Lab rate limit clears), "
+        "decoupled from the Teams calls",
+    )
+    ap.add_argument(
+        "--app-only",
+        action="store_true",
+        help="run only the Teams-call half of the matrix, skipping NDT -- for "
+        "when NDT is blocked (M-Lab rate limiting) or just not needed right "
+        "now; run --ndt-only separately later to fill in the speed tests",
     )
     ap.add_argument("--out-root", default="/home/student/cpuc_data/teams/runs")
     ap.add_argument("--csv", default="/home/student/cpuc_data/teams/cpuc_runs.csv")
@@ -361,8 +370,12 @@ def main() -> int:
         log(f"condition range {lo}-{hi}: {len(wanted)} of {len(seen)} conditions")
     if args.skip_reference:
         plans = [p for p in plans if not p.is_reference]
+    if args.ndt_only and args.app_only:
+        ap.error("--ndt-only and --app-only are mutually exclusive")
     if args.ndt_only:
         plans = [p for p in plans if p.run_type == "ndt"]
+    if args.app_only:
+        plans = [p for p in plans if p.run_type == "app"]
     # All Teams runs first (highest rate first), then all NDT runs -- same
     # reasoning as meet.py: the meeting has a finite life, the NDT runs do not
     # need it, so they should not risk losing a bandwidth point to a meeting
