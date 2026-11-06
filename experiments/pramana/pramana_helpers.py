@@ -389,6 +389,16 @@ APP_REGISTRY: dict[str, dict[str, Any]] = {
         "plot_directions": ["download", "upload"],
         "color": "#00897B",
     },
+    "teams": {
+        "url": "",  # supply a meeting join URL via cfg.app_urls["teams"]
+        "runtime": "browser",
+        "type": "call",
+        # Matches shared/apps.py's "teams" entry (collect.py's registry) so
+        # the two lists agree on what counts as this app's traffic.
+        "domains": ["teams.microsoft.com", "teams.live.com", "skype.com"],
+        "plot_directions": ["download", "upload"],
+        "color": "#6264A7",
+    },
     "wget": {
         "url": "http://speedtest.tele2.net/100MB.zip",
         "runtime": "shell",
@@ -1299,6 +1309,14 @@ def run_qoe_collectors(
         "PRAMANA_SAMPLE_INTERVAL_S",
         "PRAMANA_TRACE",
         "PRAMANA_TRACE_INTERVAL_US",
+        # Disables the DOM remote-tile gate for WebRTC apps (meet/teams/zoom),
+        # whose metrics come from inbound-rtp getStats and never populate the
+        # DOM fields that gate checks. Set by cpuc/meet.py and cpuc/teams.py.
+        # Without forwarding this, the collector enforces the default area
+        # floor regardless of the host process's env, fails with
+        # RemoteTileMissing, exits 1, and the run's pcap download then 404s --
+        # confirmed live: every run hit this until the var was added here.
+        "PRAMANA_REMOTE_TILE_MIN_AREA",
     ):
         _v = os.environ.get(_k)
         if _v is not None:
@@ -3357,6 +3375,7 @@ DISPLAY_NAMES = {
     "tubi": "Tubi",
     "zoom": "Zoom",
     "meet": "Google Meet",
+    "teams": "Microsoft Teams",
     "wget": "Bulk download (wget)",
 }
 
