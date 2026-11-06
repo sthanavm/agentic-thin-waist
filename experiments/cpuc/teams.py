@@ -282,6 +282,17 @@ def main() -> int:
         help="comma-separated RTTs instead of the default (20,50,100)",
     )
     ap.add_argument(
+        "--condition-range",
+        default="",
+        help="1-indexed inclusive range of unique conditions to run, e.g. "
+        "'1-11', for splitting a batch across a time-limited meeting. "
+        "Indexes follow teams_plan()'s own emission order (conditions.py), "
+        "which puts all three per-RTT references (100/100 Mb/s, no loss) "
+        "first -- so '1-11' always covers every reference and a later "
+        "'12-21' can resolve its labels against rows already in the CSV "
+        "without needing to re-run anything from the first half.",
+    )
+    ap.add_argument(
         "--skip-reference",
         action="store_true",
         help="do not re-run the 100/100 Mb/s no-loss corners; labels resolve "
@@ -305,7 +316,12 @@ def main() -> int:
 
     os.makedirs(args.out_root, exist_ok=True)
     os.makedirs(os.path.dirname(args.csv), exist_ok=True)
-    for stale in (args.marker, args.marker + ".FAILED", args.marker + ".APPS_DONE"):
+    for stale in (
+        args.marker,
+        args.marker + ".FAILED",
+        args.marker + ".APPS_DONE",
+        args.marker + ".MEETING_DROPPED",
+    ):
         if os.path.exists(stale):
             os.remove(stale)
 
@@ -328,6 +344,21 @@ def main() -> int:
         else C.TEAMS_RTTS_MS
     )
     plans = C.teams_plan(rates=rates, rtts=rtts)
+    if args.condition_range:
+        lo_s, hi_s = args.condition_range.split("-", 1)
+        lo, hi = int(lo_s), int(hi_s)
+        seen: list[str] = []
+        for p in plans:
+            if p.run_type == "app" and p.condition.slug() not in seen:
+                seen.append(p.condition.slug())
+        if not (1 <= lo <= hi <= len(seen)):
+            ap.error(
+                f"--condition-range {args.condition_range} out of bounds for "
+                f"{len(seen)} unique conditions"
+            )
+        wanted = set(seen[lo - 1 : hi])
+        plans = [p for p in plans if p.condition.slug() in wanted]
+        log(f"condition range {lo}-{hi}: {len(wanted)} of {len(seen)} conditions")
     if args.skip_reference:
         plans = [p for p in plans if not p.is_reference]
     if args.ndt_only:
