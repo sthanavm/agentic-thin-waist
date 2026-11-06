@@ -1,0 +1,74 @@
+{
+ "3.0": {
+  "youtube_avg_mbps": 2.09,
+  "youtube_peak_mbps": 3.009,
+  "youtube_total_mb": 22.203,
+  "bucket_youtube_mb": 22.806,
+  "bucket_browser_infra_mb": 2.711,
+  "total_link_avg_mbps": 2.333,
+  "run": "youtube_3mbps_20ms_0pct_pfifo_cubic_solo_t12339_c5f01dc606"
+ },
+ "25.0": {
+  "youtube_avg_mbps": 2.318,
+  "youtube_peak_mbps": 22.927,
+  "youtube_total_mb": 19.995,
+  "bucket_youtube_mb": 20.309,
+  "bucket_browser_infra_mb": 2.338,
+  "total_link_avg_mbps": 2.498,
+  "run": "youtube_25mbps_20ms_0pct_pfifo_cubic_solo_t16257_fbce262547"
+ },
+ "0.5": {
+  "youtube_avg_mbps": 0.398,
+  "youtube_peak_mbps": 0.509,
+  "youtube_total_mb": 4.969,
+  "bucket_youtube_mb": 5.255,
+  "bucket_browser_infra_mb": 1.377,
+  "total_link_avg_mbps": 0.493,
+  "run": "youtube_0.5mbps_20ms_0pct_pfifo_cubic_solo_t13859_7337ba9fa6"
+ },
+ "100.0": {
+  "youtube_avg_mbps": 2.238,
+  "youtube_peak_mbps": 33.803,
+  "youtube_total_mb": 19.304,
+  "bucket_youtube_mb": 19.555,
+  "bucket_browser_infra_mb": 2.326,
+  "total_link_avg_mbps": 2.52,
+  "run": "youtube_100mbps_20ms_0pct_pfifo_cubic_solo_t15529_cbe1f5ab83"
+ },
+ "12.5": {
+  "youtube_avg_mbps": 4.087,
+  "youtube_peak_mbps": 12.075,
+  "youtube_total_mb": 38.83,
+  "bucket_youtube_mb": 39.516,
+  "bucket_browser_infra_mb": 4.738,
+  "total_link_avg_mbps": 4.886,
+  "run": "youtube_12.5mbps_20ms_0pct_pfifo_cubic_solo_t13239_f257e6d749"
+ },
+ "6.25": {
+  "youtube_avg_mbps": 3.346,
+  "youtube_peak_mbps": 6.256,
+  "youtube_total_mb": 35.556,
+  "bucket_youtube_mb": 36.383,
+  "bucket_browser_infra_mb": 4.872,
+  "total_link_avg_mbps": 3.95,
+  "run": "youtube_6.25mbps_20ms_0pct_pfifo_cubic_solo_t16899_d8abc1514b"
+ },
+ "1.0": {
+  "youtube_avg_mbps": 0.84,
+  "youtube_peak_mbps": 1.013,
+  "youtube_total_mb": 10.5,
+  "bucket_youtube_mb": 10.978,
+  "bucket_browser_infra_mb": 1.41,
+  "total_link_avg_mbps": 0.939,
+  "run": "youtube_1mbps_20ms_0pct_pfifo_cubic_solo_t11134_40b0ce3598"
+ },
+ "1.5": {
+  "youtube_avg_mbps": 1.156,
+  "youtube_peak_mbps": 1.501,
+  "youtube_total_mb": 14.446,
+  "bucket_youtube_mb": 15.013,
+  "bucket_browser_infra_mb": 2.58,
+  "total_link_avg_mbps": 1.354,
+  "run": "youtube_1.5mbps_20ms_0pct_pfifo_cubic_solo_t15107_3a45f66bb6"
+ }
+}
