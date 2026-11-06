@@ -1,0 +1,250 @@
+{
+ "0.5@100": {
+  "idle_s": 14.0,
+  "run": "youtube_0.5mbps_100ms_0pct_pfifo_cubic_solo_t9128_4ae8b871d0",
+  "window_s": 99.9,
+  "youtube_active_mbps": 0.449,
+  "youtube_avg_mbps": 0.386,
+  "youtube_peak_mbps": 0.513,
+  "youtube_total_mb": 4.821
+ },
+ "0.5@20": {
+  "_source": "carried over from the rate-only sidecar",
+  "bucket_browser_infra_mb": 1.377,
+  "bucket_youtube_mb": 5.255,
+  "idle_s": 14.0,
+  "run": "youtube_0.5mbps_20ms_0pct_pfifo_cubic_solo_t13859_7337ba9fa6",
+  "total_link_avg_mbps": 0.493,
+  "window_s": 99.9,
+  "youtube_active_mbps": 0.463,
+  "youtube_avg_mbps": 0.398,
+  "youtube_peak_mbps": 0.509,
+  "youtube_total_mb": 4.969
+ },
+ "0.5@50": {
+  "idle_s": 28.0,
+  "run": "youtube_0.5mbps_50ms_0pct_pfifo_cubic_solo_t11128_4c7b1c2d59",
+  "window_s": 99.9,
+  "youtube_active_mbps": 0.375,
+  "youtube_avg_mbps": 0.27,
+  "youtube_peak_mbps": 0.507,
+  "youtube_total_mb": 3.372
+ },
+ "1.5@100": {
+  "idle_s": 59.0,
+  "run": "youtube_1.5mbps_100ms_0pct_pfifo_cubic_solo_t14236_974e186da8",
+  "window_s": 99.9,
+  "youtube_active_mbps": 0.902,
+  "youtube_avg_mbps": 0.369,
+  "youtube_peak_mbps": 1.47,
+  "youtube_total_mb": 4.607
+ },
+ "1.5@20": {
+  "_source": "carried over from the rate-only sidecar",
+  "bucket_browser_infra_mb": 2.58,
+  "bucket_youtube_mb": 15.013,
+  "idle_s": 9.0,
+  "run": "youtube_1.5mbps_20ms_0pct_pfifo_cubic_solo_t15107_3a45f66bb6",
+  "total_link_avg_mbps": 1.354,
+  "window_s": 100.0,
+  "youtube_active_mbps": 1.27,
+  "youtube_avg_mbps": 1.156,
+  "youtube_peak_mbps": 1.501,
+  "youtube_total_mb": 14.446
+ },
+ "1.5@50": {
+  "idle_s": 63.0,
+  "run": "youtube_1.5mbps_50ms_0pct_pfifo_cubic_solo_t12376_7644e4b45d",
+  "window_s": 100.0,
+  "youtube_active_mbps": 0.946,
+  "youtube_avg_mbps": 0.35,
+  "youtube_peak_mbps": 1.476,
+  "youtube_total_mb": 4.374
+ },
+ "100@100": {
+  "idle_s": 47.0,
+  "run": "youtube_100mbps_100ms_0pct_pfifo_cubic_solo_t14085_1c4912039e",
+  "window_s": 70.0,
+  "youtube_active_mbps": 6.739,
+  "youtube_avg_mbps": 2.215,
+  "youtube_peak_mbps": 19.146,
+  "youtube_total_mb": 19.385
+ },
+ "100@20": {
+  "_source": "carried over from the rate-only sidecar",
+  "bucket_browser_infra_mb": 2.326,
+  "bucket_youtube_mb": 19.555,
+  "idle_s": 49.0,
+  "run": "youtube_100mbps_20ms_0pct_pfifo_cubic_solo_t15529_cbe1f5ab83",
+  "total_link_avg_mbps": 2.52,
+  "window_s": 69.0,
+  "youtube_active_mbps": 7.72,
+  "youtube_avg_mbps": 2.238,
+  "youtube_peak_mbps": 33.803,
+  "youtube_total_mb": 19.304
+ },
+ "100@50": {
+  "idle_s": 49.0,
+  "run": "youtube_100mbps_50ms_0pct_pfifo_cubic_solo_t12798_4441692342",
+  "window_s": 70.0,
+  "youtube_active_mbps": 7.787,
+  "youtube_avg_mbps": 2.336,
+  "youtube_peak_mbps": 17.364,
+  "youtube_total_mb": 20.44
+ },
+ "12.5@100": {
+  "idle_s": 64.0,
+  "run": "youtube_12.5mbps_100ms_0pct_pfifo_cubic_solo_t15017_3779b6a125",
+  "window_s": 72.0,
+  "youtube_active_mbps": 4.462,
+  "youtube_avg_mbps": 0.494,
+  "youtube_peak_mbps": 12.318,
+  "youtube_total_mb": 4.444
+ },
+ "12.5@20": {
+  "_source": "carried over from the rate-only sidecar",
+  "bucket_browser_infra_mb": 4.738,
+  "bucket_youtube_mb": 39.516,
+  "idle_s": 32.0,
+  "run": "youtube_12.5mbps_20ms_0pct_pfifo_cubic_solo_t13239_f257e6d749",
+  "total_link_avg_mbps": 4.886,
+  "window_s": 76.0,
+  "youtube_active_mbps": 7.059,
+  "youtube_avg_mbps": 4.087,
+  "youtube_peak_mbps": 12.075,
+  "youtube_total_mb": 38.83
+ },
+ "12.5@50": {
+  "idle_s": 42.0,
+  "run": "youtube_12.5mbps_50ms_0pct_pfifo_cubic_solo_t10508_e128a703d7",
+  "window_s": 69.0,
+  "youtube_active_mbps": 5.928,
+  "youtube_avg_mbps": 2.32,
+  "youtube_peak_mbps": 12.061,
+  "youtube_total_mb": 20.011
+ },
+ "1@100": {
+  "idle_s": 6.0,
+  "run": "youtube_1mbps_100ms_0pct_pfifo_cubic_solo_t16427_057a991b5d",
+  "window_s": 99.0,
+  "youtube_active_mbps": 0.91,
+  "youtube_avg_mbps": 0.855,
+  "youtube_peak_mbps": 1.013,
+  "youtube_total_mb": 10.584
+ },
+ "1@20": {
+  "_source": "carried over from the rate-only sidecar",
+  "bucket_browser_infra_mb": 1.41,
+  "bucket_youtube_mb": 10.978,
+  "idle_s": 10.0,
+  "run": "youtube_1mbps_20ms_0pct_pfifo_cubic_solo_t11134_40b0ce3598",
+  "total_link_avg_mbps": 0.939,
+  "window_s": 100.0,
+  "youtube_active_mbps": 0.933,
+  "youtube_avg_mbps": 0.84,
+  "youtube_peak_mbps": 1.013,
+  "youtube_total_mb": 10.5
+ },
+ "1@50": {
+  "idle_s": 44.0,
+  "run": "youtube_1mbps_50ms_0pct_pfifo_cubic_solo_t16322_d8c45b7cfa",
+  "window_s": 100.0,
+  "youtube_active_mbps": 0.618,
+  "youtube_avg_mbps": 0.346,
+  "youtube_peak_mbps": 0.987,
+  "youtube_total_mb": 4.325
+ },
+ "25@100": {
+  "idle_s": 63.0,
+  "run": "youtube_25mbps_100ms_0pct_pfifo_cubic_solo_t14425_5f1c243120",
+  "window_s": 70.9,
+  "youtube_active_mbps": 4.591,
+  "youtube_avg_mbps": 0.514,
+  "youtube_peak_mbps": 23.9,
+  "youtube_total_mb": 4.558
+ },
+ "25@20": {
+  "_source": "carried over from the rate-only sidecar",
+  "bucket_browser_infra_mb": 2.338,
+  "bucket_youtube_mb": 20.309,
+  "idle_s": 44.0,
+  "run": "youtube_25mbps_20ms_0pct_pfifo_cubic_solo_t16257_fbce262547",
+  "total_link_avg_mbps": 2.498,
+  "window_s": 69.0,
+  "youtube_active_mbps": 6.396,
+  "youtube_avg_mbps": 2.318,
+  "youtube_peak_mbps": 22.927,
+  "youtube_total_mb": 19.995
+ },
+ "25@50": {
+  "idle_s": 61.0,
+  "run": "youtube_25mbps_50ms_0pct_pfifo_cubic_solo_t13526_b778975a95",
+  "window_s": 69.0,
+  "youtube_active_mbps": 4.521,
+  "youtube_avg_mbps": 0.525,
+  "youtube_peak_mbps": 20.782,
+  "youtube_total_mb": 4.529
+ },
+ "3@100": {
+  "idle_s": 72.0,
+  "run": "youtube_3mbps_100ms_0pct_pfifo_cubic_solo_t15902_9f36d9e94e",
+  "window_s": 94.1,
+  "youtube_active_mbps": 1.664,
+  "youtube_avg_mbps": 0.391,
+  "youtube_peak_mbps": 2.936,
+  "youtube_total_mb": 4.6
+ },
+ "3@20": {
+  "_source": "carried over from the rate-only sidecar",
+  "bucket_browser_infra_mb": 2.711,
+  "bucket_youtube_mb": 22.806,
+  "idle_s": 13.0,
+  "run": "youtube_3mbps_20ms_0pct_pfifo_cubic_solo_t12339_c5f01dc606",
+  "total_link_avg_mbps": 2.333,
+  "window_s": 85.0,
+  "youtube_active_mbps": 2.467,
+  "youtube_avg_mbps": 2.09,
+  "youtube_peak_mbps": 3.009,
+  "youtube_total_mb": 22.203
+ },
+ "3@50": {
+  "idle_s": 15.0,
+  "run": "youtube_3mbps_50ms_0pct_pfifo_cubic_solo_t9608_46517f017b",
+  "window_s": 90.0,
+  "youtube_active_mbps": 2.453,
+  "youtube_avg_mbps": 2.044,
+  "youtube_peak_mbps": 3.008,
+  "youtube_total_mb": 22.992
+ },
+ "6.25@100": {
+  "idle_s": 65.0,
+  "run": "youtube_6.25mbps_100ms_0pct_pfifo_cubic_solo_t11418_25c4bdda4a",
+  "window_s": 76.0,
+  "youtube_active_mbps": 3.192,
+  "youtube_avg_mbps": 0.461,
+  "youtube_peak_mbps": 6.083,
+  "youtube_total_mb": 4.378
+ },
+ "6.25@20": {
+  "_source": "carried over from the rate-only sidecar",
+  "bucket_browser_infra_mb": 4.872,
+  "bucket_youtube_mb": 36.383,
+  "idle_s": 23.0,
+  "run": "youtube_6.25mbps_20ms_0pct_pfifo_cubic_solo_t16899_d8abc1514b",
+  "total_link_avg_mbps": 3.95,
+  "window_s": 85.0,
+  "youtube_active_mbps": 4.587,
+  "youtube_avg_mbps": 3.346,
+  "youtube_peak_mbps": 6.256,
+  "youtube_total_mb": 35.556
+ },
+ "6.25@50": {
+  "idle_s": 31.0,
+  "run": "youtube_6.25mbps_50ms_0pct_pfifo_cubic_solo_t14168_0b92483c9a",
+  "window_s": 75.0,
+  "youtube_active_mbps": 3.686,
+  "youtube_avg_mbps": 2.162,
+  "youtube_peak_mbps": 6.253,
+  "youtube_total_mb": 20.266
+ }
+}

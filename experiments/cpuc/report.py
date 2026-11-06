@@ -94,6 +94,27 @@ def iqb_download_verdict(dl):
 DEMAND_SIDECAR = os.environ.get(
     "CPUC_YT_DEMAND", "/home/student/cpuc_data/sweep/youtube_demand.json"
 )
+DEMAND_BYLAT_SIDECAR = os.environ.get(
+    "CPUC_YT_DEMAND_BYLAT",
+    "/home/student/cpuc_data/sweep/youtube_demand_bylat.json",
+)
+
+
+def load_demand_bylat(path: str | None = None) -> dict:
+    """The same figures keyed by (capacity, configured RTT).
+
+    Demand is a property of the run, not of the capacity. The rate-only
+    sidecar was correct while every run sat at 20 ms and silently wrong the
+    moment a second latency was appended to the CSV: every 50 and 100 ms row
+    would have been given the 20 ms demand and the chart would have shown
+    three identical curves.
+    """
+    path = path or DEMAND_BYLAT_SIDECAR
+    try:
+        with open(path) as fh:
+            return json.load(fh)
+    except Exception:  # noqa: BLE001 - absent sidecar just means no column
+        return {}
 
 
 def load_demand(path: str | None = None) -> dict:
@@ -165,14 +186,23 @@ def build_table(rows):
             }
         )
     demand = load_demand()
+    bylat = load_demand_bylat()
     for row in out:
-        d = (
-            demand.get(f"{row['rate_down_mbps']:g}")
-            or demand.get(str(row["rate_down_mbps"]))
-            or {}
-        )
+        rtt = row.get("rtt_configured_ms")
+        d = {}
+        if rtt is not None:
+            d = bylat.get(f"{row['rate_down_mbps']:g}@{rtt:g}") or {}
+        if not d and rtt in (None, 20.0):
+            # The rate-only sidecar describes the 20 ms pass, so it is never
+            # used to fill a row measured at another latency.
+            d = (
+                demand.get(f"{row['rate_down_mbps']:g}")
+                or demand.get(str(row["rate_down_mbps"]))
+                or {}
+            )
         row["app_demand_mbps"] = d.get("youtube_avg_mbps")
         row["app_peak_mbps"] = d.get("youtube_peak_mbps")
+        row["app_total_mb"] = d.get("youtube_total_mb")
     return out
 
 
