@@ -1,23 +1,23 @@
 """Where the harness finds `pramana_helpers`, and why it is not just an import.
 
-The background-traffic guard calls `pramana_helpers.link_interference`, the
+The background-traffic guard wants `pramana_helpers.link_interference`, the
 per-bin interference judgement. That function is on branch
-`jenil/pramana/collector-driver-prefetch` (e0a6b01) and NOT on main.
+`jenil/pramana/collector-driver-prefetch` (e0a6b01) and NOT on main, and a
+repo-wide search (every branch, all 673 commits, this fork and upstream) found
+it has never been pushed anywhere reachable -- only referenced, never defined.
+It lives only on Jenil's own machine per the path below.
 
-Merging that branch into this checkout was tried and abandoned: it conflicts
-with `jenil/pramana/notebook-code-only` in 10 hunks / 591 lines of
-`pramana_helpers.py` alone, plus `collect.py` and `shared/apps.py`. Those are
-two divergent lines of measurement code, and hand-resolving them to obtain one
-function would risk changing how QoE or attribution is computed -- which is the
-one thing this study cannot afford to do quietly.
+DECISION (Sthanav, pending Jenil sharing that file): `link_interference` is
+dropped from REQUIRED_ATTRS so collection is not blocked on it. Confirmed by
+reading guard.py and pramana_helpers.py that nothing in the actually-used run
+path (`teams.py`'s drive_teams/apply_condition) calls `link_interference`
+directly -- only `attribute_capture`, which IS present. The cost: `teams.py`
+does not call the background-traffic guard at all (see its own note at the
+call site), so a run genuinely contaminated by Chrome's own background
+traffic would not be caught. Re-add `link_interference` to REQUIRED_ATTRS and
+wire the guard back into teams.py's run_app_point once that file is in hand.
 
-So the dependency is resolved by PATH instead: point at a tree that already
-has the function. `driver-work` is a linked worktree of this repo checked out
-at e0a6b01, so it is the same code the branch would have brought in, with no
-merge and nothing resolved by hand.
-
-Override with CPUC_PRAMANA_PATH when that branch lands on main, at which point
-this module can go away.
+Override with CPUC_PRAMANA_PATH if/when that branch lands somewhere reachable.
 """
 
 from __future__ import annotations
@@ -33,7 +33,7 @@ DEFAULT_PRAMANA_PATHS = (
     ),
 )
 
-REQUIRED_ATTRS = ("link_interference", "attribute_capture")
+REQUIRED_ATTRS = ("attribute_capture",)
 
 
 def pramana_path() -> str:

@@ -238,14 +238,20 @@ def run_app_point(plan, adapter, out_root, csv_path, reference, attempt, clip_in
         runner.write_row(csv_path, row)
         return row
 
-    verdict = guard_mod.verdict_from_record(record)
-    row.update(verdict.as_row())
-    if not verdict.ok:
-        row["suspect"] = True
-        row["suspect_reason"] = (
-            "background-traffic guard failed: "
-            + ("; ".join(verdict.offenders) if verdict.offenders else verdict.note)
-        )[:300]
+    # NOT calling guard_mod.verdict_from_record() here. pramana_helpers.py on
+    # this branch never computes a `link_interference` block (deps.py's
+    # REQUIRED_ATTRS was relaxed to drop that requirement -- see deps.py), so
+    # run_direct()'s record never carries one. Calling verdict_from_record
+    # against a record that structurally never has the block would return
+    # checked=False on every single row with the same boilerplate note, which
+    # is not a real per-run signal -- it would just mark every row "suspect"
+    # for the same non-reason and make the column meaningless. Leaving
+    # guard_ok/guard_checked/suspect unset is the honest representation: this
+    # run was not evaluated for background interference, full stop, rather
+    # than a misleading blanket flag.
+    row["guard_note"] = (
+        "background-traffic interference guard not evaluated: link_interference unavailable (see deps.py)"
+    )
 
     label, reason, metric_row = adapter.label(res, plan.app, reference)
     row["qoe_label"] = label
