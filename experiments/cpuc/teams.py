@@ -106,7 +106,16 @@ def drive_teams(app: str, condition, duration_s: int, out_dir: str) -> AppRunRes
         duration_s=duration_s,
         trial=condition.trial_for(app),
         app_urls={app: ROOM},
-        peer_wait_s=30,
+        # meet.py uses 30s here because its bot is PERSISTENT (already joined
+        # before the batch starts) -- wait_for_bot_peers() skips waiting
+        # entirely for a persistent peer, so 30s there is just a formality.
+        # Our Teams bot is NOT persistent: it joins fresh every run, and
+        # needs the real knock/admit cycle to complete. Confirmed live: with
+        # 30s, every single run failed with "bot peer never confirmed
+        # publishing within 30s" even though the bot and collector were both
+        # actually in the meeting (auto-admitted, no waiting room) -- the
+        # timeout just fired before the status file caught up.
+        peer_wait_s=120,
         peers={
             app: {
                 "join_url": ROOM,
