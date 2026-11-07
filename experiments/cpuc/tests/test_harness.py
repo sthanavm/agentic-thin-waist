@@ -18,6 +18,7 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 import cpuc.conditions as C  # noqa: E402
 import cpuc.guard as G  # noqa: E402
+import cpuc.drive_pramana as D  # noqa: E402
 import cpuc.ndt as N  # noqa: E402
 import cpuc.qoe_labels as Q  # noqa: E402
 import cpuc.runner as R  # noqa: E402
@@ -843,3 +844,154 @@ def test_ndt_runs_inside_the_container_namespace_not_via_nsenter():
     assert pre.startswith("docker exec ")
     assert "ip netns exec ns1" in pre
     assert "nsenter" not in pre
+
+
+# ── the silent-success class ────────────────────────────────────────────────
+# Every fixture below is the shape of a REAL record. The "bad" one is
+# youtube_100mbps_20ms_..._c26c6ccd65, whose pcap was 372 bytes and whose
+# collector exited 1, and which drive() nonetheless reported as ok=True. The
+# "good" one is youtube_100mbps_20ms_..._30a34212f8 from the published sweep.
+def _good_record():
+    return {
+        "network_stats": {"packets": 18963, "total_mb": 22.7},
+        "per_app_stats": {
+            "youtube": {
+                "download": {
+                    "total_mb": 20.064,
+                    "packets": 13493,
+                    "classification": "starved",
+                }
+            }
+        },
+        "player_qoe": {"youtube": {"status": "ok", "collector_returncode": 0}},
+    }
+
+
+def test_a_real_run_is_still_usable():
+    # Guards the other direction: the checks must not reject good runs. A
+    # "starved" classification is a finding about the link, not a failure.
+    assert D.record_failures(_good_record(), "youtube") == []
+
+
+def test_empty_capture_is_not_a_successful_run():
+    rec = _good_record()
+    rec["network_stats"] = {"packets": 0, "total_mb": 0.0}
+    reasons = D.record_failures(rec, "youtube")
+    assert any("capture is empty" in r for r in reasons), reasons
+
+
+def test_app_that_moved_no_bytes_is_not_a_successful_run():
+    rec = _good_record()
+    rec["per_app_stats"]["youtube"]["download"] = {
+        "total_mb": 0.0,
+        "packets": 0,
+        "classification": "no_traffic",
+    }
+    reasons = D.record_failures(rec, "youtube")
+    assert any("moved no bytes" in r for r in reasons), reasons
+
+
+def test_nonzero_collector_exit_is_not_a_successful_run():
+    rec = _good_record()
+    rec["player_qoe"]["youtube"]["collector_returncode"] = 1
+    reasons = D.record_failures(rec, "youtube")
+    assert any("collector exited 1" in r for r in reasons), reasons
+
+
+def test_missing_collector_exit_status_is_not_a_pass():
+    # A check that cannot run must say so. Treating absent as "fine" is how
+    # the three earlier instances of this class stayed hidden.
+    rec = _good_record()
+    del rec["player_qoe"]["youtube"]["collector_returncode"]
+    reasons = D.record_failures(rec, "youtube")
+    assert any("exit status missing" in r for r in reasons), reasons
+
+
+def test_collector_failure_is_fatal_even_when_the_app_moved_bytes():
+    # DELIBERATE, and it has a consequence worth knowing: the low-capacity
+    # Meet runs that currently yield the "no remote media" rows have real
+    # traffic AND a non-zero collector exit, so they become unusable here.
+    # "No remote video arrived" must be read off the capture, not inferred
+    # from the collector having died.
+    rec = _good_record()
+    rec["per_app_stats"]["youtube"]["download"] = {
+        "total_mb": 3.348,
+        "packets": 10748,
+        "classification": "served",
+    }
+    rec["player_qoe"]["youtube"] = {"status": "skipped", "collector_returncode": 1}
+    assert D.record_failures(rec, "youtube") != []
+
+
+def test_the_372_byte_run_fails_on_every_count():
+    # The exact run that started this: it should have been impossible to
+    # report as ok, by three independent routes.
+    rec = {
+        "network_stats": {"packets": 0, "total_mb": 0.0},
+        "per_app_stats": {
+            "youtube": {
+                "download": {
+                    "total_mb": 0.0,
+                    "packets": 0,
+                    "classification": "no_traffic",
+                }
+            }
+        },
+        "player_qoe": {"youtube": {"status": "skipped", "collector_returncode": 1}},
+    }
+    assert len(D.record_failures(rec, "youtube")) == 3
+
+
+def test_failure_order_is_stable():
+    rec = {"network_stats": {}, "per_app_stats": {}, "player_qoe": {}}
+    assert D.record_failures(rec, "youtube") == D.record_failures(rec, "youtube")
+
+
+def _stub_drive_env(monkeypatch, record):
+    """Make drive() runnable in-process, with run_direct returning `record`."""
+
+    class _Watcher:
+        cmdline = "/usr/bin/chrome --flag"
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *a):
+            return False
+
+    class _Cfg:
+        def __init__(self, **kw):
+            pass
+
+    helpers = types.SimpleNamespace(
+        ExperimentConfig=_Cfg, run_direct=lambda cfg: record
+    )
+    monkeypatch.setattr(D, "_helpers", lambda: helpers)
+    monkeypatch.setattr(D.netns, "start_iperf3_server", lambda: None)
+    monkeypatch.setattr(D.netns, "install_shape_hook", lambda *a, **k: (lambda: None))
+    monkeypatch.setattr(D.browser, "CmdlineWatcher", lambda **k: _Watcher())
+
+
+def test_drive_reports_a_bad_record_as_not_ok(monkeypatch):
+    # The wiring, not just the predicate. Without this, reverting `ok` to a
+    # constant True passes every other test in this file -- which is exactly
+    # how the original bug survived.
+    bad = {
+        "network_stats": {"packets": 0, "total_mb": 0.0},
+        "per_app_stats": {
+            "youtube": {"download": {"total_mb": 0.0, "classification": "no_traffic"}}
+        },
+        "player_qoe": {"youtube": {"collector_returncode": 1}},
+    }
+    _stub_drive_env(monkeypatch, bad)
+    res = D.drive("youtube", C.REFERENCE, 60, "/tmp/unused")
+    assert res.ok is False
+    assert "capture is empty" in res.error
+    assert "collector exited 1" in res.error
+
+
+def test_drive_reports_a_good_record_as_ok(monkeypatch):
+    _stub_drive_env(monkeypatch, _good_record())
+    res = D.drive("youtube", C.REFERENCE, 60, "/tmp/unused")
+    assert res.ok is True
+    assert res.error == ""

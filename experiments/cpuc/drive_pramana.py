@@ -97,6 +97,57 @@ def _helpers():
     return pramana_helpers
 
 
+# Reasons a completed run's numbers cannot be trusted. Each of these fired on a
+# real run that `drive` reported as ok=True, which is the whole point: the
+# record already knew the run was bad and nothing looked.
+#
+#   * empty capture      -- a 372-byte pcap, network_stats.packets == 0
+#   * app moved no bytes -- per_app_stats[app].download.classification
+#                           == "no_traffic", total_mb == 0.0
+#   * collector failed   -- the collector exited 1 and the record carried the
+#                           code, but `ok` was a constant
+#
+# This is the fourth instance of the same class in this harness (tshark
+# returning 0 because the binary was absent; browser_infra read from per_app,
+# which only holds declared apps, so it reported 0.00; the Meet demand sidecar
+# emptying when its path was hardcoded off-box). The shape is always a success
+# value that is not derived from the evidence, so these are derived from it.
+def record_failures(record: dict, app: str) -> list[str]:
+    """Why this run is unusable, or [] if it is usable. Order is stable."""
+    out: list[str] = []
+
+    ns = record.get("network_stats") or {}
+    packets, total_mb = ns.get("packets"), ns.get("total_mb")
+    if not packets or not total_mb:
+        out.append(
+            f"capture is empty (packets={packets!r}, total_mb={total_mb!r}); "
+            f"nothing was measured, so every figure from this run is vacuous"
+        )
+
+    dl = ((record.get("per_app_stats") or {}).get(app) or {}).get("download") or {}
+    app_mb, klass = dl.get("total_mb"), dl.get("classification")
+    if not app_mb or klass == "no_traffic":
+        out.append(
+            f"{app} moved no bytes (total_mb={app_mb!r}, classification={klass!r}); "
+            f"the app under test never ran, whatever else was on the link"
+        )
+
+    # Absent is NOT a pass. A missing exit status means the pramana tree
+    # predates the field, so the check cannot be performed -- and a check that
+    # silently does nothing is how the three earlier instances survived.
+    pq = (record.get("player_qoe") or {}).get(app) or {}
+    if "collector_returncode" not in pq:
+        out.append(
+            "collector exit status missing from the record; this pramana tree "
+            "predates collector_returncode, so collector failure cannot be "
+            "ruled out for this run"
+        )
+    elif pq["collector_returncode"] not in (0, None):
+        out.append(f"collector exited {pq['collector_returncode']!r}")
+
+    return out
+
+
 def drive(
     app: str, condition: Condition, duration_s: int, out_dir: str
 ) -> AppRunResult:
@@ -128,11 +179,15 @@ def drive(
         restore()
 
     player_qoe = record.get("player_qoe") or {}
+    # `ok` is derived from the record, never asserted. A run that captured
+    # nothing, or whose app moved nothing, or whose collector died, is not a
+    # successful run no matter how cleanly run_direct returned.
+    failures = record_failures(record, app)
     return AppRunResult(
-        ok=True,
+        ok=not failures,
         player_qoe=player_qoe,
         browser_cmdline=watcher.cmdline or "",
         attribution=record,  # the record carries link_interference
         raw_path=str(record.get("run_dir") or out_dir),
-        error="",
+        error="; ".join(failures),
     )
