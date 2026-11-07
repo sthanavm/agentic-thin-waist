@@ -1,0 +1,24 @@
+{
+ "reference_resolution_p": 720.0,
+ "reference_fps": 23.97,
+ "iqb_conferencing_binding_minimum_mbps": 25.0,
+ "lowest_capacity_still_good_mbps": 3.0,
+ "highest_capacity_degraded_mbps": 1.0,
+ "factor_below_iqb_minimum": 8.333333333333334,
+ "capacities_good_below_iqb_minimum": [
+  3.0,
+  6.0
+ ],
+ "capacities_iqb_fails_but_call_good": [
+  3.0,
+  6.0,
+  25.0
+ ],
+ "meet_observed_demand_mbps_min": 0.5,
+ "meet_observed_demand_mbps_max": 3.689,
+ "latencies_ms": [
+  20.0,
+  50.0,
+  100.0
+ ]
+}
