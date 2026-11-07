@@ -70,7 +70,7 @@ import uuid
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import dataclass, field, asdict
 from pathlib import Path
-from typing import Any, Iterable, Optional
+from typing import AbstractSet, Any, Iterable, Optional
 
 import requests
 
@@ -1524,7 +1524,7 @@ import sqlite3
 import subprocess
 import struct
 import tempfile
-from collections import defaultdict, namedtuple
+from collections import Counter, defaultdict, namedtuple
 
 _Pkt = namedtuple("_Pkt", ["ts", "orig_len", "data"])
 
@@ -1763,6 +1763,62 @@ _YT_GVT_RE = re.compile(r"(^|\.)r[0-9]+-+sn-[a-z0-9-]+\.gvt1\.com$")
 # on a sibling IP in the same /24. Treating the sn- form as YouTube because the
 # names look alike would have added ~1 MB of browser traffic to every run.
 _GVT_GGC_RE = re.compile(r"(^|\.)r{2,}[0-9]+-+sn-[a-z0-9-]+\.gvt1\.com$")
+
+# The double-r NAME is not a reliable signal of what the flow is, so it only
+# selects candidates; the SHAPE of the flow decides.
+#
+# The rule above was inferred from one measurement (rr5---sn-jxopj-n5oe.gvt1.com
+# delivering 973 kB in a 4-5 s burst at t=1..5 s, before page load) and it does
+# not generalise. On 2026-11-05 YouTube served an entire session from
+# rr5---sn-jxopj-nh4e.gvt1.com: 15.6 MB spread from t=0 to t=67 s in ~0.5-1.3 MB
+# segment fetches every ~5 s, with only 17.8% of it inside the first 10 s. The
+# name rule filed all of that as `browser_infra`, which made the app look
+# starved of 70-80% of its own link on 9 CPUC runs, inverted their
+# link_interference verdicts, and understated YouTube's measured demand.
+#
+# The two cases separate cleanly on shape, and in opposite directions, which is
+# what makes this testable rather than a tuned threshold:
+#
+#                     bytes     span    inside first 10 s
+#   component update  973 kB     4 s    ~100%
+#   media session    15.6 MB    67 s     17.8%
+#
+# A component update is fetched once, early, before the page needs the network.
+# Media arrives in segments for as long as the player is playing. So: a
+# sustained flow that is still arriving after the opening seconds is media; a
+# front-loaded burst is not.
+#
+# Deterministic by construction: the inputs are totals over the whole capture
+# measured against the capture's own t0, so re-deriving the same file twice
+# gives the same answer. Nothing here depends on iteration order, wall-clock
+# time, or on which packet happens to be seen first.
+_GGC_EARLY_WINDOW_S = 10.0
+_GGC_MEDIA_MIN_BYTES = 2_000_000
+_GGC_MEDIA_MIN_SPAN_S = 20.0
+_GGC_MEDIA_MAX_EARLY_FRACTION = 0.5
+
+
+def ggc_role(
+    total_bytes: int,
+    span_s: float,
+    early_fraction: float,
+) -> str:
+    """Is a double-r GGC flow media, or Chrome fetching a component?
+
+    Returns "media" or "update". All three tests must pass for media, because
+    each one alone has a plausible false positive: a large early burst is still
+    an update, a long trickle of a few hundred kB is not a video, and a flow
+    that is wholly front-loaded is not a player streaming.
+    """
+    return (
+        "media"
+        if (
+            total_bytes >= _GGC_MEDIA_MIN_BYTES
+            and span_s >= _GGC_MEDIA_MIN_SPAN_S
+            and early_fraction <= _GGC_MEDIA_MAX_EARLY_FRACTION
+        )
+        else "update"
+    )
 
 
 def _dns_name(buf: bytes, off: int) -> tuple[Optional[str], int]:
@@ -2141,14 +2197,27 @@ def _host_matches(host: str, domains: Iterable[str]) -> bool:
     return False
 
 
-def classify_host(host: str, apps: Iterable[str]) -> str:
-    """Map a hostname to one of `apps`, or 'browser_infra' / 'other'."""
+def classify_host(
+    host: str,
+    apps: Iterable[str],
+    ggc_media_hosts: Optional[AbstractSet[str]] = None,
+) -> str:
+    """Map a hostname to one of `apps`, or 'browser_infra' / 'other'.
+
+    `ggc_media_hosts` names the double-r GGC edges that THIS capture showed
+    carrying media rather than a component download (see `ggc_role`). It is
+    passed in rather than inferred here because the judgement needs the whole
+    capture, and a per-host decision made from one packet would not be stable.
+    Omitted, the name rule applies alone, which is the historical behaviour.
+    """
     h = (host or "").lower().rstrip(".")
     if not h:
         return "other"
     if _YT_GVT_RE.search(h):
         return "youtube" if "youtube" in list(apps) else "other"
     if _GVT_GGC_RE.search(h):
+        if ggc_media_hosts and h in ggc_media_hosts:
+            return "youtube" if "youtube" in list(apps) else "other"
         return "browser_infra"
     for app in apps:
         if _host_matches(h, app_domains(app)):
@@ -2221,6 +2290,11 @@ class CaptureAttribution:
     probe_ips: dict[str, list[str]] = field(default_factory=dict)
     per_app: dict[str, dict[str, AppTraffic]] = field(default_factory=dict)
     host_bytes: dict[str, int] = field(default_factory=dict)
+    # Double-r GGC edges seen in this capture and what the shape test made
+    # of each: {host: {role, bytes, span_s, early_fraction}}. Recorded so a
+    # bucketing that the hostname alone would have got wrong is auditable
+    # from the run record instead of having to be re-derived.
+    ggc_roles: dict[str, dict] = field(default_factory=dict)
     bucket_mb: dict[str, float] = field(default_factory=dict)
     # app -> the endpoint IPs whose packets belong to it. Disjoint across apps
     # (every IP classifies into exactly one bucket), which is what lets the
@@ -2451,6 +2525,7 @@ def attribute_capture(
     # the local one, so summing packets it appears in gives its flow total.
     endpoint_bytes: dict[str, int] = defaultdict(int)
     endpoint_span: dict[str, list[float]] = {}
+    endpoint_bins: dict[str, Counter] = defaultdict(Counter)
     t0 = None
     tmax = 0.0
     total_pkts = 0
@@ -2477,6 +2552,10 @@ def attribute_capture(
                     endpoint_span[_ep] = [ts, ts]
                 else:
                     span[1] = ts
+                # Binned per second so "how much arrived early" can be answered
+                # once t0 is known, without a second pass over the file and
+                # without assuming the capture is in timestamp order.
+                endpoint_bins[_ep][int(ts)] += _ol
         if proto == 17 and len(l4) >= 8:
             sport, _dport = struct.unpack_from(">HH", l4, 0)
             if sport == 53:
@@ -2559,6 +2638,44 @@ def attribute_capture(
         res.method = "remote_hostname"
         res.local_ip_source = "inferred_private_majority"
     local = set(res.local_ips)
+
+    # ── which double-r GGC edges carried media in THIS capture ──────────────
+    # Decided once, from whole-capture totals, before anything is bucketed, so
+    # every packet from a given host is classified the same way and re-deriving
+    # the file gives the same answer. See `ggc_role` for why the name alone is
+    # not enough.
+    ggc_media_hosts: set[str] = set()
+    ggc_roles: dict[str, dict] = {}
+    if t0 is not None:
+        _ggc_tot: dict[str, int] = defaultdict(int)
+        _ggc_early: dict[str, int] = defaultdict(int)
+        _ggc_first: dict[str, float] = {}
+        _ggc_last: dict[str, float] = {}
+        for _ip, _h in ip_host.items():
+            if _ip in local or not _GVT_GGC_RE.search(_h.lower().rstrip(".")):
+                continue
+            _hn = _h.lower().rstrip(".")
+            _bins = endpoint_bins.get(_ip) or {}
+            for _sec, _b in _bins.items():
+                _ggc_tot[_hn] += _b
+                if _sec - t0 < _GGC_EARLY_WINDOW_S:
+                    _ggc_early[_hn] += _b
+                _ggc_first[_hn] = min(_ggc_first.get(_hn, _sec), _sec)
+                _ggc_last[_hn] = max(_ggc_last.get(_hn, _sec), _sec)
+        for _hn, _tot in _ggc_tot.items():
+            _span = max(_ggc_last[_hn] - _ggc_first[_hn], 0.0)
+            _frac = (_ggc_early[_hn] / _tot) if _tot else 1.0
+            _role = ggc_role(_tot, _span, _frac)
+            ggc_roles[_hn] = {
+                "role": _role,
+                "bytes": _tot,
+                "span_s": round(_span, 1),
+                "early_fraction": round(_frac, 3),
+            }
+            if _role == "media":
+                ggc_media_hosts.add(_hn)
+    res.ggc_roles = ggc_roles
+
     res.peer_ips = sorted(declared_peers)
     res.probe_ips = {
         name: sorted(ips)
@@ -2597,7 +2714,7 @@ def attribute_capture(
         for ip, host in ip_host.items():
             if ip in local:
                 continue
-            bucket = classify_host(host, apps)
+            bucket = classify_host(host, apps, ggc_media_hosts)
             if bucket in apps:
                 named_app_ips[bucket].add(ip)
                 span = endpoint_span.get(ip)
@@ -2690,7 +2807,7 @@ def attribute_capture(
         else:
             host = ip_host.get(remote, "")
             if host:
-                bucket = classify_host(host, apps)
+                bucket = classify_host(host, apps, ggc_media_hosts)
                 host_bytes[host] += ol
                 if bucket in apps:
                     bucket_hosts[bucket].add(host)
@@ -2699,7 +2816,7 @@ def attribute_capture(
             elif remote in adopted:
                 bucket = adopted[remote].split(":", 1)[0]
             else:
-                bucket = classify_host(host, apps)
+                bucket = classify_host(host, apps, ggc_media_hosts)
 
         bucket_bytes[bucket] += ol
         if bucket in apps and res.method != "local_alias_ip":
