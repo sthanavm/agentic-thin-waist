@@ -141,17 +141,40 @@ STRICT_SHAPING = True  # raise on shaping-verification failure
 # the app's numbers would not be a measurement of the configured bottleneck.
 #
 # OFF by default, and that default is a measurement result rather than caution.
-# Run over 31 archived captures (youtube, vimeo, twitch, zoom, and the 2- and
-# 3-app mixes), 22 of them would abort on this test: `browser_infra` -- Chrome's
-# component updater on the `rr*---sn-*.gvt1.com` GGC edges, www.google.com,
-# gstatic, update.googleapis.com -- held more than 10% of the cap for 3+ seconds
-# inside the app's own measured window, peaking at 9.91 Mbps against a 10 Mbps
-# cap on one run. That is the same effect `build_driver`'s
+# Re-derived 2026-11-07 over the 55 archived captures present on vm4 (youtube,
+# vimeo, twitch, and the 2- and 3-app mixes), 29 of them would abort on this
+# test: `browser_infra` held more than 10% of the cap for 3+ seconds inside the
+# app's own measured window, peaking at 9.89 Mbps against a 10 Mbps cap on one
+# run. That is the same effect `build_driver`'s
 # `--disable-features=OptimizationGuideModelDownloading,...` block was added for
 # ("a median 65% of the shaped download"), and those flags landed in 9faf035 on
 # 2026-10-18, at or after most of this dataset.
 #
-# So turning the abort on today would invalidate most of the existing dataset,
+# An earlier version of this comment said "22 of 31" and blamed the GGC edges
+# `rr*---sn-*.gvt1.com` first among the offenders. Both parts are corrected
+# above, and the second was wrong rather than merely stale:
+#
+#   * The count is quoted against the set that can actually be re-run. The
+#     original 31-capture selection cannot be reproduced -- it included zoom
+#     captures, and none survive on the VM -- so the figure is restated over
+#     the full archived set rather than a subset that no longer exists. The
+#     abort RATE is the part to carry: 29/55, still a majority.
+#   * The GGC edges are not the cause. Of the 29 captures that abort, ZERO
+#     name a gvt1 host as the offender; they name www.google.com, gstatic and
+#     update.googleapis.com. In 6 captures the `rr*---sn-*.gvt1.com` flow was
+#     YouTube's own media misfiled as infra by a name-only rule (one was
+#     37.8 MB over 191 s). Classifying those flows by shape instead of by
+#     name is a separate change on its own branch; the figures above are
+#     measured WITH it applied, so they do not move when it lands.
+#     Correcting those 6 moved their infra share from ~90% to ~3-4% and
+#     changed their verdict in not one case: they abort on a genuinely early
+#     infra burst, which is what this test is for.
+#
+# Correcting the attribution therefore did NOT move the abort count -- 29
+# before, 29 after -- so the default stays off, but for the reason that
+# follows rather than the one the old comment gave.
+#
+# Turning the abort on today would invalidate most of the existing dataset,
 # which is a finding about the dataset and NOT a reason to loosen the threshold
 # until it passes. The figures are therefore recorded on every run
 # (`record["link_interference"]`) and warned about on stdout regardless; the
