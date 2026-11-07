@@ -676,6 +676,15 @@ def plot(table, path):
     return path
 
 
+# Every study wrote experiments/cpuc/results/ under the same generic names --
+# cpuc_runs.csv, iqb_vs_qoe_table.md, contrast_iqb_vs_qoe.png -- for three
+# different studies: this one, the streaming sweep, and Sthanav's
+# Teams sweep in #22. Two PNGs cannot share a name, so the second branch to
+# land hit an unmergeable add/add conflict on binary files. Outputs are
+# therefore named per study, and nothing here writes a bare generic name.
+OUT_PREFIX = "meet_"
+
+
 def main() -> int:
     ap = argparse.ArgumentParser()
     ap.add_argument("--csv", default="/home/student/cpuc_data/meet/cpuc_runs.csv")
@@ -697,7 +706,9 @@ def main() -> int:
         text = text + " " + extra
 
     os.makedirs(args.outdir, exist_ok=True)
-    with open(os.path.join(args.outdir, "iqb_vs_qoe_table.csv"), "w", newline="") as fh:
+    with open(
+        os.path.join(args.outdir, OUT_PREFIX + "iqb_vs_qoe_table.csv"), "w", newline=""
+    ) as fh:
         # Union, not table[0]: rows carry keys the first row does not.
         # A reference row gains graded_against_self and a confounded
         # row gains confounded/confounded_reason, and keying off one
@@ -706,11 +717,11 @@ def main() -> int:
         w = csv.DictWriter(fh, fieldnames=cols)
         w.writeheader()
         w.writerows(table)
-    with open(os.path.join(args.outdir, "iqb_vs_qoe_table.md"), "w") as fh:
+    with open(os.path.join(args.outdir, OUT_PREFIX + "iqb_vs_qoe_table.md"), "w") as fh:
         fh.write(markdown_table(table) + "\n")
-    with open(os.path.join(args.outdir, "finding.json"), "w") as fh:
+    with open(os.path.join(args.outdir, OUT_PREFIX + "finding.json"), "w") as fh:
         json.dump(finding, fh, indent=1)
-    with open(os.path.join(args.outdir, "finding.txt"), "w") as fh:
+    with open(os.path.join(args.outdir, OUT_PREFIX + "finding.txt"), "w") as fh:
         fh.write(text + "\n")
     png = plot(table, os.path.join(args.outdir, "meet_qoe_vs_bandwidth.png"))
 
@@ -719,7 +730,7 @@ def main() -> int:
     made.append(
         plots.contrast(
             table,
-            os.path.join(args.outdir, "contrast_iqb_vs_qoe.png"),
+            os.path.join(args.outdir, OUT_PREFIX + "contrast_iqb_vs_qoe.png"),
             BINDING_MIN,
             "rate_mbps_symmetric",
             "iqb_verdict",
@@ -729,7 +740,7 @@ def main() -> int:
     made.append(
         plots.demand_vs_capacity(
             table,
-            os.path.join(args.outdir, "demand_vs_capacity.png"),
+            os.path.join(args.outdir, OUT_PREFIX + "demand_vs_capacity.png"),
             BINDING_MIN,
             "rate_mbps_symmetric",
             "meet_demand_mbps",
@@ -741,7 +752,7 @@ def main() -> int:
     made.append(
         plots.single_metric(
             table,
-            os.path.join(args.outdir, "fps_vs_bandwidth.png"),
+            os.path.join(args.outdir, OUT_PREFIX + "fps_vs_bandwidth.png"),
             BINDING_MIN,
             "rate_mbps_symmetric",
             "fps",
@@ -753,7 +764,7 @@ def main() -> int:
     made.append(
         plots.single_metric(
             table,
-            os.path.join(args.outdir, "freezes_vs_bandwidth.png"),
+            os.path.join(args.outdir, OUT_PREFIX + "freezes_vs_bandwidth.png"),
             BINDING_MIN,
             "rate_mbps_symmetric",
             "freeze_ratio",
