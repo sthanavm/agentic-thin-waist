@@ -27,6 +27,10 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from cpuc import plots  # noqa: E402
 from cpuc.conditions import IQB_VIDEO_CONFERENCING as IQB  # noqa: E402
+from cpuc.qoe_labels import (  # noqa: E402
+    ConferencingMetrics,
+    label_conferencing,
+)
 
 DL_MIN, DL_HIGH = IQB["download_min_mbps"], IQB["download_high_mbps"]  # 10, 100
 UL_MIN, UL_HIGH = IQB["upload_min_mbps"], IQB["upload_high_mbps"]  # 25, 100
@@ -64,13 +68,18 @@ def iqb_verdict(dl, ul, lat):
     return {2: "meets high", 1: "meets minimum only", 0: "fails minimum"}[worst], which
 
 
-DEMAND_SIDECAR = "/home/student/cpuc_data/meet/meet_demand.json"
+DEMAND_SIDECAR = os.environ.get(
+    "CPUC_MEET_DEMAND", "/home/student/cpuc_data/meet/meet_demand.json"
+)
 
 # Per-(capacity, RTT) demand. The rate-only sidecar above predates the latency
 # sweeps and cannot tell them apart, so reading it across latencies printed the
 # 20 ms figure in all three rows: Meet drew 3.689 Mb/s on a 100 Mb/s link at
 # 20 ms but 1.449 at 50 ms, and the table claimed both were 3.689.
-DEMAND_BYLAT_SIDECAR = "/home/student/cpuc_data/meet/meet_demand_bylat.json"
+DEMAND_BYLAT_SIDECAR = os.environ.get(
+    "CPUC_MEET_DEMAND_BYLAT",
+    "/home/student/cpuc_data/meet/meet_demand_bylat.json",
+)
 
 
 def load_demand_bylat(path: str | None = None) -> dict:
@@ -103,6 +112,74 @@ def load_demand(path: str | None = None) -> dict:
 # Points the matrix asked for, so a missing one is reported as NOT COLLECTED
 # rather than silently absent from the curve.
 EXPECTED_RATES = (100.0, 25.0, 6.0, 3.0, 1.0, 0.5)
+
+# Points where "no remote video arrived" cannot be read as a measurement of the
+# link: the persistent peer stopped publishing at about the time these runs
+# were taken, and the meeting ended during that batch. The SAME two capacities
+# at 50 ms failed while the peer was VERIFIED still publishing, so those are
+# genuine and are deliberately not listed here.
+#
+# Keyed (capacity Mb/s, configured RTT ms). An explicit list rather than
+# something inferred from the row, because the peer's state is not in the CSV
+# -- so it is written down where a reader can check it against the batch log,
+# instead of living in a PR comment.
+CONFOUNDED_POINTS = {
+    (1.0, 100.0): "peer stopped publishing during this batch",
+    (0.5, 100.0): "peer stopped publishing during this batch",
+}
+
+
+def grade_reference(t: dict) -> dict:
+    """Label the reference run against ITSELF, at analysis time.
+
+    Every run is graded relative to its app's reference, so the reference has
+    nothing to be graded against while the batch is still collecting and is
+    written out as `deferred` -- qoe_labels says "label assigned in analysis".
+    This is that analysis. The control condition is what the whole argument
+    leans on, and leaving the best link in the study with no quality verdict
+    reads as a gap rather than as a baseline.
+
+    Grading it against itself is not a free pass: the resolution and fps tests
+    become trivially true, but the freeze test is absolute and still applies,
+    so a reference run that froze more than 1% of the time does not come out
+    `high`. That is why this goes through the same labeller rather than
+    writing "high" into the table.
+    """
+    if t.get("qoe_label") != "deferred" or not t.get("is_reference"):
+        return t
+    res, fps = t.get("resolution_p"), t.get("fps")
+    if res is None or fps is None or t.get("freeze_ratio") is None:
+        return t
+    m = ConferencingMetrics(
+        resolution_p=int(res),
+        fps=fps,
+        freeze_ratio=t.get("freeze_ratio"),
+        freeze_count=t.get("freeze_count"),
+        connected=True,
+    )
+    label, reason = label_conferencing(m, int(res), fps)
+    t["qoe_label"] = label
+    t["qoe_reason"] = reason
+    t["graded_against_self"] = True
+    return t
+
+
+def mark_confounded(t: dict) -> dict:
+    """Separate a measured absence of video from one that cannot be attributed.
+
+    Three of the five "no remote media" cells are measurements: the call ran
+    and no remote video arrived at that capacity. Two are not. Rendering all
+    five identically invites the table to be read as a clean curve down to
+    0.5 Mb/s at every latency, which is the one thing this data cannot say.
+    """
+    key = (t.get("rate_mbps_symmetric"), t.get("rtt_configured_ms"))
+    why = CONFOUNDED_POINTS.get(key)
+    if not why or t.get("qoe_label") not in ("no remote media", "not collected"):
+        return t
+    t["confounded"] = True
+    t["confounded_reason"] = why
+    t["qoe_label"] = "no remote media (confounded)"
+    return t
 
 
 def build_table(rows):
@@ -223,7 +300,7 @@ def build_table(rows):
                 }
             )
     out.sort(key=lambda t: -t["rate_mbps_symmetric"])
-    return out
+    return [mark_confounded(grade_reference(r)) for r in out]
 
 
 def latency_caption(table) -> str:
@@ -296,7 +373,26 @@ def markdown_table(t):
                 sus=sus,
             )
         )
-    return hdr + "\n".join(lines)
+    notes = []
+    if any(r.get("graded_against_self") for r in t):
+        notes.append(
+            "*(ref)* is the reference run, graded against itself: its "
+            "resolution and fps are 100% of their own, but the freeze test "
+            "is absolute, so the label is earned rather than granted."
+        )
+    if any(r.get("confounded") for r in t):
+        notes.append(
+            "**no remote media (confounded)** is NOT evidence about the link: "
+            "the persistent peer stopped publishing during that batch, so an "
+            "absence of remote video cannot be told apart from the meeting "
+            "having ended. The same two capacities at 50 ms failed while the "
+            "peer was verified still publishing, and those rows are plain "
+            "**no remote media**."
+        )
+    out = hdr + "\n".join(lines)
+    if notes:
+        out += "\n\n" + "\n\n".join(notes)
+    return out
 
 
 def by_latency(table):
@@ -602,7 +698,12 @@ def main() -> int:
 
     os.makedirs(args.outdir, exist_ok=True)
     with open(os.path.join(args.outdir, "iqb_vs_qoe_table.csv"), "w", newline="") as fh:
-        w = csv.DictWriter(fh, fieldnames=list(table[0].keys()))
+        # Union, not table[0]: rows carry keys the first row does not.
+        # A reference row gains graded_against_self and a confounded
+        # row gains confounded/confounded_reason, and keying off one
+        # row raises ValueError the moment that happens.
+        cols = list(dict.fromkeys(k for r in table for k in r))
+        w = csv.DictWriter(fh, fieldnames=cols)
         w.writeheader()
         w.writerows(table)
     with open(os.path.join(args.outdir, "iqb_vs_qoe_table.md"), "w") as fh:
