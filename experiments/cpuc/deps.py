@@ -1,23 +1,17 @@
-"""Where the harness finds `pramana_helpers`, and why it is not just an import.
+"""Where the harness finds `pramana_helpers`, and why it still checks.
 
-The background-traffic guard calls `pramana_helpers.link_interference`, the
-per-bin interference judgement. That function is on branch
-`jenil/pramana/collector-driver-prefetch` (e0a6b01) and NOT on main.
+`link_interference` and `attribute_capture` landed on main in #23, so the
+in-repo `experiments/pramana` is now the tree that provides them and the
+dependency is an ordinary sibling import. The absolute path this module used
+to carry -- a worktree under /Users/jenilprajapati -- is gone with it; it
+resolved only on one laptop and silently fell through to a stale tree
+anywhere else.
 
-Merging that branch into this checkout was tried and abandoned: it conflicts
-with `jenil/pramana/notebook-code-only` in 10 hunks / 591 lines of
-`pramana_helpers.py` alone, plus `collect.py` and `shared/apps.py`. Those are
-two divergent lines of measurement code, and hand-resolving them to obtain one
-function would risk changing how QoE or attribution is computed -- which is the
-one thing this study cannot afford to do quietly.
-
-So the dependency is resolved by PATH instead: point at a tree that already
-has the function. `driver-work` is a linked worktree of this repo checked out
-at e0a6b01, so it is the same code the branch would have brought in, with no
-merge and nothing resolved by hand.
-
-Override with CPUC_PRAMANA_PATH when that branch lands on main, at which point
-this module can go away.
+What stays is the assertion. A run that imports a tree WITHOUT those
+functions must fail loudly rather than proceed with a different definition of
+interference than the one the study's numbers were computed under, so the
+check is on the file's contents, not on the import succeeding. CPUC_PRAMANA_PATH
+still overrides, for pointing a run at a specific checkout deliberately.
 """
 
 from __future__ import annotations
@@ -25,39 +19,31 @@ from __future__ import annotations
 import os
 import sys
 
-DEFAULT_PRAMANA_PATHS = (
-    os.environ.get("CPUC_PRAMANA_PATH", ""),
-    "/Users/jenilprajapati/SNL-Lab-Codebases/driver-work/experiments/pramana",
-    os.path.join(
-        os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "pramana"
-    ),
-)
-
 REQUIRED_ATTRS = ("link_interference", "attribute_capture")
 
 
 def pramana_path() -> str:
-    """First candidate directory that actually provides what the guard needs."""
-    for cand in DEFAULT_PRAMANA_PATHS:
-        if not cand:
-            continue
-        helpers = os.path.join(cand, "pramana_helpers.py")
-        if not os.path.isfile(helpers):
-            continue
-        try:
-            with open(helpers) as fh:
-                src = fh.read()
-        except OSError:
-            continue
-        if all(f"def {a}" in src for a in REQUIRED_ATTRS):
-            return cand
-    raise RuntimeError(
-        "no pramana_helpers.py providing "
-        + ", ".join(REQUIRED_ATTRS)
-        + " was found. Set CPUC_PRAMANA_PATH to a checkout of "
-        "jenil/pramana/collector-driver-prefetch (e0a6b01) or later. Tried: "
-        + ", ".join(c for c in DEFAULT_PRAMANA_PATHS if c)
+    """The in-repo pramana tree, or an explicit override. Verified, not assumed."""
+    cand = os.environ.get("CPUC_PRAMANA_PATH") or os.path.join(
+        os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "pramana"
     )
+    helpers = os.path.join(cand, "pramana_helpers.py")
+    if not os.path.isfile(helpers):
+        raise RuntimeError(
+            f"no pramana_helpers.py at {helpers!r}. The in-repo tree is the "
+            f"default since #23 landed on main; set CPUC_PRAMANA_PATH to point "
+            f"at another checkout."
+        )
+    with open(helpers) as fh:
+        src = fh.read()
+    missing = [a for a in REQUIRED_ATTRS if f"def {a}" not in src]
+    if missing:
+        raise RuntimeError(
+            f"{helpers!r} does not provide {', '.join(missing)}. This tree "
+            f"predates #23, so its interference judgement is not the one these "
+            f"results were computed under -- refusing to run against it."
+        )
+    return cand
 
 
 def install() -> str:
