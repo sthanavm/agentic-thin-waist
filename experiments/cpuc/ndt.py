@@ -50,8 +50,16 @@ def _ns_prefix(ns: str) -> str:
     and ndt7-client still emitted a summary full of zeros. Entering through the
     container picks up ITS resolv.conf (8.8.8.8), which resolves and reaches
     M-Lab's Locate API -- the same path the browser uses to reach YouTube.
+
+    `env -u TIMEOUT` is required here: the worker container is started with
+    TIMEOUT=300000 (for the substrate HTTP server's own use), and ndt-client
+    also parses a -timeout flag from that same env var name via its flag
+    library. Without stripping it, every run fails immediately with
+    "failed to parse flags (... Could not set argument timeout to the value
+    of environment variable TIMEOUT=\"300000\" ...)" and emits no JSON
+    summary at all -- confirmed live, 21/21 runs invalid before this fix.
     """
-    return f"docker exec {WORKER_CONTAINER} ip netns exec {ns} "
+    return f"docker exec {WORKER_CONTAINER} ip netns exec {ns} env -u TIMEOUT "
 
 
 RETRANSMISSION_BASIS = (
