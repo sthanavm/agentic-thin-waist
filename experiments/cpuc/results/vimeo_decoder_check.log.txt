@@ -1,0 +1,29 @@
+image: video-qoe-collector:latest
+▶ DIRECT run: vimeo_100mbps_20ms_0pct_pfifo_cubic_solo_t14378
+  cap=100.0Mbps lat=20.0ms loss=0.0% aqm=pfifo cca=cubic dur=90s apps=['vimeo']
+  • shaping ...
+  • capture on veth2 (auto-stop 135s) ...
+  • real QoE collector for ['vimeo'] ...
+    · collector source overridden from /home/student/cpuc/services/orchestration/scripts/selenium_video_qoe/collect.py
+    · mounted sibling cdp_bytes.py
+    · mounted sibling inpage_log.py
+    · driving 1 browser app(s) in real Chrome inside ns1 (vimeo) ...
+      [vimeo] summary: 90 samples written to /out/vimeo_stats.jsonl | current_time_secs range=[1.448361, 90.418803] | advanced=True | final_resolution=1920x1440
+  • finalising capture + downloading pcap ...
+  • pcap saved → /home/student/cpuc_verify/repo/experiments/pramana/results/pramana_runs/vimeo_100mbps_20ms_0pct_pfifo_cubic_solo_t14378_e2291db16e/capture.pcap (120.7 MB)
+  • shaping check: avg 9.94 / cap 100 Mbps (-90.1%) → OK
+  • splitting capture per app ...
+    method=remote_hostname  local=['172.16.1.1']  (declared_client_ips)  100.0% of bytes attributed
+      vimeo               118.44 MB
+      browser_infra         1.00 MB
+      other                 0.01 MB
+    · link interference: none above budget
+    · vimeo: served (dl avg 9.79 / peak 85.25 Mbps, delivered 38%)
+  • generating per-app plots ...
+  ! matplotlib unavailable — skipping plots
+  ! telemetry store failed for vimeo: HTTPConnectionPool(host='localhost', port=8004): Max retries exceeded with url: /results (Caused by NewConnectionError("HTTPConnection(host='localhost', port=8004): Failed to establish a new connection: [Errno 111] Connection refused"))
+  ✓ saved → /home/student/cpuc_verify/repo/experiments/pramana/results/pramana_runs/vimeo_100mbps_20ms_0pct_pfifo_cubic_solo_t14378_e2291db16e
+    pcap: capture.pcap | plots: 0 | record.json
+ok: True error: 
+resolution: None
+qoe keys: ['vimeo']

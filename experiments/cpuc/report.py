@@ -26,6 +26,10 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from cpuc import plots  # noqa: E402
 from cpuc.conditions import IQB_VIDEO_STREAMING  # noqa: E402
+from cpuc.qoe_labels import (  # noqa: E402
+    StreamingMetrics,
+    label_streaming,
+)
 
 DL_MIN = IQB_VIDEO_STREAMING["download_min_mbps"]  # 25
 DL_HIGH = IQB_VIDEO_STREAMING["download_high_mbps"][0]  # 50, low end of 50-100
@@ -137,6 +141,42 @@ def load(csv_path):
         return list(csv.DictReader(fh))
 
 
+def grade_reference(t: dict) -> dict:
+    """Label the reference run against ITSELF, at analysis time.
+
+    A run is graded relative to its app's reference, so the reference run has
+    nothing to be graded against while the batch is still collecting and is
+    written out as `deferred` -- qoe_labels says as much: "label assigned in
+    analysis". This is that analysis. The control condition is the one the
+    whole argument leans on, and leaving the best link in the study with no
+    quality verdict reads as a gap rather than as a baseline.
+
+    Grading it against itself is not a free pass. The resolution test becomes
+    trivially true (it is 100% of itself), but the rebuffer and startup tests
+    are absolute and can still fail: a reference run that rebuffered, or took
+    6 s to start, does not come out `high`. That is the point of running it
+    through the same labeller rather than writing "high" into the table.
+    """
+    if t.get("qoe_label") != "deferred" or not t.get("is_reference"):
+        return t
+    res = t.get("resolution_p")
+    if res is None:
+        return t
+    m = StreamingMetrics(
+        startup_delay_s=t.get("startup_s"),
+        resolution_p=int(res),
+        rebuffer_ratio=t.get("rebuffer_ratio"),
+        rebuffer_events=t.get("rebuffer_events"),
+        rebuffer_duration_ms=0.0 if not t.get("rebuffer_events") else None,
+        played=True,
+    )
+    label, reason = label_streaming(m, int(res))
+    t["qoe_label"] = label
+    t["qoe_reason"] = reason
+    t["graded_against_self"] = True
+    return t
+
+
 def build_table(rows):
     """Join the app row and the NDT row for each bandwidth point."""
     apps, ndts = {}, {}
@@ -203,7 +243,7 @@ def build_table(rows):
         row["app_demand_mbps"] = d.get("youtube_avg_mbps")
         row["app_peak_mbps"] = d.get("youtube_peak_mbps")
         row["app_total_mb"] = d.get("youtube_total_mb")
-    return out
+    return [grade_reference(r) for r in out]
 
 
 def latency_caption(table) -> str:
@@ -277,7 +317,22 @@ def markdown_table(table):
                 sus=sus,
             )
         )
-    return hdr + "\n".join(lines)
+    notes = []
+    if any(r.get("graded_against_self") for r in table):
+        notes.append(
+            "*(ref)* is the reference run, graded against itself: its "
+            "resolution is 100% of its own, and the rebuffer and startup "
+            "tests are absolute, so the label is earned rather than granted."
+        )
+    if any(r["suspect"] for r in table):
+        notes.append(
+            "\u26a0 the background-traffic guard failed for that run; see the "
+            "contamination note."
+        )
+    out = hdr + "\n".join(lines)
+    if notes:
+        out += "\n\n" + "\n\n".join(notes)
+    return out
 
 
 def find_degradation(table):
@@ -414,7 +469,12 @@ def main() -> int:
     os.makedirs(args.outdir, exist_ok=True)
     tbl_csv = os.path.join(args.outdir, "iqb_vs_qoe_table.csv")
     with open(tbl_csv, "w", newline="") as fh:
-        w = csv.DictWriter(fh, fieldnames=list(table[0].keys()))
+        # Union, not table[0]: rows carry keys the first row does not.
+        # A reference row gains graded_against_self and a confounded
+        # row gains confounded/confounded_reason, and keying off one
+        # row raises ValueError the moment that happens.
+        cols = list(dict.fromkeys(k for r in table for k in r))
+        w = csv.DictWriter(fh, fieldnames=cols)
         w.writeheader()
         w.writerows(table)
 

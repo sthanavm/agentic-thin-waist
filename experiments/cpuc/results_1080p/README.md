@@ -65,6 +65,24 @@ This strengthens, rather than weakens, the main sweep's finding: the gap
 between what the link offers and what the player takes is a player-side
 decision, and a speed test measuring the link cannot see it.
 
+## Correction (2026-11-07): the decode explanation does not survive
+
+The reading above — that AV1 software decode is what binds — is **contradicted
+by a direct test on the same host.** One Vimeo run at 100 Mb/s / 20 ms served
+**1920x1440 in 85 of 90 samples**, in **AV1**
+(`av01.0.01M.08.0.111.01.01.01.0`), with 1.38 s startup and no rebuffering.
+
+So this VM decodes AV1 well past 1080p, and "the host cannot decode what it is
+given" cannot be the reason YouTube stopped at 720p here. The dropped-frame
+figures below are real and still reported, but they do not carry the causal
+claim that was attached to them.
+
+**What survives, and it is the part the main sweep needs:** the ceiling is not
+the link and not the viewport, and YouTube's own telemetry reports
+`1280x720@25 / 1920x1080@25` — the player knew 1080p was optimal for this
+element and served 720p anyway. That remains a player-side decision. What it is
+*not* is explained, and this set no longer claims to explain it.
+
 ## Caveat
 
 The viewport was raised, but resolution stayed flat — so this set bounds the

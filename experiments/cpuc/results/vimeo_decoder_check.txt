@@ -1,0 +1,5 @@
+resolution samples: [('1920x1440', 85), ('480x360', 5)]
+codec: [('video/mp4;codecs=av01.0.01M.08.0.111.01.01.01.0', 90)]
+dropped frames: not reported
+video_resolution_p: 1440
+uniform: {'startup_delay_ms': 1381.0, 'rebuffer_events': 0, 'rebuffer_ratio': None}

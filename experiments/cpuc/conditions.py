@@ -82,6 +82,20 @@ RunType = Literal["app", "ndt"]
 # 340 (316 served). Vimeo is also the only app measured scaling with bandwidth
 # (240p at 1 Mb/s to 1080p at 10 Mb/s), which separately satisfies the 1080p+
 # source requirement that YouTube cannot meet on auto quality.
+#
+# CONFIRMED on vm4 (2026-11-07), because this claim is what stops YouTube's
+# flat 720p line being read as a property of this host rather than of the
+# player. One Vimeo run at 100 Mb/s / 20 ms -- the same condition as each
+# sweep's reference run -- served 1920x1440 in 85 of 90 samples (480x360 for
+# the first 5, the startup ramp), 1.38 s startup, 0 rebuffers, and
+# link_interference clean (1.00 MB of browser_infra against 118.44 MB of app
+# traffic).
+#
+# The codec matters here: Vimeo delivered that in AV1
+# (av01.0.01M.08.0.111.01.01.01.0). So this host decodes AV1 well past 1080p,
+# and YouTube's 720p ceiling on the same machine is a player-side decision,
+# not a decoder limit. That also weakens the decode explanation offered for
+# the 1080p-viewport supplementary set -- see results_1080p/README.md.
 STREAMING_APPS_PLAN = ("youtube", "twitch", "vimeo")
 
 
