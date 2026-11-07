@@ -242,6 +242,12 @@ def build_table(rows):
             )
         row["app_demand_mbps"] = d.get("youtube_avg_mbps")
         row["app_peak_mbps"] = d.get("youtube_peak_mbps")
+        # How much of the shaped link was NOT the app's, over the same window.
+        # A demand figure without it is not interpretable: 2.3 Mb/s with 9% of
+        # the link elsewhere and 2.3 Mb/s with 60% elsewhere are different
+        # measurements, and only the first is about the configured bottleneck.
+        row["infra_share_pct"] = d.get("infra_share_pct")
+        row["demand_basis"] = d.get("basis") or ""
         row["app_total_mb"] = d.get("youtube_total_mb")
     return [grade_reference(r) for r in out]
 
@@ -271,8 +277,8 @@ def markdown_table(table):
     hdr = (
         "| down Mb/s | RTT set | RTT measured | NDT down | IQB (download) "
         "| IQB (all legs) | source offers | resolution chosen | rebuffers "
-        "| startup | QoE |\n"
-        "|---|---|---|---|---|---|---|---|---|---|---|\n"
+        "| startup | demand Mb/s | infra share | QoE |\n"
+        "|---|---|---|---|---|---|---|---|---|---|---|---|---|\n"
     )
     lines = []
     for t in table:
@@ -280,7 +286,7 @@ def markdown_table(table):
         sus = " ⚠" if t["suspect"] else ""
         lines.append(
             "| {r:g}{tag} | {rset} | {rmeas} | {dl} | {vd} | {v} ({by}) "
-            "| {src} | {res} | {reb} | {su} | {q}{sus} |".format(
+            "| {src} | {res} | {reb} | {su} | {dem} | {inf} | {q}{sus} |".format(
                 r=t["rate_down_mbps"],
                 tag=tag,
                 rset=(
@@ -313,6 +319,16 @@ def markdown_table(table):
                     else "—"
                 ),
                 su=f"{t['startup_s']:.2f} s" if t["startup_s"] is not None else "—",
+                dem=(
+                    f"{t['app_demand_mbps']:.2f}"
+                    if t.get("app_demand_mbps") is not None
+                    else "—"
+                ),
+                inf=(
+                    f"{t['infra_share_pct']:.0f}%"
+                    if t.get("infra_share_pct") is not None
+                    else "—"
+                ),
                 q=t["qoe_label"] or "—",
                 sus=sus,
             )

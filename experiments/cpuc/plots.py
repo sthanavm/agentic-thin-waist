@@ -319,17 +319,20 @@ def demand_vs_capacity(
     ax.set_ylabel("throughput (Mb/s, log scale)")
     _iqb_line(ax, iqb_min, f"IQB minimum {iqb_min:g} Mb/s")
     if multi:
-        # The mean is taken over the whole capture window, and an adaptive
-        # player fills its buffer and then goes quiet, so the window includes
-        # an idle tail that ranges from 6 s to 72 s across these runs. That
-        # makes the mean sound for "how much did a session need" -- the claim
-        # against the IQB minimum -- and unsound for comparing one latency
-        # against another, which is exactly what three curves invite. Say so
-        # on the chart rather than only in the write-up.
+        # An earlier version of this annotation blamed the low means on an
+        # idle tail after the player fills its buffer. That was wrong. The
+        # means were low because YouTube's own media, served from a double-r
+        # GGC edge, was being attributed to `browser_infra` by a hostname
+        # rule -- understating demand by up to ~4.8x on the worst row. The
+        # figures here are re-derived with that fixed (#25) and taken over the
+        # sustained window (first app byte to last), so the page-load lead-in
+        # is excluded and the app's own mid-session behaviour is kept.
+        #
+        # What still deserves a caveat: these are means, each from ONE run.
         ax.annotate(
-            "Mean is over the whole window, which includes the idle time after\n"
-            "the player fills its buffer (6-72 s here). Read each curve against\n"
-            "the IQB line, not against the other curves.",
+            "Mean over the sustained window (first app byte to last), per run,\n"
+            "with GGC media attribution corrected. Every point is n=1.\n"
+            "Read each curve against the IQB line, not against the other curves.",
             xy=(0.5, 0.02),
             xycoords="axes fraction",
             ha="center",
