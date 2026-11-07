@@ -1576,6 +1576,27 @@ def build_driver(user_data_dir: str | None = None, mode: str = "uc"):
         # 13 earlier runs in band. Chrome knows the URL of every request it
         # made. Bands pre-registered in THRESHOLDS.md.
         log_cdp_events=True,
+        # Use whatever driver the image already baked, instead of asking what
+        # the newest one is. There is no `driver_executable_path` on Driver()
+        # -- the driver is found by name in seleniumbase/drivers/ -- so this is
+        # the only way to say "the one on disk" from here.
+        #
+        # "keep" makes SeleniumBase adopt the installed driver's own version as
+        # the version to use (browser_launcher.py: `if driver_version ==
+        # "keep": driver_version = ch_driver_version`), which makes the
+        # equality test that guards the download branch true by construction.
+        # Without it the test compares the driver against the BROWSER's major,
+        # and any drift between the two -- a rebuilt Chrome layer over a cached
+        # driver layer, say -- silently becomes a ~5.5 MB fetch across the
+        # shaped link in the first seconds of the capture. Measured: 74.9% of
+        # one webrtc_peer run's bytes.
+        #
+        # The Dockerfile is what actually removes the fetch, by baking
+        # `uc_driver` at Chrome's major. This is the belt to that braces: if
+        # the two ever disagree, chromedriver refuses to drive Chrome and the
+        # run fails at launch, which is the loud failure we want rather than a
+        # quiet download competing with the measurement.
+        driver_version="keep",
     )
     binary_location = os.environ.get("CHROME_BINARY")
     if binary_location:
