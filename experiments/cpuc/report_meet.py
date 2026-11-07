@@ -253,6 +253,12 @@ def build_table(rows):
         if t["app_valid"]:
             t["meet_demand_mbps"] = d.get("meet_avg_mbps")
             t["meet_peak_mbps"] = d.get("meet_peak_mbps")
+            # How much of the shaped link was NOT Meet's, over the same
+            # window. This is the whole asset-cost finding in one column: the
+            # page's own assets are a near-constant cost per run, so the share
+            # they take grows as the link shrinks, and at 0.5-1 Mb/s it rivals
+            # the call itself. A demand figure without it is not interpretable.
+            t["infra_share_pct"] = d.get("infra_share_pct")
         else:
             # A run that never established remote media still moved some
             # bytes while it tried to join. Reporting those bytes as "what
@@ -261,6 +267,7 @@ def build_table(rows):
             # the QoE is not collected, neither is the demand.
             t["meet_demand_mbps"] = None
             t["meet_peak_mbps"] = None
+            t["infra_share_pct"] = d.get("infra_share_pct")
             # "Not collected" and "we ran it and no video ever arrived" are
             # different claims, and only the second one is evidence about the
             # link. A run that reached NoRemoteInboundMedia on every attempt
@@ -327,8 +334,9 @@ def latency_caption(table) -> str:
 def markdown_table(t):
     hdr = (
         "| capacity (sym) | RTT set | RTT measured | NDT down | NDT up "
-        "| IQB verdict | resolution | fps | freezes | Meet demand | QoE |\n"
-        "|---|---|---|---|---|---|---|---|---|---|---|\n"
+        "| IQB verdict | resolution | fps | freezes | Meet demand | infra share "
+        "| QoE |\n"
+        "|---|---|---|---|---|---|---|---|---|---|---|---|\n"
     )
     lines = []
     for r in t:
@@ -336,7 +344,7 @@ def markdown_table(t):
         sus = " ⚠" if r["suspect"] else ""
         lines.append(
             "| {c:g} Mb/s{tag} | {rset} | {rmeas} | {dl} | {ul} | {v} ({by}) "
-            "| {res} | {fps} | {fz} | {dem} | {q}{sus} |".format(
+            "| {res} | {fps} | {fz} | {dem} | {inf} | {q}{sus} |".format(
                 c=r["rate_mbps_symmetric"],
                 tag=tag,
                 rset=(
@@ -367,6 +375,11 @@ def markdown_table(t):
                 dem=(
                     f"{r['meet_demand_mbps']:.2f}"
                     if r.get("meet_demand_mbps") is not None
+                    else "—"
+                ),
+                inf=(
+                    f"{r['infra_share_pct']:.0f}%"
+                    if r.get("infra_share_pct") is not None
                     else "—"
                 ),
                 q=r["qoe_label"] or "—",
