@@ -456,6 +456,15 @@ def plot(table, path):
     return path
 
 
+# Every study wrote experiments/cpuc/results/ under the same generic names --
+# cpuc_runs.csv, iqb_vs_qoe_table.md, contrast_iqb_vs_qoe.png -- for three
+# different studies: this one, the conferencing sweep, and Sthanav's
+# Teams sweep in #22. Two PNGs cannot share a name, so the second branch to
+# land hit an unmergeable add/add conflict on binary files. Outputs are
+# therefore named per study, and nothing here writes a bare generic name.
+OUT_PREFIX = "streaming_"
+
+
 def main() -> int:
     ap = argparse.ArgumentParser()
     ap.add_argument("--csv", default="/home/student/cpuc_data/sweep/cpuc_runs.csv")
@@ -467,7 +476,7 @@ def main() -> int:
     finding = find_degradation(table)
 
     os.makedirs(args.outdir, exist_ok=True)
-    tbl_csv = os.path.join(args.outdir, "iqb_vs_qoe_table.csv")
+    tbl_csv = os.path.join(args.outdir, OUT_PREFIX + "iqb_vs_qoe_table.csv")
     with open(tbl_csv, "w", newline="") as fh:
         # Union, not table[0]: rows carry keys the first row does not.
         # A reference row gains graded_against_self and a confounded
@@ -478,18 +487,18 @@ def main() -> int:
         w.writeheader()
         w.writerows(table)
 
-    md = os.path.join(args.outdir, "iqb_vs_qoe_table.md")
+    md = os.path.join(args.outdir, OUT_PREFIX + "iqb_vs_qoe_table.md")
     with open(md, "w") as fh:
         fh.write(markdown_table(table) + "\n")
 
-    png = plot(table, os.path.join(args.outdir, "qoe_vs_bandwidth.png"))
+    png = plot(table, os.path.join(args.outdir, OUT_PREFIX + "qoe_vs_bandwidth.png"))
 
     # One chart per claim; see cpuc/plots.py for why each one exists.
     made = [png]
     made.append(
         plots.contrast(
             table,
-            os.path.join(args.outdir, "contrast_iqb_vs_qoe.png"),
+            os.path.join(args.outdir, OUT_PREFIX + "contrast_iqb_vs_qoe.png"),
             DL_MIN,
             "rate_down_mbps",
             "iqb_verdict_download_only",
@@ -499,7 +508,7 @@ def main() -> int:
     made.append(
         plots.demand_vs_capacity(
             table,
-            os.path.join(args.outdir, "demand_vs_capacity.png"),
+            os.path.join(args.outdir, OUT_PREFIX + "demand_vs_capacity.png"),
             DL_MIN,
             "rate_down_mbps",
             "app_demand_mbps",
@@ -511,7 +520,7 @@ def main() -> int:
     made.append(
         plots.single_metric(
             table,
-            os.path.join(args.outdir, "startup_vs_bandwidth.png"),
+            os.path.join(args.outdir, OUT_PREFIX + "startup_vs_bandwidth.png"),
             DL_MIN,
             "rate_down_mbps",
             "startup_s",
@@ -526,7 +535,7 @@ def main() -> int:
     made.append(
         plots.single_metric(
             table,
-            os.path.join(args.outdir, "rebuffer_vs_bandwidth.png"),
+            os.path.join(args.outdir, OUT_PREFIX + "rebuffer_vs_bandwidth.png"),
             DL_MIN,
             "rate_down_mbps",
             "rebuffer_ratio",
@@ -540,7 +549,7 @@ def main() -> int:
     made.append(
         plots.source_vs_delivered(
             table,
-            os.path.join(args.outdir, "source_vs_delivered.png"),
+            os.path.join(args.outdir, OUT_PREFIX + "source_vs_delivered.png"),
             DL_MIN,
             "rate_down_mbps",
             "What the source offered against what the player chose",
@@ -548,7 +557,7 @@ def main() -> int:
     )
     made = [m for m in made if m]
 
-    with open(os.path.join(args.outdir, "finding.json"), "w") as fh:
+    with open(os.path.join(args.outdir, OUT_PREFIX + "finding.json"), "w") as fh:
         json.dump(finding, fh, indent=1)
 
     print(markdown_table(table))

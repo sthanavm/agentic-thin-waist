@@ -47,7 +47,7 @@ latency 100 min / 50 high, loss 1% / 0.1%.
 
 ## Result
 
-See `iqb_vs_qoe_table.md` for all 24 rows, each carrying the configured RTT and
+See `streaming_iqb_vs_qoe_table.md` for all 24 rows, each carrying the configured RTT and
 the measured RTT.
 
 **720p at every capacity from 6.25 Mb/s up, at all three latencies**, with no
@@ -73,7 +73,7 @@ moves is **startup delay**: 2.5 s at 100 Mb/s against 39–47 s at 0.5 Mb/s.
 **The disagreement is the finding.** At 6.25, 12.5 and 25 Mb/s — at every
 latency — a speed test says the link fails IQB's minimum while the player
 delivers 720p with zero rebuffering. That is 9 of 24 points where the two
-verdicts are opposite, ringed in `contrast_iqb_vs_qoe.png`.
+verdicts are opposite, ringed in `streaming_contrast_iqb_vs_qoe.png`.
 
 **The 720p ceiling is not the link.** It holds at 100 Mb/s too. The
 supplementary 1080p-viewport set (`../results_1080p/`) establishes that it is
@@ -88,19 +88,19 @@ both the configured and the measured RTT in the legend or panel title.
 
 | chart | what it shows |
 |---|---|
-| `contrast_iqb_vs_qoe.png` | IQB's verdict against measured QoE, one panel per latency. The ringed points are where they disagree. |
-| `demand_vs_capacity.png` | what YouTube used against what the link offered, with the averaging caveat on the chart itself |
-| `source_vs_delivered.png` | the 2160p ladder the source offered against the rendition the player chose, per latency |
-| `startup_vs_bandwidth.png` | startup delay, which is where latency and capacity actually show up |
-| `rebuffer_vs_bandwidth.png` | rebuffer ratio — zero everywhere above 1 Mb/s |
-| `qoe_vs_bandwidth.png` | delivered resolution against capacity |
+| `streaming_contrast_iqb_vs_qoe.png` | IQB's verdict against measured QoE, one panel per latency. The ringed points are where they disagree. |
+| `streaming_demand_vs_capacity.png` | what YouTube used against what the link offered, with the averaging caveat on the chart itself |
+| `streaming_source_vs_delivered.png` | the 2160p ladder the source offered against the rendition the player chose, per latency |
+| `streaming_startup_vs_bandwidth.png` | startup delay, which is where latency and capacity actually show up |
+| `streaming_rebuffer_vs_bandwidth.png` | rebuffer ratio — zero everywhere above 1 Mb/s |
+| `streaming_qoe_vs_bandwidth.png` | delivered resolution against capacity |
 
 ## Files
 
 | file | what it is |
 |---|---|
-| `cpuc_runs.csv` | one row per run, all three latencies, 53 rows |
-| `iqb_vs_qoe_table.md` / `.csv` | the joined app + speed-test table, 24 points |
+| `streaming_cpuc_runs.csv` | one row per run, all three latencies, 53 rows |
+| `streaming_iqb_vs_qoe_table.md` / `.csv` | the joined app + speed-test table, 24 points |
 | `youtube_demand_bylat.json` | per-app demand keyed `capacity@rtt`, with window, idle and active rate |
 | `youtube_demand.json` | the original rate-only sidecar, kept because the 20 ms entries name the specific runs they came from |
 | `renditions.json` | the source ladder, probed once |
