@@ -1375,6 +1375,13 @@ def collect_player_qoe(
         per_app[app]["measured_element"] = _measured_element_summary(
             qoelib.load_samples(run["stats"].get(app, []))
         )
+        # The collector's own exit status, carried into the record so a caller
+        # can tell "the collector failed" from "the app had nothing to show".
+        # `status` cannot answer that: it is "ok" whenever samples exist, so a
+        # collector that wrote samples and then died at teardown looks clean,
+        # and a run with no remote video looks identical to a crash. Without
+        # this field drive() returned ok=True on a run whose pcap was 372 bytes.
+        per_app[app]["collector_returncode"] = run.get("returncode")
     return per_app
 
 
