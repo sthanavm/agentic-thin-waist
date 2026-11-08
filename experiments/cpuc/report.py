@@ -345,6 +345,16 @@ def markdown_table(table):
             "\u26a0 the background-traffic guard failed for that run; see the "
             "contamination note."
         )
+    if any(r.get("app_demand_mbps") is not None for r in table):
+        # The basis belongs next to the number. It was described in prose
+        # elsewhere as a whole-capture mean long after it had been changed to
+        # the sustained window, so the two disagreed in print.
+        notes.append(
+            "**demand** is the mean over the sustained playback window (first "
+            "app byte to last), per run, with GGC media attribution corrected "
+            "-- not over the whole capture. **infra share** is the rest of the "
+            "shaped link over the same window."
+        )
     out = hdr + "\n".join(lines)
     if notes:
         out += "\n\n" + "\n\n".join(notes)
@@ -358,20 +368,31 @@ def find_degradation(table):
     reference, OR any rebuffering, OR startup at/over 5 s -- the plan doc's own
     High criteria. The answer is the first point walking DOWN the rates where
     that becomes true.
+
+    A row missing one of those three metrics is NOT graded. `or 0` used to
+    stand in for an absent rebuffer count or startup time, which reads a
+    missing measurement as the best possible one and lets a row with no data
+    become the headline. It did not bite -- all 24 published rows carry all
+    three, so this changes no number here -- but it is the same silent-zero
+    shape as the collector failure that produced a false Meet claim, and the
+    ungraded points are returned so they cannot vanish quietly either.
     """
     ref = next((t for t in table if t["is_reference"]), None)
     ref_res = ref["resolution_p"] if ref else None
-    ok_points, first_bad = [], None
+    ok_points, first_bad, ungradeable = [], None, []
     for t in sorted(
         (x for x in table if not x["is_reference"] and x["resolution_p"]),
         key=lambda x: -x["rate_down_mbps"],
     ):
+        if t["rebuffer_events"] is None or t["startup_s"] is None:
+            ungradeable.append(t)
+            continue
         degraded = False
         if ref_res and t["resolution_p"] < 0.9 * ref_res:
             degraded = True
-        if (t["rebuffer_events"] or 0) > 0:
+        if t["rebuffer_events"] > 0:
             degraded = True
-        if (t["startup_s"] or 0) >= 5.0:
+        if t["startup_s"] >= 5.0:
             degraded = True
         if degraded:
             first_bad = first_bad or t
@@ -381,6 +402,9 @@ def find_degradation(table):
     return {
         "reference_resolution_p": ref_res,
         "lowest_good_mbps": lowest_ok,
+        # Points that could not be graded either way, so a reader can see
+        # that the curve has a hole rather than a pass in it.
+        "ungradeable_mbps": sorted(t["rate_down_mbps"] for t in ungradeable),
         "first_degraded_mbps": first_bad["rate_down_mbps"] if first_bad else None,
         "iqb_minimum_mbps": DL_MIN,
         "factor_below_iqb": (DL_MIN / lowest_ok) if lowest_ok else None,
@@ -432,7 +456,12 @@ def plot(table, path):
         return None
     x = [t["rate_down_mbps"] for t in pts]
     res = [t["resolution_p"] for t in pts]
-    reb = [(t["rebuffer_ratio"] or 0.0) * 100 for t in pts]
+    # A missing rebuffer ratio is a hole, not a zero: drawn at 0 it claims
+    # the run never rebuffered, which is the strongest thing this chart says.
+    reb = [
+        (t["rebuffer_ratio"] * 100 if t.get("rebuffer_ratio") is not None else None)
+        for t in pts
+    ]
 
     fig, ax1 = plt.subplots(figsize=(9, 5.2))
     ax1.set_xscale("log")
@@ -446,7 +475,7 @@ def plot(table, path):
     ax2.plot(x, reb, "s--", color="#C62828", lw=2, ms=6, label="rebuffer ratio (%)")
     ax2.set_ylabel("rebuffer ratio (%)", color="#C62828")
     ax2.tick_params(axis="y", labelcolor="#C62828")
-    ax2.set_ylim(0, max(max(reb) * 1.3, 1.0))
+    ax2.set_ylim(0, max(max([v for v in reb if v is not None], default=0) * 1.3, 1.0))
 
     ax1.axvline(DL_MIN, color="#424242", ls=":", lw=2)
     ax1.annotate(
@@ -495,9 +524,9 @@ def main() -> int:
     tbl_csv = os.path.join(args.outdir, OUT_PREFIX + "iqb_vs_qoe_table.csv")
     with open(tbl_csv, "w", newline="") as fh:
         # Union, not table[0]: rows carry keys the first row does not.
-        # A reference row gains graded_against_self and a confounded
-        # row gains confounded/confounded_reason, and keying off one
-        # row raises ValueError the moment that happens.
+        # A reference row gains graded_against_self, so keying the
+        # writer off table[0] raises ValueError the moment the reference
+        # is not the first row.
         cols = list(dict.fromkeys(k for r in table for k in r))
         w = csv.DictWriter(fh, fieldnames=cols)
         w.writeheader()

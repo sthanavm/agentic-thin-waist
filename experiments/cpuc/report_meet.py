@@ -113,19 +113,46 @@ def load_demand(path: str | None = None) -> dict:
 # rather than silently absent from the curve.
 EXPECTED_RATES = (100.0, 25.0, 6.0, 3.0, 1.0, 0.5)
 
-# Points where "no remote video arrived" cannot be read as a measurement of the
-# link: the persistent peer stopped publishing at about the time these runs
-# were taken, and the meeting ended during that batch. The SAME two capacities
-# at 50 ms failed while the peer was VERIFIED still publishing, so those are
-# genuine and are deliberately not listed here.
+# The labels a run earns when its collector produced no samples.
 #
-# Keyed (capacity Mb/s, configured RTT ms). An explicit list rather than
-# something inferred from the row, because the peer's state is not in the CSV
-# -- so it is written down where a reader can check it against the batch log,
-# instead of living in a PR comment.
-CONFOUNDED_POINTS = {
-    (1.0, 100.0): "peer stopped publishing during this batch",
-    (0.5, 100.0): "peer stopped publishing during this batch",
+# CORRECTION, 2026-11-08. These five rows used to be labelled "no remote
+# media", and the finding quoted them as "no remote video arrived at all, in
+# two attempts". That was WRONG. It was inferred from the collector having
+# exited non-zero, which says nothing about what reached the host, and it was
+# published as if it were a measurement of the link.
+#
+# Re-derived from the captures themselves: inbound packets of >= 800 B whose
+# remote address is in `CaptureAttribution.app_ips["meet"]` or was adopted into
+# the meet bucket by connection affinity. Packet size alone cannot do this --
+# Meet's media and Google's CDN both ride UDP/443 from 142.251.x -- and
+# matching against `AppTraffic.hosts` cannot either, because those are
+# hostnames and Meet's media endpoints are reached by ICE and never named in
+# DNS. Both wrong methods were caught by the controls, which are part of the
+# derivation and not an afterthought: the known-720p reference run at 100 Mb/s
+# yields 17,588 such packets and the 360p run at 1 Mb/s yields 4,943.
+LABEL_NO_SAMPLES = "collector produced no samples"
+LABEL_UNMEASURED = "video arrived, unmeasured"
+LABEL_INVALID = "invalid run (no packets)"
+
+# (capacity Mb/s, configured RTT ms) -> one (MB, packets, span_s) per attempt.
+# Keyed and written down rather than recomputed, because this script reads the
+# run CSV and the evidence is in the pcaps; keeping it here is what lets a
+# reader check the claim against the captures instead of against a PR comment.
+# Reproduce with the capture re-derivation described above over
+# `meet_*` run dirs under pramana_runs on vm4.
+INBOUND_MEDIA_BY_CAPTURE: dict[
+    tuple[float, float], tuple[tuple[float, int, int], ...]
+] = {
+    (1.0, 50.0): ((3.14, 2408, 45), (2.23, 1698, 26)),
+    (0.5, 20.0): ((3.20, 2442, 70), (2.96, 2235, 69)),
+    (0.5, 50.0): ((2.24, 1671, 48), (2.26, 1677, 46)),
+    # Zero inbound packets of ANY size in the whole capture, both of them, so
+    # there is nothing here to interpret. These two were previously called
+    # "confounded" (the persistent peer had stopped publishing). A run that
+    # captured no packets is an invalid run, not a confounded result: zero
+    # packets is not a measurement of anything.
+    (1.0, 100.0): ((0.0, 0, 0),),
+    (0.5, 100.0): ((0.0, 0, 0),),
 }
 
 
@@ -164,21 +191,33 @@ def grade_reference(t: dict) -> dict:
     return t
 
 
-def mark_confounded(t: dict) -> dict:
-    """Separate a measured absence of video from one that cannot be attributed.
+def label_from_capture(t: dict) -> dict:
+    """Say what the CAPTURE shows for a row whose collector produced nothing.
 
-    Three of the five "no remote media" cells are measurements: the call ran
-    and no remote video arrived at that capacity. Two are not. Rendering all
-    five identically invites the table to be read as a clean curve down to
-    0.5 Mb/s at every latency, which is the one thing this data cannot say.
+    Three of these rows carried remote video the whole time and the collector
+    simply failed to sample it, so their quality is UNMEASURED. Two captured
+    no packets at all, so they are invalid runs. Neither is "no remote media",
+    and labelling all five that way turned a collector failure into a claim
+    about the link -- the one thing this data cannot support.
     """
     key = (t.get("rate_mbps_symmetric"), t.get("rtt_configured_ms"))
-    why = CONFOUNDED_POINTS.get(key)
-    if not why or t.get("qoe_label") not in ("no remote media", "not collected"):
+    attempts = INBOUND_MEDIA_BY_CAPTURE.get(key)
+    if not attempts or t.get("qoe_label") not in (LABEL_NO_SAMPLES, "not collected"):
         return t
-    t["confounded"] = True
-    t["confounded_reason"] = why
-    t["qoe_label"] = "no remote media (confounded)"
+    t["attempts"] = len(attempts)
+    if all(pkts == 0 for _mb, pkts, _span in attempts):
+        t["qoe_label"] = LABEL_INVALID
+        t["invalid_run"] = True
+        t["invalid_run_reason"] = (
+            "capture contains no inbound packets of any size; nothing was measured"
+        )
+        return t
+    t["qoe_label"] = LABEL_UNMEASURED
+    t["inbound_media_mb_min"] = min(mb for mb, _p, _s in attempts)
+    t["inbound_media_mb_max"] = max(mb for mb, _p, _s in attempts)
+    t["inbound_media_packets_min"] = min(p for _mb, p, _s in attempts)
+    t["inbound_media_packets_max"] = max(p for _mb, p, _s in attempts)
+    t["inbound_media_span_s_min"] = min(sp for _mb, _p, sp in attempts)
     return t
 
 
@@ -260,23 +299,27 @@ def build_table(rows):
             # the call itself. A demand figure without it is not interpretable.
             t["infra_share_pct"] = d.get("infra_share_pct")
         else:
-            # A run that never established remote media still moved some
-            # bytes while it tried to join. Reporting those bytes as "what
-            # Meet demanded" would draw a demand curve that appears to scale
-            # gracefully down to 0.23 Mb/s, when in fact the call failed. If
-            # the QoE is not collected, neither is the demand.
+            # Demand is withheld wherever quality is unmeasured, and the
+            # reason is the gate, not the call: `demand_gate.py` checks a
+            # published demand figure against what the delivered rendition
+            # costs, and a row with no rendition is a figure nothing can
+            # clear. The raw sustained-window numbers for these points are in
+            # the demand sidecar (`meet_demand_bylat.json`) for anyone who
+            # wants them; they are not published as a demand curve, because at
+            # 0.5-1 Mb/s Meet's peak equalled the cap, so the figure is the
+            # link's limit rather than a statement of what a call needs.
             t["meet_demand_mbps"] = None
             t["meet_peak_mbps"] = None
             t["infra_share_pct"] = d.get("infra_share_pct")
-            # "Not collected" and "we ran it and no video ever arrived" are
-            # different claims, and only the second one is evidence about the
-            # link. A run that reached NoRemoteInboundMedia on every attempt
-            # IS a measurement: the call did not carry remote video at that
-            # capacity. Collapsing it into "not collected" would throw away
-            # the lowest point on the curve.
+            # "We never ran it" and "we ran it and the collector came back
+            # with nothing" are different, and the label says which. What it
+            # does NOT say is whether remote video arrived: NoRemoteInboundMedia
+            # is raised off the collector's own output, and a collector that
+            # died reports exactly what a silent peer would. That question is
+            # answered from the capture, in label_from_capture() below.
             reason = t.get("invalid_reason") or ""
             if "NoRemoteInboundMedia" in reason:
-                t["qoe_label"] = "no remote media"
+                t["qoe_label"] = LABEL_NO_SAMPLES
             else:
                 t["qoe_label"] = "not collected"
     for rate in EXPECTED_RATES:
@@ -307,7 +350,7 @@ def build_table(rows):
                 }
             )
     out.sort(key=lambda t: -t["rate_mbps_symmetric"])
-    return [mark_confounded(grade_reference(r)) for r in out]
+    return [label_from_capture(grade_reference(r)) for r in out]
 
 
 def latency_caption(table) -> str:
@@ -393,14 +436,41 @@ def markdown_table(t):
             "resolution and fps are 100% of their own, but the freeze test "
             "is absolute, so the label is earned rather than granted."
         )
-    if any(r.get("confounded") for r in t):
+    un = [r for r in t if r.get("qoe_label") == LABEL_UNMEASURED]
+    if un:
         notes.append(
-            "**no remote media (confounded)** is NOT evidence about the link: "
-            "the persistent peer stopped publishing during that batch, so an "
-            "absence of remote video cannot be told apart from the meeting "
-            "having ended. The same two capacities at 50 ms failed while the "
-            "peer was verified still publishing, and those rows are plain "
-            "**no remote media**."
+            f"**{LABEL_UNMEASURED}** means remote video was arriving and the "
+            "collector failed to sample it, so resolution, fps and freezes are "
+            "unknown at those points -- not zero. Read off the captures: "
+            f"{min(r['inbound_media_mb_min'] for r in un):.1f}-"
+            f"{max(r['inbound_media_mb_max'] for r in un):.1f} MB of inbound "
+            "media from Meet's own endpoints "
+            f"({min(r['inbound_media_packets_min'] for r in un):,}-"
+            f"{max(r['inbound_media_packets_max'] for r in un):,} full-size "
+            "packets), in both attempts at every one of those capacities, "
+            "against controls of 17,588 such packets on the known-720p "
+            "reference run and 4,943 on the 360p run at 1 Mb/s. **Correction, "
+            "2026-11-08:** these cells previously read *no remote media* and "
+            "were quoted as *no remote video arrived at all*. That was wrong. "
+            "It was inferred from the collector's exit status, which cannot "
+            "tell a dead collector from a silent peer."
+        )
+    inv = [r for r in t if r.get("qoe_label") == LABEL_INVALID]
+    if inv:
+        notes.append(
+            f"**{LABEL_INVALID}** is not a result. Those captures contain no "
+            "inbound packets of any size, so nothing about the link was "
+            "measured. They were previously marked *confounded* -- the "
+            "persistent peer had stopped publishing -- which still reads as a "
+            "result with a caveat. Zero packets is not a measurement."
+        )
+    if any(r.get("meet_demand_mbps") is not None for r in t):
+        notes.append(
+            "**Meet demand** is the mean over the sustained call window (first "
+            "app byte to last), not over the whole capture, and it is withheld "
+            "wherever quality is unmeasured because the demand gate has no "
+            "rendition to check it against. **infra share** is the rest of the "
+            "shaped link over the same window."
         )
     out = hdr + "\n".join(lines)
     if notes:
@@ -436,16 +506,33 @@ def latency_sentences(table) -> str:
             for r in g
             if r.get("qoe_label") == "high" and r.get("rate_mbps_symmetric")
         ]
+        # Only MEASURED failures. A row whose collector produced no samples
+        # has no quality verdict, and counting it here is what turned a
+        # collector failure into "the call failed by 0.5 Mb/s".
         bad = [
             r["rate_mbps_symmetric"]
             for r in g
-            if r.get("qoe_label") in ("unusable", "no remote media")
-            and r.get("rate_mbps_symmetric")
+            if r.get("qoe_label") == "unusable" and r.get("rate_mbps_symmetric")
         ]
+        un = sorted(
+            (
+                r["rate_mbps_symmetric"]
+                for r in g
+                if r.get("qoe_label") == LABEL_UNMEASURED
+                and r.get("rate_mbps_symmetric")
+            ),
+            reverse=True,
+        )
         if good:
             clause = f"at {lat:g} ms it held reference quality to {min(good):g} Mb/s"
             if bad:
-                clause += f" and failed by {max(bad):g} Mb/s"
+                clause += f" and was unusable by {max(bad):g} Mb/s"
+            if un:
+                clause += (
+                    " (quality at "
+                    + ", ".join(f"{c:g}" for c in un)
+                    + " Mb/s unmeasured)"
+                )
             parts.append(clause)
     if not parts:
         return ""
@@ -514,9 +601,10 @@ def sentences(f, table=None):
     "demand-limited": that holds only where Meet's peak stayed below the cap
     (100 and 25 Mb/s). At 6, 3 and 1 Mb/s its peak equalled the cap, so it was
     capacity-limited there and still delivered reference quality -- a stronger
-    statement, but a different one. Second, that quality broke at the bottom:
-    the 1 Mb/s point produced no valid run, so the breakpoint is below the
-    lowest point actually measured, not at it.
+    statement, but a different one. Second, that quality fails all the way
+    down: 1 Mb/s is the lowest point with a quality verdict, and below it the
+    collector produced no samples, so the curve stops there rather than
+    continuing to 0.5 Mb/s.
     """
     table = table or []
     lg = f["lowest_capacity_still_good_mbps"]
@@ -601,11 +689,15 @@ def sentences(f, table=None):
         ),
         reverse=True,
     )
-    nomedia = sorted(
+    unmeasured = sorted(
+        (r for r in table if r.get("qoe_label") == LABEL_UNMEASURED),
+        key=lambda r: -(r.get("rate_mbps_symmetric") or 0),
+    )
+    invalid = sorted(
         (
             r["rate_mbps_symmetric"]
             for r in table
-            if r.get("qoe_label") == "no remote media" and r.get("rate_mbps_symmetric")
+            if r.get("qoe_label") == LABEL_INVALID and r.get("rate_mbps_symmetric")
         ),
         reverse=True,
     )
@@ -619,12 +711,39 @@ def sentences(f, table=None):
             "Unusable by the pre-registered thresholds."
         )
         s.append(line)
-    if nomedia:
+    lowest_measured = min(
+        (
+            r["rate_mbps_symmetric"]
+            for r in table
+            if r.get("resolution_p") and not r.get("is_reference")
+        ),
+        default=None,
+    )
+    lowest_clause = (
+        f"The lowest capacity with measured quality is {lowest_measured:g} Mb/s."
+        if lowest_measured
+        else "No capacity in this set has both a quality verdict and a lower cap."
+    )
+    if unmeasured:
         s.append(
             "At "
-            + ", ".join(f"{c:g}" for c in nomedia)
-            + " Mb/s no remote video arrived at all, in two attempts, so the "
-            "call did not carry video rather than carrying it badly."
+            + ", ".join(f"{r['rate_mbps_symmetric']:g}" for r in unmeasured)
+            + " Mb/s the collector produced no samples, so quality there is "
+            "UNMEASURED rather than absent: the captures show "
+            f"{min(r['inbound_media_mb_min'] for r in unmeasured):.1f}-"
+            f"{max(r['inbound_media_mb_max'] for r in unmeasured):.1f} MB of "
+            "inbound media still arriving from Meet's own endpoints, in both "
+            "attempts at each point. This corrects an earlier reading of these "
+            'rows as "no remote video arrived at all", which was inferred '
+            "from the collector's exit status rather than from the capture. "
+            + lowest_clause
+        )
+    if invalid:
+        s.append(
+            "The "
+            + ", ".join(f"{c:g}" for c in invalid)
+            + " Mb/s points captured no packets at all and are invalid runs, "
+            "not results."
         )
 
     missing = [
@@ -723,9 +842,9 @@ def main() -> int:
         os.path.join(args.outdir, OUT_PREFIX + "iqb_vs_qoe_table.csv"), "w", newline=""
     ) as fh:
         # Union, not table[0]: rows carry keys the first row does not.
-        # A reference row gains graded_against_self and a confounded
-        # row gains confounded/confounded_reason, and keying off one
-        # row raises ValueError the moment that happens.
+        # A reference row gains graded_against_self and a row relabelled
+        # from its capture gains the inbound-media evidence columns, and
+        # keying off one row raises ValueError the moment that happens.
         cols = list(dict.fromkeys(k for r in table for k in r))
         w = csv.DictWriter(fh, fieldnames=cols)
         w.writeheader()

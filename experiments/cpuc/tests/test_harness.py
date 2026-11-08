@@ -908,11 +908,13 @@ def test_missing_collector_exit_status_is_not_a_pass():
 
 
 def test_collector_failure_is_fatal_even_when_the_app_moved_bytes():
-    # DELIBERATE, and it has a consequence worth knowing: the low-capacity
-    # Meet runs that currently yield the "no remote media" rows have real
-    # traffic AND a non-zero collector exit, so they become unusable here.
-    # "No remote video arrived" must be read off the capture, not inferred
-    # from the collector having died.
+    # DELIBERATE, and it had a consequence worth knowing: the low-capacity
+    # Meet runs behind those rows have real traffic AND a non-zero collector
+    # exit, so they become unusable here. That re-derivation has since been
+    # done from the captures (report_meet.INBOUND_MEDIA_BY_CAPTURE), and it
+    # overturned the published claim: remote video WAS arriving at three of
+    # the five points. "No remote video arrived" can only be read off the
+    # capture, never inferred from the collector having died.
     rec = _good_record()
     rec["per_app_stats"]["youtube"]["download"] = {
         "total_mb": 3.348,
@@ -995,3 +997,182 @@ def test_drive_reports_a_good_record_as_ok(monkeypatch):
     res = D.drive("youtube", C.REFERENCE, 60, "/tmp/unused")
     assert res.ok is True
     assert res.error == ""
+
+
+# ── report labels: what the capture says, not what the collector did ────────
+#
+# These pin the correction of 2026-11-08. Three Meet rows were published as
+# "no remote media", and the finding quoted them as "no remote video arrived
+# at all", on the strength of the collector having exited non-zero. The
+# captures show 2.2-3.2 MB of inbound media from Meet's own endpoints in both
+# attempts at each point. A label must not outrun its evidence.
+def _meet_row(rate, rtt, reason="NoRemoteInboundMedia: meet: no remote inbound video"):
+    return {
+        "rate_mbps_symmetric": rate,
+        "rtt_configured_ms": rtt,
+        "is_reference": False,
+        "qoe_label": "collector produced no samples",
+        "invalid_reason": reason,
+        "resolution_p": None,
+        "fps": None,
+        "freeze_ratio": None,
+    }
+
+
+def _rm():
+    pytest.importorskip("matplotlib")
+    import cpuc.report_meet as RM
+
+    return RM
+
+
+def test_a_collector_failure_claims_nothing_about_remote_media():
+    RM = _rm()
+    # The label a run earns from the collector's own output says only that no
+    # samples came back. It must not mention remote media, because the
+    # collector cannot see the wire: a dead collector and a silent peer look
+    # identical to it. That was the whole mistake.
+    assert "remote" not in RM.LABEL_NO_SAMPLES
+
+
+def test_a_point_with_no_capture_evidence_keeps_the_unknown_label():
+    RM = _rm()
+    # 6 Mb/s was never in the re-derived set. Absent evidence must leave the
+    # label where it was rather than filling in either verdict.
+    out = RM.label_from_capture(_meet_row(6.0, 20.0))
+    assert out["qoe_label"] == RM.LABEL_NO_SAMPLES
+    assert "inbound_media_mb_min" not in out
+    assert "invalid_run" not in out
+
+
+def test_capture_evidence_relabels_the_three_rows_that_carried_video():
+    RM = _rm()
+    for rate, rtt in ((1.0, 50.0), (0.5, 20.0), (0.5, 50.0)):
+        out = RM.label_from_capture(_meet_row(rate, rtt))
+        assert out["qoe_label"] == RM.LABEL_UNMEASURED, (rate, rtt)
+        # The evidence travels with the label, both attempts of it.
+        assert out["attempts"] == 2
+        assert out["inbound_media_mb_min"] >= 2.0
+        assert out["inbound_media_packets_min"] >= 1000
+        assert out.get("resolution_p") is None  # still unmeasured, not graded
+
+
+def test_an_empty_capture_is_an_invalid_run_not_a_result():
+    RM = _rm()
+    for rate in (1.0, 0.5):
+        out = RM.label_from_capture(_meet_row(rate, 100.0))
+        assert out["qoe_label"] == RM.LABEL_INVALID
+        assert out["invalid_run"] is True
+        assert "no inbound packets" in out["invalid_run_reason"]
+
+
+def test_an_unmeasured_row_is_not_counted_as_a_measured_failure():
+    RM = _rm()
+    table = [
+        {
+            "rate_mbps_symmetric": 100.0,
+            "rtt_configured_ms": 50.0,
+            "qoe_label": "high",
+            "is_reference": True,
+        },
+        {
+            "rate_mbps_symmetric": 3.0,
+            "rtt_configured_ms": 50.0,
+            "qoe_label": "high",
+            "is_reference": False,
+        },
+        {
+            "rate_mbps_symmetric": 1.0,
+            "rtt_configured_ms": 50.0,
+            "qoe_label": RM.LABEL_UNMEASURED,
+            "is_reference": False,
+        },
+        {
+            "rate_mbps_symmetric": 100.0,
+            "rtt_configured_ms": 20.0,
+            "qoe_label": "high",
+            "is_reference": True,
+        },
+        {
+            "rate_mbps_symmetric": 1.0,
+            "rtt_configured_ms": 20.0,
+            "qoe_label": "unusable",
+            "is_reference": False,
+        },
+    ]
+    text = RM.latency_sentences(table)
+    # 20 ms has a measured failure and may say so; 50 ms does not.
+    assert "at 20 ms" in text and "unusable by 1 Mb/s" in text
+    assert "at 50 ms it held reference quality to 3 Mb/s (quality at 1 Mb/s" in text
+    assert "failed by" not in text
+
+
+def test_the_finding_does_not_say_no_video_arrived():
+    RM = _rm()
+    table = [
+        {
+            "rate_mbps_symmetric": 100.0,
+            "is_reference": True,
+            "resolution_p": 720,
+            "fps": 24.0,
+            "freeze_ratio": 0.0,
+            "qoe_label": "high",
+            "meet_demand_mbps": 3.74,
+            "iqb_verdict": "meets minimum only",
+        },
+        {
+            "rate_mbps_symmetric": 1.0,
+            "is_reference": False,
+            "resolution_p": 360,
+            "fps": 19.9,
+            "freeze_ratio": 0.1795,
+            "qoe_label": "unusable",
+            "meet_demand_mbps": 0.51,
+            "iqb_verdict": "fails minimum",
+        },
+        dict(
+            _meet_row(0.5, 20.0),
+            qoe_label=RM.LABEL_UNMEASURED,
+            inbound_media_mb_min=2.96,
+            inbound_media_mb_max=3.20,
+            meet_demand_mbps=None,
+            iqb_verdict="fails minimum",
+        ),
+    ]
+    text = RM.sentences(RM.find_breakpoint(table), table)
+    # The old sentence shape -- "At <rate> Mb/s no remote video arrived at
+    # all" -- must be gone. The phrase survives only inside the correction,
+    # quoted as what was wrong, which is the record we want kept.
+    assert "Mb/s no remote video arrived" not in text
+    assert 'as "no remote video arrived at all", which was inferred' in text
+    assert "UNMEASURED" in text
+    assert "3.0-3.2 MB" in text
+    assert "lowest capacity with measured quality is 1 Mb/s" in text
+
+
+# ── streaming: a missing metric is not a good one ───────────────────────────
+def test_a_row_missing_rebuffer_or_startup_is_not_graded_good():
+    pytest.importorskip("matplotlib")
+    import cpuc.report as RP
+
+    def row(rate, **kw):
+        base = {
+            "rate_down_mbps": rate,
+            "is_reference": False,
+            "resolution_p": 720,
+            "rebuffer_events": 0,
+            "startup_s": 1.0,
+            "iqb_verdict_download_only": "fails minimum",
+            "iqb_verdict": "fails minimum",
+        }
+        base.update(kw)
+        return base
+
+    ref = row(100.0, is_reference=True)
+    table = [ref, row(25.0), row(6.25, rebuffer_events=None), row(3.0, startup_s=None)]
+    f = RP.find_degradation(table)
+    # Under `or 0` both holes graded as flawless and 3 Mb/s became the
+    # headline. They must be neither good nor degraded, and must be named.
+    assert f["lowest_good_mbps"] == 25.0
+    assert f["ungradeable_mbps"] == [3.0, 6.25]
+    assert 6.25 not in f["points_good_below_iqb"]

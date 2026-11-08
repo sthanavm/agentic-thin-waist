@@ -48,22 +48,53 @@ this is within what ABR run-to-run variance can produce; it is not evidence
 that lower capacity helps.
 
 **Open:** Twitch and Vimeo are not run, so the plan's three streaming apps are
-one. Twitch needs its pinned channel changed first — `relaxbeats` tops out at
-720p and would abort at the source gate; `lofigirl` offers a full ladder to
-1920x1080.
+one. Twitch is now unblocked — the pinned channel is `lofigirl` as of this PR,
+probed live at a full ladder to 1920x1080, where `relaxbeats` topped out at
+720p and would have aborted at the source gate. Its bitrate is **not**
+comparable to YouTube's (near-static animation encodes 1080p far cheaper), so a
+Twitch sweep compares the *shape* of degradation, and demand only within the
+app. Neither channel is a Twitch partner, so re-probe the ladder before the
+campaign: a source-only stream has one rendition and the sweep would measure
+buffering rather than adaptation.
 
 ---
 
 ## Google Meet — conferencing (PR #20)
 
-**Run:** 6 capacities (100, 25, 6, 3, 1, 0.5 Mb/s symmetric) × 3 latencies.
-**20 of 24 runs collected** — the meeting ended during the 100 ms batch and the
-drop guard stopped rather than burning runs.
+**Run:** 6 capacities (100, 25, 6, 3, 1, 0.5 Mb/s symmetric) × 3 latencies =
+**18 cells**, 30 app runs (some cells retried). Of the 18: **13 have measured
+quality**, 3 carried remote video the collector failed to sample, and 2
+captured no packets at all. The planned 12.5 Mb/s point was never run.
+
+*(This replaces "20 of 24 runs collected". 24 was never the size of this
+matrix — the Meet plan is 6 capacities, not the streaming study's 8 — and
+neither number could be reproduced from the data. The counts above come
+straight from `meet_cpuc_runs.csv` and the demand gate's own 18-row total.)*
 
 **Headline:** Meet held 720p at 24 fps with freezes under 1% down to **3 Mb/s
 symmetric, 8x below IQB's 25 Mb/s conferencing minimum**. It breaks between 3
-and 1 Mb/s: at 1 Mb/s, 360p at 20 fps with 18% of the session frozen; at
-0.5 Mb/s no remote video arrives at all.
+and 1 Mb/s: at 1 Mb/s, 360p at 20 fps with 18% of the session frozen. 1 Mb/s is
+the lowest capacity with a quality verdict; below it quality is unmeasured.
+
+**Correction, 2026-11-08 — "at 0.5 Mb/s no remote video arrives at all" was
+wrong.** It is deleted, not reworded. Remote video *was* arriving: re-derived
+from the captures, 2.2–3.2 MB of inbound media (1,671–2,442 full-size packets)
+came from Meet's own endpoints in **both** attempts at 1 Mb/s @ 50 ms,
+0.5 Mb/s @ 20 ms and 0.5 Mb/s @ 50 ms, against controls of 17,588 such packets
+on the known-720p reference run and 4,943 on the 360p run at 1 Mb/s. What
+actually happened is that the collector produced no samples, so **quality at
+those three points is unmeasured, not absent**. The original claim was inferred
+from the collector having exited non-zero, which cannot tell a dead collector
+from a silent peer — the fourth instance of that class this week, and the first
+one to reach a published finding. The two 100 ms points previously called
+*confounded* are **invalid runs**: their captures contain no inbound packets of
+any size, and zero packets is not a measurement.
+
+**What survives unchanged:** the 3 Mb/s headline, the 8x factor, the 1 Mb/s
+breakpoint and every row with a quality verdict. All 13 measured rows are
+untouched, the demand gate still passes 13/13, and `meet_finding.json` is
+byte-identical to the one published with #20. The correction removes a claim
+about the bottom two capacities; it does not move the finding.
 
 **The asset-cost finding.** Meet's own page assets — `fonts.gstatic.com`
 (48.4%), `www.google.com` (16.9%), `www.gstatic.com` (14.3%) — cost a
@@ -79,7 +110,9 @@ that in mind.
 **Verified:** `adopt_unnamed_ips` is applied and working (95.4–99.5%
 attribution per run); the unnamed `142.251.x.119` talker is `www.google.com`,
 read from the captures' own DNS answers and confirmed by SNI in a QUIC-off run;
-demand gate 13/13 PASS, 5 skipped for no remote media.
+demand gate 13/13 PASS, 5 skipped (3 unmeasured, 2 invalid runs — the gate
+checks a demand figure against the rendition it bought, and those rows have no
+rendition, which is also why their demand column is blank).
 
 **Assumed, not verified:** the source clip was 720p, not 1080p, so these runs
 do not test whether Meet would hold 1080p. Received resolution never exceeded
@@ -88,15 +121,14 @@ every point.
 
 **Caveats that must travel with the table:** 6 Mb/s at 50 ms was measured twice
 and the runs disagree (360p/acceptable, then 720p/high); the table keeps the
-later one and it is the one number here not to lean on. The 1 and 0.5 Mb/s
-points at 100 ms are **confounded** — the peer stopped publishing — and are
-marked as such in the table rather than only in prose; the same two capacities
-at 50 ms failed with the peer verified still publishing, and those are genuine.
+later one and it is the one number here not to lean on. The three
+`video arrived, unmeasured` rows are holes in the curve, not low points on it —
+reading them as quality failures is exactly the mistake corrected above.
 
-**Open:** the six low-capacity rows behind "no remote media" come from runs
-whose collector exited non-zero, which the new validation now treats as
-unusable. "No remote video arrived" needs re-deriving from the capture rather
-than inferred from the collector having died.
+**Open:** what Meet actually delivered below 1 Mb/s is still unknown, and
+answering it needs the collector fixed and those three points re-run, not more
+analysis of these captures. The captures show video arriving; they cannot show
+what it looked like.
 
 ---
 
@@ -111,6 +143,29 @@ slower link. Resolution is 540p in both, so the difference is in fps and
 freezes, not rendition. Same n=1 caveat as everything above.
 
 ---
+
+## Corrections
+
+Kept here rather than edited away, because a corrected claim that leaves no
+trace is indistinguishable from one that was never made.
+
+- **2026-11-08 — Meet, "at 0.5 Mb/s no remote video arrives at all."** Wrong,
+  and published in #20, its table, and here. Video was arriving; the collector
+  produced no samples. Replaced by "quality unmeasured" on three rows and
+  "invalid run" on two. Derivation moved from the collector's exit status to
+  the capture. No measured row and no headline changed. Details in the Meet
+  section above.
+- **2026-11-08 — `media_bytes` reported `{'meet': 0}` for every Meet run,
+  including the known-720p control.** The figure matches a remote *host name*
+  against a suffix list, and WebRTC media endpoints are chosen by ICE and never
+  named in DNS, so there was never anything to match. It was a silent zero, not
+  a shortfall. Conferencing apps now get no entry at all rather than a zero,
+  and the one consumer (`make_release.py`'s R4) says which side is missing. No
+  published number used it.
+- **2026-11-08 — two of the five Meet charts on `main` could not be
+  reproduced by `main`'s own code.** They were generated before #20's and
+  #21's `plots.py` were merged. Regenerated and re-hashed in
+  `meet_manifest.charts.txt`. The streaming charts all reproduced exactly.
 
 ## What would change these conclusions
 

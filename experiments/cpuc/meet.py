@@ -84,11 +84,23 @@ class MeetingUnreachable(RuntimeError):
 
 
 class MeetingLikelyDropped(RuntimeError):
-    """Consecutive runs produced no remote media: treat the room as gone."""
+    """Consecutive runs sampled nothing AND the peer is not publishing.
+
+    Both halves are required. The streak alone means only that the collector
+    came back empty, which a dead collector and a dead meeting produce
+    identically; `peer_is_publishing()` is what distinguishes them.
+    """
 
 
 class NoRemoteInboundMedia(RuntimeError):
-    """The run produced no remote inbound video, so it measured nothing."""
+    """The COLLECTOR saw no remote inbound video, so this run measured nothing.
+
+    It says nothing about what reached the host. The collector can die with
+    media still flowing, and reading this exception as "no remote video
+    arrived" put a false claim into #20: three low-capacity rows raised it
+    while the captures showed 2.2-3.2 MB of inbound Meet media. For what
+    arrived, read the capture.
+    """
 
 
 # The collector's remote-tile gate is disabled for Meet, and replaced by
@@ -588,17 +600,19 @@ def main() -> int:
                 )
                 if row.get("valid"):
                     break
-            # If the room has gone, every remaining run is wasted. Two app runs
-            # in a row with no remote media is the signal; one alone is ordinary
-            # Meet flakiness.
+            # If the room has gone, every remaining run is wasted. Two app
+            # runs in a row where the collector sampled nothing is the signal;
+            # one alone is ordinary Meet flakiness. Note what the streak is
+            # NOT: evidence that no media arrived. That is why the peer is
+            # asked below before anything is declared dead.
             if plan.run_type == "app":
                 reason = str(row.get("invalid_reason") or "")
-                no_media = (not row.get("valid")) and (
+                no_samples = (not row.get("valid")) and (
                     "NoRemoteInboundMedia" in reason
                     or "MeetingUnreachable" in reason
                     or "advancing inbound video" in reason
                 )
-                no_media_streak = no_media_streak + 1 if no_media else 0
+                no_media_streak = no_media_streak + 1 if no_samples else 0
                 if no_media_streak >= 2:
                     # Ask the peer before declaring the meeting dead: a slow
                     # link produces exactly the same symptom, and stopping on
@@ -606,7 +620,7 @@ def main() -> int:
                     peer = peer_is_publishing()
                     if peer["publishing"]:
                         log(
-                            f"  no-media streak at {plan.condition.rate_down_mbps:g} Mb/s, but "
+                            f"  no-samples streak at {plan.condition.rate_down_mbps:g} Mb/s, but "
                             f"the meeting is live ({peer['note']}) -- treating this "
                             "as the link being too slow to carry video, not a "
                             "dropped meeting, and continuing"
@@ -614,7 +628,7 @@ def main() -> int:
                         no_media_streak = 0
                     else:
                         raise MeetingLikelyDropped(
-                            "two consecutive Meet runs received no remote media "
+                            "two consecutive Meet runs produced no samples "
                             f"(last: {reason[:160]}) and the peer is not "
                             f"publishing ({peer['note']}). Stopping rather than "
                             "burning the remaining runs."

@@ -189,6 +189,16 @@ def _contrast_panel(ax, pts, iqb_min, rate_key, iqb_key, show_legend=True):
         note = {
             "deferred": "reference run\n(the baseline,\nnot graded)",
             "not collected": "QoE not\ncollected",
+            # Both of these are holes for a reason that is not "the app
+            # failed", and the chart has to say which, or the gap reads as
+            # the curve having gone to zero.
+            "collector produced no samples": (
+                "collector produced\nno samples\n(quality unknown)"
+            ),
+            "video arrived, unmeasured": (
+                "remote video arrived;\ncollector produced\nno samples"
+            ),
+            "invalid run (no packets)": "invalid run:\nno packets\ncaptured",
         }.get(raw, raw or "no QoE label")
         ax.axvline(x, color="#9E9E9E", ls=":", lw=1.2, zorder=1)
         # Adjacent ungraded points (0.5 and 1 Mb/s both fail at high latency)

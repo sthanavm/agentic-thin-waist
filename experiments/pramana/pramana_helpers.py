@@ -477,6 +477,29 @@ def media_host_suffixes(app: str) -> tuple[str, ...]:
     return MEDIA_HOST_SUFFIXES.get(app, ())
 
 
+def media_attribution_apps(apps, method: str = "remote_hostname") -> list[str]:
+    """Apps whose media bytes can be told apart from the rest of their traffic.
+
+    The media tally works by matching the remote host NAME against
+    MEDIA_HOST_SUFFIXES, so it is only defined where two things hold: the app
+    has suffixes listed, and attribution is keyed on the remote end.
+
+    Neither holds for a conferencing app. Meet, Zoom and Teams carry media
+    over WebRTC to endpoints picked by ICE, which are never named in DNS and
+    have no suffix to match, so the tally stayed at 0 for every Meet run ever
+    captured -- including the known-720p control, where 29 MB of inbound video
+    is visible in the pcap. Reporting that as `media_bytes={'meet': 0}` is a
+    silent zero: an undefined measurement rendered as a measured absence.
+    Apps outside this list get no entry at all, so a reader who asks for the
+    figure gets nothing rather than a zero.
+    """
+    if method == "local_alias_ip":
+        # Attribution is keyed on the LOCAL alias, so no remote hostname is
+        # available to match and the tally cannot run for any app.
+        return []
+    return [a for a in apps if media_host_suffixes(a)]
+
+
 def app_domains(app: str) -> list[str]:
     """Hostname suffixes that identify `app`'s traffic in a capture."""
     return list(APP_REGISTRY.get(app, {}).get("domains") or [])
@@ -2381,6 +2404,11 @@ class CaptureAttribution:
     # those count media responses and nothing else. Bytes on an app endpoint
     # that was never named stay OUT, so a lost media flow shows up as a
     # shortfall here instead of being quietly absorbed.
+    #
+    # An app is ABSENT from this dict when the figure is not defined for it --
+    # see media_attribution_apps(). A WebRTC call has no named media host, so
+    # an entry of 0 would be indistinguishable from a real shortfall, which is
+    # exactly what it looked like for every Meet run.
     media_bytes: dict[str, dict[str, int]] = field(default_factory=dict)
     # bucket -> direction -> per-bin Mbps, for every bucket that is NOT an app:
     # browser_infra, other, and each declared probe. Totals cannot answer the
@@ -2922,7 +2950,8 @@ def attribute_capture(
     res.ip_side = "local" if res.method == "local_alias_ip" else "remote"
     res.app_ips = {a: sorted(bucket_ips.get(a, ())) for a in apps}
     res.media_bytes = {
-        a: {d: media_tally.get((a, d), 0) for d in ("download", "upload")} for a in apps
+        a: {d: media_tally.get((a, d), 0) for d in ("download", "upload")}
+        for a in media_attribution_apps(apps, res.method)
     }
     res.nonapp_mbps = {
         bucket: {

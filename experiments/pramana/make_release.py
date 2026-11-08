@@ -546,8 +546,26 @@ def build_run(run_dir: Path, out_root: Path, meta_env: dict, app: str | None = N
     # other check on that run passed. Compared like with like -- media hosts
     # only on both sides, download only -- because `cdp_received_bytes` counts
     # media responses and nothing else.
+    #
+    # The check has three distinct ways of not applying, and they used to
+    # collapse into one message. An app with no media-host attribution (any
+    # WebRTC call: its media endpoints are chosen by ICE and never named, so
+    # there is no suffix to match) came out as "no CDP byte reference", which
+    # names the wrong side as missing. Say which side is absent.
     pcap_media = (at.media_bytes.get(app) or {}).get("download") if at else None
-    if at is not None and rcv and pcap_media is not None:
+    if at is None:
+        chk("R4", None, "no capture for this run")
+    elif app not in (at.media_bytes or {}):
+        chk(
+            "R4",
+            None,
+            "media-host byte attribution is not defined for %s, so the "
+            "capture cannot be compared with the player's byte counters "
+            "(see pramana_helpers.media_attribution_apps)" % app,
+        )
+    elif not rcv:
+        chk("R4", None, "no CDP byte reference for this app")
+    elif pcap_media is not None:
         mratio = pcap_media / rcv
         chk(
             "R4",
@@ -555,10 +573,8 @@ def build_run(run_dir: Path, out_root: Path, meta_env: dict, app: str | None = N
             "pcap media download / cdp_received = %.3f, band [%.2f, %.2f] "
             "(%d B vs %d B)" % (mratio, PCAP_CDP_LO, PCAP_CDP_HI, pcap_media, rcv),
         )
-    elif at is None:
-        chk("R4", None, "no capture for this run")
     else:
-        chk("R4", None, "no CDP byte reference for this app")
+        chk("R4", None, "no media byte total in the capture for this app")
     # ---------------- QoE charts ----------------
     buf = [num(s.get("buffer_ahead_secs")) for s in st]
     f, ax = fig(
