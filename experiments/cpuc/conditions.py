@@ -100,8 +100,17 @@ RunType = Literal["app", "ndt"]
 # YouTube. Two things to know before reading a cross-app comparison.
 #
 # The Twitch channel is pinned to lofigirl because relaxbeats tops out at 720p
-# and would abort at the source gate (see APP_REGISTRY["twitch"]). lofigirl
-# offers a full ladder to 1920x1080 and runs 24/7.
+# and would abort at the source gate. lofigirl offers a full ladder to
+# 1920x1080 and runs 24/7.
+#
+# The pin lives in TWO registries and BOTH have to say it, which is how the
+# first attempt at this went wrong: `APP_REGISTRY["twitch"]` in
+# pramana_helpers feeds the NetGent workflow, while `shared/apps.py`'s
+# `default_url` is what `build_collector_jobs` opens -- so the real-Chrome run
+# used the old channel while this comment claimed otherwise. The probed
+# ladders below are recorded as data so a test can run the source gate against
+# them, and test_harness pins the two registries and this comment to the same
+# channel. A comment is not a pin.
 #
 # But its BITRATE IS NOT COMPARABLE TO YOUTUBE'S. lofigirl is a near-static
 # animation: a mostly-still 1080p frame encodes for a small fraction of what
@@ -111,6 +120,15 @@ RunType = Literal["app", "ndt"]
 # player picks at each capacity, where it starts rebuffering, how startup
 # grows -- and compare demand only within an app.
 STREAMING_APPS_PLAN = ("youtube", "twitch", "vimeo")
+
+# Twitch source probes of 2026-11-07, channel -> highest rendition offered,
+# read from Twitch's own HLS master playlist (the ladder the player sees).
+# Recorded rather than described, so `sweep.assert_source_high_enough` can be
+# run against them in a test instead of the claim being taken on trust.
+# Re-probe before a campaign: neither channel is a Twitch partner, so the
+# transcodes are not guaranteed to persist.
+TWITCH_PROBED_LADDERS_P = {"lofigirl": 1080, "relaxbeats": 720}
+TWITCH_PINNED_CHANNEL = "lofigirl"
 
 
 @dataclass(frozen=True)

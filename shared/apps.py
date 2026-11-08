@@ -153,7 +153,18 @@ REGISTRY: dict[str, AppSpec] = {
         name="twitch",
         kind=HTML5_VIDEO,
         # Must be a LIVE channel; the bare twitch.tv home page plays no video.
-        default_url="https://www.twitch.tv/relaxbeats",
+        #
+        # This is the URL the collector actually opens (build_collector_jobs ->
+        # url_for), so a channel pinned anywhere else does not take effect
+        # here. Repinned from relaxbeats 2026-11-07: its ladder was probed
+        # through Twitch's own HLS master playlist and tops out at 720p, below
+        # the 1080p the CPUC sweep's source gate requires, so a sweep against
+        # it aborts instead of producing rows. lofigirl was probed at the same
+        # time at 1920x1080 plus four lower rungs, and streams 24/7. Neither
+        # channel is a Twitch partner, so re-probe the ladder before a
+        # campaign; see experiments/cpuc/conditions.py for the pin and for why
+        # its bitrate is not comparable with YouTube's.
+        default_url="https://www.twitch.tv/lofigirl",
         live=True,
         bitrate_source="none",
         domains=(

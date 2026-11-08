@@ -49,8 +49,9 @@ that lower capacity helps.
 
 **Open:** Twitch and Vimeo are not run, so the plan's three streaming apps are
 one. Twitch is now unblocked — the pinned channel is `lofigirl` as of this PR,
-probed live at a full ladder to 1920x1080, where `relaxbeats` topped out at
-720p and would have aborted at the source gate. Its bitrate is **not**
+in **both** registries (`shared/apps.py`, which is what the collector opens,
+and `APP_REGISTRY["twitch"]`), probed live at a full ladder to 1920x1080 where
+`relaxbeats` topped out at 720p and would have aborted at the source gate. Its bitrate is **not**
 comparable to YouTube's (near-static animation encodes 1080p far cheaper), so a
 Twitch sweep compares the *shape* of degradation, and demand only within the
 app. Neither channel is a Twitch partner, so re-probe the ladder before the
@@ -162,6 +163,16 @@ trace is indistinguishable from one that was never made.
   a shortfall. Conferencing apps now get no entry at all rather than a zero,
   and the one consumer (`make_release.py`'s R4) says which side is missing. No
   published number used it.
+- **2026-11-08 — the first Twitch repin changed the wrong registry.** The
+  commit moved `APP_REGISTRY["twitch"]["url"]` and wrote a `conditions.py`
+  comment saying the channel was pinned, but a real-Chrome run opens
+  `shared/apps.py`'s `default_url` via `build_collector_jobs`, which still
+  said `relaxbeats` — so the sweep would have aborted at the source gate
+  while the comment insisted it would not. Caught in review, not by me. Both
+  registries now carry the pin, the probed ladders are recorded as data in
+  `conditions.py`, and seven tests pin the two registries, the comment and
+  the source gate together. Second time a comment has asserted something the
+  code did not do; the GGC double-r regex was the first.
 - **2026-11-08 — two of the five Meet charts on `main` could not be
   reproduced by `main`'s own code.** They were generated before #20's and
   #21's `plots.py` were merged. Regenerated and re-hashed in

@@ -1176,3 +1176,109 @@ def test_a_row_missing_rebuffer_or_startup_is_not_graded_good():
     assert f["lowest_good_mbps"] == 25.0
     assert f["ungradeable_mbps"] == [3.0, 6.25]
     assert 6.25 not in f["points_good_below_iqb"]
+
+
+# ── the Twitch pin must be real, in every registry that can serve it ────────
+#
+# A comment said the channel was pinned to lofigirl while the URL the
+# collector actually opens still said relaxbeats, so the sweep would have
+# aborted at the source gate with the comment insisting it could not. That is
+# the second time a comment has asserted something the code did not do (the
+# GGC double-r regex was the first), and both times the comment is what people
+# read. These tests make the claim and the code fail together.
+#
+# There are two registries. `APP_REGISTRY["twitch"]["url"]` in pramana_helpers
+# feeds ExperimentConfig.url_for and the NetGent workflow;
+# `shared/apps.py`'s `default_url` is what build_collector_jobs opens, which is
+# the path a real-Chrome CPUC run takes. Pinning one is not pinning the run.
+def _registries():
+    import pramana_helpers as H
+    from shared import apps as SA
+
+    return H, SA
+
+
+def test_the_collector_opens_the_pinned_twitch_channel():
+    # This is the one that matters: the URL the real run opens.
+    _H, SA = _registries()
+    assert SA.url_for("twitch").rstrip("/").endswith("/" + C.TWITCH_PINNED_CHANNEL)
+
+
+def test_both_twitch_registries_name_the_same_channel():
+    H, SA = _registries()
+    assert H.APP_REGISTRY["twitch"]["url"] == SA.url_for("twitch")
+
+
+def test_the_pinned_channel_is_a_channel_and_is_live():
+    _H, SA = _registries()
+    url = SA.url_for("twitch")
+    # The bare home page autoplays whatever is featured and yields no <video>.
+    assert url.rstrip("/") != "https://www.twitch.tv"
+    assert url.startswith("https://www.twitch.tv/")
+    assert SA.get("twitch").live is True
+
+
+def test_the_conditions_comment_names_the_pinned_channel():
+    # The comment is read by people and by nothing else, so it is checked
+    # here rather than trusted.
+    src = open(os.path.join(os.path.dirname(C.__file__), "conditions.py")).read()
+    head = src[: src.index("STREAMING_APPS_PLAN")]
+    assert C.TWITCH_PINNED_CHANNEL in head
+    for other in C.TWITCH_PROBED_LADDERS_P:
+        if other == C.TWITCH_PINNED_CHANNEL:
+            continue
+        # A rejected channel may be named, but only as the one NOT pinned.
+        assert f"pinned to {other}" not in head
+
+
+def test_the_pinned_channel_passes_the_source_gate():
+    pytest.importorskip("matplotlib")  # sweep -> runner -> plots
+    from cpuc import sweep
+
+    ladder = C.TWITCH_PROBED_LADDERS_P[C.TWITCH_PINNED_CHANNEL]
+    # Does not raise: the probed ladder clears the 1080p requirement.
+    sweep.assert_source_high_enough({"source_max_rendition_p": ladder})
+    assert ladder >= sweep.MIN_SOURCE_HEIGHT
+
+
+def test_the_old_pin_would_have_aborted_the_sweep():
+    # Teeth for the test above. If this stops raising, the gate has been
+    # loosened and the whole reason for the repin is gone.
+    pytest.importorskip("matplotlib")
+    from cpuc import sweep
+
+    with pytest.raises(sweep.SourceTooLowRes):
+        sweep.assert_source_high_enough(
+            {"source_max_rendition_p": C.TWITCH_PROBED_LADDERS_P["relaxbeats"]}
+        )
+
+
+# Apps whose two registry entries are KNOWINGLY different, with the reason.
+# Declared so the drift is visible: an undeclared difference fails below.
+# None of these are ours to resolve -- they predate this study -- but a silent
+# divergence is how the Twitch pin got lost.
+KNOWN_URL_DIVERGENCES = {
+    "youtube": "same video id; APP_REGISTRY omits &mute=1",
+    "vimeo": "same video id; APP_REGISTRY omits &muted=1",
+    "tubi": "DIFFERENT titles (568500 vs 593796); neither is verified live",
+}
+
+
+def test_no_undeclared_url_divergence_between_the_two_registries():
+    H, SA = _registries()
+    both = [
+        a
+        for a in sorted(set(SA.known_apps()) & set(H.APP_REGISTRY))
+        if SA.get(a).default_url or H.APP_REGISTRY[a].get("url")
+    ]
+    assert "twitch" in both  # the test is pointless if it skips the app
+    drifted = {
+        a: (SA.get(a).default_url, H.APP_REGISTRY[a].get("url"))
+        for a in both
+        if SA.get(a).default_url != H.APP_REGISTRY[a].get("url")
+    }
+    undeclared = {a: v for a, v in drifted.items() if a not in KNOWN_URL_DIVERGENCES}
+    assert not undeclared, (
+        "these apps resolve to different URLs depending on which code path "
+        f"runs; declare them in KNOWN_URL_DIVERGENCES or fix them: {undeclared}"
+    )
