@@ -152,12 +152,18 @@ def _contrast_panel(ax, pts, iqb_min, rate_key, iqb_key, show_legend=True):
             # Two readability problems at slide size, and fixing one by
             # itself causes the other. Adjacent ringed points are close
             # enough on a log axis that their callouts overlap, so they
-            # alternate height; and a callout centred on a point that sits
+            # step up in height; and a callout centred on a point that sits
             # under the IQB line runs straight through it, so that one also
             # shifts left. Shifting left alone pushed this label onto its
             # neighbour, which is what the stagger is for.
+            #
+            # Three heights rather than two: when the chart is facetted by
+            # latency each panel is ~6 inches instead of 9.5, and with two
+            # heights the run of three ringed points at 6.25, 12.5 and 25
+            # put two labels back on the same line and printed them over
+            # each other.
             near = abs(math.log10(x) - math.log10(iqb_min)) < 0.08
-            dy = 26 if ring % 2 == 0 else 52
+            dy = (26, 52, 78)[ring % 3]
             ring += 1
             ax.annotate(
                 "IQB fails,\nQoE high",
@@ -204,7 +210,9 @@ def _contrast_panel(ax, pts, iqb_min, rate_key, iqb_key, show_legend=True):
 
     ax.set_yticks(range(len(QOE_TIERS)))
     ax.set_yticklabels(["unusable / fails min", "acceptable / meets min", "high"])
-    ax.set_ylim(-0.45, 2.75)
+    # Headroom above the top tier for the stacked callouts: three of them
+    # reach 78pt above y=2, which ran into the panel title at 2.75.
+    ax.set_ylim(-0.45, 3.25)
     ax.set_xlabel("shaped download capacity (Mb/s, log scale)")
     ax.set_ylabel("verdict (higher is better)")
     _logx(ax, xs)
@@ -310,6 +318,29 @@ def demand_vs_capacity(
     ax.set_xlabel("shaped capacity (Mb/s, log scale)")
     ax.set_ylabel("throughput (Mb/s, log scale)")
     _iqb_line(ax, iqb_min, f"IQB minimum {iqb_min:g} Mb/s")
+    if multi:
+        # An earlier version of this annotation blamed the low means on an
+        # idle tail after the player fills its buffer. That was wrong. The
+        # means were low because YouTube's own media, served from a double-r
+        # GGC edge, was being attributed to `browser_infra` by a hostname
+        # rule -- understating demand by up to ~4.8x on the worst row. The
+        # figures here are re-derived with that fixed (#25) and taken over the
+        # sustained window (first app byte to last), so the page-load lead-in
+        # is excluded and the app's own mid-session behaviour is kept.
+        #
+        # What still deserves a caveat: these are means, each from ONE run.
+        ax.annotate(
+            "Mean over the sustained window (first app byte to last), per run,\n"
+            "with GGC media attribution corrected. Every point is n=1.\n"
+            "Read each curve against the IQB line, not against the other curves.",
+            xy=(0.5, 0.02),
+            xycoords="axes fraction",
+            ha="center",
+            va="bottom",
+            fontsize=8,
+            color="#424242",
+            bbox=dict(boxstyle="round,pad=0.35", fc="#FFFDE7", ec="#BDBDBD"),
+        )
     ax.legend(loc="upper left", fontsize=8 if multi else 9)
     ax.set_title(title)
     return _save(fig, path)
@@ -398,9 +429,12 @@ def source_vs_delivered(rows, path, iqb_min, rate_key, title):
     pts.sort(key=lambda r: r[rate_key])
     if not pts:
         return None
-    xs = [r[rate_key] for r in pts]
-    offered = [r["source_max_rendition_p"] for r in pts]
-    chosen = [r["resolution_p"] for r in pts]
+    xs = sorted({r[rate_key] for r in pts})
+    # The ladder is a property of the video, so it is one line whatever the
+    # latency; only the chosen rendition gets a series per latency.
+    offered = [
+        max(r["source_max_rendition_p"] for r in pts if r[rate_key] == x) for x in xs
+    ]
 
     fig, ax = plt.subplots(figsize=(9.5, 5.2))
     ax.plot(
@@ -412,9 +446,38 @@ def source_vs_delivered(rows, path, iqb_min, rate_key, title):
         ms=8,
         label="source offers (max rendition)",
     )
-    ax.plot(xs, chosen, "o-", color=C_QOE, lw=2.5, ms=9, label="player chose")
+    groups = _by_lat(pts)
+    multi = len(groups) > 1
+    for i, (lat, grp) in enumerate(groups):
+        grp = sorted(grp, key=lambda r: r[rate_key])
+        gx = [r[rate_key] for r in grp]
+        gy = [r["resolution_p"] for r in grp]
+        if lat is None:
+            ax.plot(gx, gy, "o-", color=C_QOE, lw=2.5, ms=9, label="player chose")
+        else:
+            c, m = _lat_style(lat, i)
+            ax.plot(
+                gx,
+                gy,
+                marker=m,
+                ls="-",
+                color=c,
+                lw=2.5,
+                ms=9,
+                label=f"player chose, {_lat_label(pts, lat)}",
+            )
+    # Shade against the latency whose curve sits lowest at each capacity, so
+    # the band is the headroom the player left unused in the worst case
+    # rather than an average across latencies that no single run produced.
+    worst = [min(r["resolution_p"] for r in pts if r[rate_key] == x) for x in xs]
     ax.fill_between(
-        xs, chosen, offered, color="#FFE082", alpha=0.45, label="unused headroom"
+        xs,
+        worst,
+        offered,
+        color="#FFE082",
+        alpha=0.45,
+        label="unused headroom" + (" (worst latency)" if multi else ""),
+        zorder=0,
     )
     ax.set_yscale("log")
     ax.set_yticks([144, 240, 360, 480, 720, 1080, 1440, 2160])
@@ -425,6 +488,6 @@ def source_vs_delivered(rows, path, iqb_min, rate_key, title):
     ax.set_ylabel("video resolution")
     _logx(ax, xs)
     _iqb_line(ax, iqb_min, f"IQB minimum {iqb_min:g} Mb/s")
-    ax.legend(loc="center left", fontsize=9)
+    ax.legend(loc="center left", fontsize=8 if len(groups) > 1 else 9)
     ax.set_title(title)
     return _save(fig, path)

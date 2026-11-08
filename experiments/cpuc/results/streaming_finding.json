@@ -1,0 +1,62 @@
+{
+ "reference_resolution_p": 720.0,
+ "lowest_good_mbps": 6.25,
+ "first_degraded_mbps": 3.0,
+ "iqb_minimum_mbps": 25.0,
+ "factor_below_iqb": 4.0,
+ "points_good_below_iqb": [
+  6.25,
+  6.25,
+  6.25,
+  12.5,
+  12.5,
+  12.5
+ ],
+ "source_max_rendition_p": 2160.0,
+ "points_where_source_exceeded_delivered": [
+  0.5,
+  0.5,
+  0.5,
+  1.0,
+  1.0,
+  1.0,
+  1.5,
+  1.5,
+  1.5,
+  3.0,
+  3.0,
+  3.0,
+  6.25,
+  6.25,
+  6.25,
+  12.5,
+  12.5,
+  12.5,
+  25.0,
+  25.0,
+  25.0,
+  100.0,
+  100.0,
+  100.0
+ ],
+ "points_iqb_download_would_fail_but_video_good": [
+  6.25,
+  6.25,
+  12.5,
+  12.5,
+  12.5,
+  25.0,
+  25.0,
+  25.0
+ ],
+ "points_iqb_all_legs_would_fail_but_video_good": [
+  6.25,
+  6.25,
+  12.5,
+  12.5,
+  12.5,
+  25.0,
+  25.0,
+  25.0
+ ]
+}

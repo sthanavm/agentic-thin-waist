@@ -1,0 +1,15 @@
+{
+ "mode": "SWEEP",
+ "elapsed_s": 1783.3,
+ "total": 16,
+ "valid": 11,
+ "invalid": 5,
+ "suspect": 7,
+ "flagged": [
+  "ndt ndt 6.25Mb/s rep1: ndt: ndt7 summary is all zeros, so no test completed: download: Too many periodic requests. Please contact sup",
+  "ndt ndt 3Mb/s rep1: ndt: ndt7 summary is all zeros, so no test completed: download: Too many periodic requests. Please contact sup",
+  "ndt ndt 1.5Mb/s rep1: ndt: ndt7 summary is all zeros, so no test completed: download: Too many periodic requests. Please contact sup",
+  "ndt ndt 1Mb/s rep1: ndt: ndt7 summary is all zeros, so no test completed: download: Too many periodic requests. Please contact sup",
+  "ndt ndt 0.5Mb/s rep1: ndt: ndt7 summary is all zeros, so no test completed: download: Too many periodic requests. Please contact sup"
+ ]
+}
