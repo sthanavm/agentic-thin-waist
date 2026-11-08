@@ -4,9 +4,12 @@
 studies: `streaming_*` (YouTube, #21), `meet_*` (Google Meet, #20) and
 `teams_*` (Microsoft Teams, #22, not ours, not merged yet). For Meet and Teams read
 `../RESULTS.md`, which is the index for all three and carries the corrections
-log. The `*_manifest.*` files record sha256 on vm4 and after transfer under
-the names the files had **on vm4**, before the per-study prefix was added, so
-`cpuc_runs.csv` in a manifest is this folder's `streaming_cpuc_runs.csv`.
+log. The `*_manifest.lat.*` and `*_manifest.lowend.*` files record sha256 on vm4
+and after transfer under the names the files had **on vm4**, before the
+per-study prefix was added — `cpuc_runs.csv` there is this folder's
+`streaming_cpuc_runs.csv`, and the hashes still match. The
+`*_manifest.charts.txt` files use this folder's own names and can be checked
+in place with `shasum -a 256 -c`.
 
 Does IQB 2025's **25 Mb/s** streaming download minimum (Fig 10) describe what
 streaming actually needs? This set answers it across three configured
