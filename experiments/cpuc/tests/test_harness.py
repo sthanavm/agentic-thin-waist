@@ -1260,7 +1260,9 @@ def test_the_old_pin_would_have_aborted_the_sweep():
 KNOWN_URL_DIVERGENCES = {
     "youtube": "same video id; APP_REGISTRY omits &mute=1",
     "vimeo": "same video id; APP_REGISTRY omits &muted=1",
-    "tubi": "DIFFERENT titles (568500 vs 593796); neither is verified live",
+    # tubi is deliberately NOT here any more. It used to name two different
+    # films, so which movie a run measured depended on the code path. Both
+    # registries now name one title, and this test is what keeps it that way.
 }
 
 

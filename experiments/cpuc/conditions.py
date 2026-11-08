@@ -79,7 +79,13 @@ RunType = Literal["app", "ndt"]
 # Decision (2026-11-04): Vimeo replaces Puffer. The plan doc says the choice
 # of applications is not strict, and the evidence is one-sided -- across 785
 # archived records Puffer has 0 runs and has never been driven, while Vimeo has
-# 340 (316 served). Vimeo is also the only app measured scaling with bandwidth
+# 340 (316 served).
+#
+# Re-checked 2026-11-08 over what is actually on vm4 now: 7 dataset indexes,
+# 284 runs, Puffer 0 in every one of them, Vimeo 99. The load-bearing half --
+# Puffer has never been driven -- reproduces exactly. The 785/340 totals do
+# not: they were counted over an archive that is no longer all present, so
+# quote the 284-run figures, not those two. Vimeo is also the only app measured scaling with bandwidth
 # (240p at 1 Mb/s to 1080p at 10 Mb/s), which separately satisfies the 1080p+
 # source requirement that YouTube cannot meet on auto quality.
 #

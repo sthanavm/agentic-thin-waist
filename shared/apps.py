@@ -1,11 +1,32 @@
-"""Single source of truth for the applications the platform can drive.
+"""The platform's registry of applications it can drive.
 
-Every component that needs to know *how an app is driven and measured* reads
-this registry: the QoE collector (which player API to sample), the experiment
-runner (which URL to open, whether a peer is required), the summarizer in
+Read by the QoE collector (which player API to sample), the collector job
+builder (which URL to open, whether a peer is required), the summarizer in
 ``shared.qoe`` (how to reduce the samples), and the notebook client library.
 
 Adding a new application must be a registry entry, not new code.
+
+NOT the single source of truth, which this docstring claimed until
+2026-11-08. There is a SECOND registry, ``pramana_helpers.APP_REGISTRY``, and
+which one decides a run depends on the code path:
+
+* ``shared.apps.url_for`` -> ``pramana_helpers.build_collector_jobs`` -> the
+  real-Chrome collector. **This file's ``default_url`` is what a QoE run
+  opens.**
+* ``pramana_helpers.APP_REGISTRY["<app>"]["url"]`` ->
+  ``ExperimentConfig.url_for`` -> ``_build_workflow`` -> the NetGent workflow
+  and the ``wget`` shell apps.
+
+Both carry a URL for youtube, vimeo, twitch and tubi, and they have silently
+disagreed twice: the Twitch channel was repinned here only after the sweep
+would already have aborted on the old one, and tubi named two DIFFERENT films,
+so which movie a run measured depended on which path drove it. They are now
+pinned together by
+``experiments/cpuc/tests/test_harness.py::test_no_undeclared_url_divergence_between_the_two_registries``,
+which fails on any undeclared divergence. Collapsing the two registries into
+one is the real fix and is written up in
+``experiments/cpuc/FOLLOWUPS.md``; it is deliberately not done here, because
+this file is shared with branches in flight.
 
 Fields
 ------
@@ -126,15 +147,34 @@ REGISTRY: dict[str, AppSpec] = {
         name="tubi",
         kind=HTML5_VIDEO,
         # Tubi's catalogue ROTATES and a pulled title still serves a 200 with
-        # the right <title>: the body reads "CONTENT UNAVAILABLE", the primary
-        # action becomes "Remind Me", and NO <video> element is ever created.
-        # That is what produced "Tubi never produced a player" -- measured, not
-        # a consent gate, login wall, ad, geo or bot block (0 MediaSource
-        # constructions, no such text on the page). To re-point this, list
-        # current titles with
+        # the right <title>: the primary action becomes "Remind Me" and NO
+        # <video> element is ever created. That is what produced "Tubi never
+        # produced a player" -- measured, not a consent gate, login wall, ad,
+        # geo or bot block (0 MediaSource constructions).
+        #
+        # Re-pinned 2026-11-08, and the pin is dated because it EXPIRES:
+        # `availabilityEnds` for this title is 2027-01-01. The two previous
+        # pins were both dead by then -- 568500/forrest-gump here and
+        # 593796/another-cinderella-story in pramana_helpers.APP_REGISTRY,
+        # which is the second half of the bug: the two registries named
+        # DIFFERENT films, so which movie a run measured depended on which
+        # code path drove it. Both now name this one, and
+        # test_harness.py::test_no_undeclared_url_divergence_between_the_two_registries
+        # fails if they drift again.
+        #
+        # To re-point, list current titles with
         #   curl -s https://tubitv.com/movies | grep -oE '/movies/[0-9]+/[a-z0-9-]+'
-        # and reject any whose page contains "CONTENT UNAVAILABLE".
-        default_url="https://tubitv.com/movies/568500/forrest-gump",
+        # and KEEP one whose page carries a `"contentUrl"` and does not carry
+        # `"video_resources":[]`. Do not grep for "CONTENT UNAVAILABLE": that
+        # text is rendered client-side and never appears in the HTML curl
+        # returns, so the old recipe here passed every dead title. Verified
+        # against a control: a listed, playable title has contentUrl and no
+        # "Remind Me"; both dead pins had "Remind Me" and no contentUrl.
+        #
+        # 2h12m, chosen so the title cannot end mid-run at any duration we
+        # sweep -- the opposite of the Vimeo mistake, where a 62 s default
+        # ended mid-run and hid contention behind end-of-video.
+        default_url="https://tubitv.com/movies/100057731/the-magnificent-seven",
         bitrate_source="none",
         domains=("tubitv.com", "adrise.tv", "tubi.video", "tubi.io"),
         color="#FBC02D",
@@ -327,7 +367,13 @@ def normalize_join_url(app: str, url: str) -> str:
 
 
 def url_for(app: str, overrides: Optional[dict[str, str]] = None) -> str:
-    """URL to open for `app`, honouring a caller-supplied override map."""
+    """URL to open for `app`, honouring a caller-supplied override map.
+
+    This is the collector path: `build_collector_jobs` calls it, so for any
+    run with a player this is the URL Chrome actually opens.
+    `ExperimentConfig.url_for` is a DIFFERENT function reading a different
+    registry, and it feeds the NetGent workflow. See the module docstring.
+    """
     if overrides and app in overrides and overrides[app]:
         return normalize_join_url(app, overrides[app])
     return get(app).default_url

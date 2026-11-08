@@ -2,6 +2,7 @@
 
 Running log of what we have measured against IQB 2025 Fig 10. Updated as
 things land — not regenerated, so the history of what changed stays readable.
+Work this study found and did not do is in [FOLLOWUPS.md](FOLLOWUPS.md).
 
 **Every point in every study is n=1.** One run per (app, capacity, latency).
 Where two runs exist for a cell it is because the first failed, and the table
@@ -173,6 +174,22 @@ trace is indistinguishable from one that was never made.
   `conditions.py`, and seven tests pin the two registries, the comment and
   the source gate together. Second time a comment has asserted something the
   code did not do; the GGC double-r regex was the first.
+- **2026-11-08 — Tubi was pinned to two different films.** `shared/apps.py`
+  named `568500/forrest-gump` and `APP_REGISTRY` named
+  `593796/another-cinderella-story`, so which movie a run measured depended on
+  which code path drove it. **No Tubi run was ever collected** — 7 dataset
+  indexes on vm4, 284 runs, zero Tubi; no Tubi row in any CSV; the release
+  matrix is YouTube and Vimeo only — so no result mixed them. Probed live:
+  **both titles are now dead** (`"video_resources":[]`, a "Remind Me" button,
+  no `contentUrl`, against a control that has all three). Both registries now
+  name one title, verified playable, with its expiry date recorded.
+- **2026-11-08 — two docstrings described code that does not exist.** Found by
+  scanning every comment and docstring in `experiments/` for names the code
+  never defines. `runner.py` credited the work to `execute_run` (the real ones
+  are `execute_app_run` / `execute_ndt_run` / `execute_condition_rep`), and
+  `generate_run_plots` claimed "no per-app throughput variants exist" directly
+  above the loop that writes `throughput_<dir>_<app>.png`. Third and fourth
+  instances of the class review caught twice.
 - **2026-11-08 — two of the five Meet charts on `main` could not be
   reproduced by `main`'s own code.** They were generated before #20's and
   #21's `plots.py` were merged. Regenerated and re-hashed in
