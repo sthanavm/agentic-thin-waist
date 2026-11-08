@@ -342,7 +342,20 @@ APP_REGISTRY: dict[str, dict[str, Any]] = {
         # Pinned channel: the bare homepage autoplays whatever is featured at
         # that moment, so runs silently compared different source content.
         # Live channels can go offline - verify before a measurement campaign.
-        "url": "https://www.twitch.tv/relaxbeats",
+        #
+        # Repinned from relaxbeats 2026-11-07. Its ladder was probed and tops
+        # out at 720p (chunked 1280x720, then 720p30/480p30/360p30/160p30),
+        # which is BELOW the 1080p the sweep's source gate requires, so a
+        # Twitch sweep against it would abort in assert_source_high_enough
+        # rather than produce rows. lofigirl was probed at the same time and
+        # offers chunked 1920x1080 plus 720p30/480p30/360p30/160p30, and is a
+        # 24/7 stream, so it is far less likely to end mid-sweep.
+        #
+        # Probe the ladder again before a campaign: neither channel is a
+        # Twitch partner, so transcodes are not guaranteed to persist, and a
+        # source-only stream offers ONE rendition, against which a bandwidth
+        # sweep measures buffering rather than adaptation.
+        "url": "https://www.twitch.tv/lofigirl",
         "runtime": "browser",
         "type": "streaming",
         "domains": [
