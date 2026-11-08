@@ -13,7 +13,7 @@ Sources, so a reader can check a number rather than trust it:
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from typing import Literal, Optional
 
 # ── IQB Fig 10, Video Streaming row ─────────────────────────────────────────
@@ -304,13 +304,19 @@ SWEEP_UPLOAD_MBPS = 10.0
 SWEEP_APP = "youtube"
 
 
-def sweep_conditions() -> list[Condition]:
-    """One condition per bandwidth point, highest first."""
+def sweep_conditions(rtt_ms: float = SWEEP_RTT_MS) -> list[Condition]:
+    """One condition per bandwidth point, highest first.
+
+    `rtt_ms` is a parameter so the same bandwidth matrix can be swept at
+    IQB's two streaming latencies (100 ms minimum, 50 ms high) as well as
+    the 20 ms the first pass used. The RTT is part of Condition.slug(), so
+    rows at different latencies cannot be mistaken for repetitions.
+    """
     return [
         Condition(
             rate_down_mbps=r,
             rate_up_mbps=SWEEP_UPLOAD_MBPS,
-            rtt_ms=SWEEP_RTT_MS,
+            rtt_ms=rtt_ms,
             loss_pct=0.0,
             loss_mode="none",
             label="sweep",
@@ -319,18 +325,25 @@ def sweep_conditions() -> list[Condition]:
     ]
 
 
-def sweep_plan(reps: int = 1) -> list[RunPlan]:
+def sweep_plan(reps: int = 1, rtt_ms: float = SWEEP_RTT_MS) -> list[RunPlan]:
     """Reference first, then each bandwidth point: one app run and one NDT run.
 
     The reference run (100 Mb/s, 20 ms) comes FIRST and is not optional: every
     QoE label is relative to it, so running it last would leave every row
     deferred. It is also the top of the curve the plot needs.
     """
+    # The reference belongs to the latency it was measured at: every label is
+    # relative to it, so grading a 100 ms run against a 20 ms reference would
+    # charge the latency's effect to the capacity. REFERENCE itself stays
+    # frozen at 20 ms; the other latencies get their own.
+    reference = (
+        REFERENCE if rtt_ms == SWEEP_RTT_MS else replace(REFERENCE, rtt_ms=rtt_ms)
+    )
     plans: list[RunPlan] = []
     for rep in range(1, reps + 1):
-        plans.append(RunPlan(SWEEP_APP, REFERENCE, rep, "app", is_reference=True))
-        plans.append(RunPlan("", REFERENCE, rep, "ndt", is_reference=True))
-        for cond in sweep_conditions():
+        plans.append(RunPlan(SWEEP_APP, reference, rep, "app", is_reference=True))
+        plans.append(RunPlan("", reference, rep, "ndt", is_reference=True))
+        for cond in sweep_conditions(rtt_ms=rtt_ms):
             plans.append(RunPlan(SWEEP_APP, cond, rep, "app"))
             plans.append(RunPlan("", cond, rep, "ndt"))
     return plans
@@ -360,13 +373,22 @@ MEET_REFERENCE = Condition(
 )
 
 
-def meet_conditions(rates: tuple[float, ...] = MEET_RATES_MBPS) -> list[Condition]:
-    """One symmetric condition per bandwidth point, highest first."""
+def meet_conditions(
+    rates: tuple[float, ...] = MEET_RATES_MBPS, rtt_ms: float = MEET_RTT_MS
+) -> list[Condition]:
+    """One symmetric condition per bandwidth point, highest first.
+
+    `rtt_ms` is a parameter rather than the module constant so the same
+    matrix can be swept at IQB's two conferencing latencies (50 ms high,
+    20 ms... see IQB_VIDEO_CONFERENCING) and at 100 ms. The RTT is part of
+    Condition.slug(), so rows at different latencies can never be confused
+    for repetitions of each other.
+    """
     return [
         Condition(
             rate_down_mbps=r,
             rate_up_mbps=r,
-            rtt_ms=MEET_RTT_MS,
+            rtt_ms=rtt_ms,
             loss_pct=0.0,
             loss_mode="none",
             label="meet_sweep",
@@ -376,7 +398,9 @@ def meet_conditions(rates: tuple[float, ...] = MEET_RATES_MBPS) -> list[Conditio
 
 
 def meet_plan(
-    rates: tuple[float, ...] = MEET_RATES_MBPS, reps: int = 1
+    rates: tuple[float, ...] = MEET_RATES_MBPS,
+    reps: int = 1,
+    rtt_ms: float = MEET_RTT_MS,
 ) -> list[RunPlan]:
     """Reference first, then each point: one Meet run and one NDT run.
 
@@ -384,11 +408,20 @@ def meet_plan(
     as a fraction of it (resolution AND fps at least 90% of reference), so
     without it every row defers.
     """
+    # The reference belongs to the latency it was measured at: High is
+    # defined as a fraction of reference resolution and fps, and a 100 ms
+    # call graded against a 20 ms reference would attribute the latency's
+    # effect to the capacity.
+    reference = (
+        MEET_REFERENCE
+        if rtt_ms == MEET_RTT_MS
+        else replace(MEET_REFERENCE, rtt_ms=rtt_ms)
+    )
     plans: list[RunPlan] = []
     for rep in range(1, reps + 1):
-        plans.append(RunPlan(MEET_APP, MEET_REFERENCE, rep, "app", is_reference=True))
-        plans.append(RunPlan("", MEET_REFERENCE, rep, "ndt", is_reference=True))
-        for cond in meet_conditions(rates):
+        plans.append(RunPlan(MEET_APP, reference, rep, "app", is_reference=True))
+        plans.append(RunPlan("", reference, rep, "ndt", is_reference=True))
+        for cond in meet_conditions(rates, rtt_ms=rtt_ms):
             plans.append(RunPlan(MEET_APP, cond, rep, "app"))
             plans.append(RunPlan("", cond, rep, "ndt"))
     return plans

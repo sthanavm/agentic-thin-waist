@@ -1,0 +1,32 @@
+[20:32:34] bot clip OK: 1280x720 (/home/student/pramana-assets/bbb_720p24_10s.y4m)
+[20:32:34] collector OK: video-qoe-collector:latest
+[20:32:34] room: https://meet.google.com/kiu-amox-fbz
+[20:32:34] using existing reference from the CSV: {'meet': {'resolution_p': 720, 'fps': 23.95}}
+[20:32:34] === MEET SWEEP: 5 runs (0 meet + 5 ndt)
+[20:32:34] [1/5] ndt ndt 25/25 Mb/s
+[20:33:34]   attempt 1: valid=True label=- publishing=- 
+[20:33:34] [2/5] ndt ndt 6/6 Mb/s
+[20:34:35]   attempt 1: valid=True label=- publishing=- 
+[20:34:35] [3/5] ndt ndt 3/3 Mb/s
+[20:35:36]   attempt 1: valid=True label=- publishing=- 
+[20:35:36] [4/5] ndt ndt 1/1 Mb/s
+[20:36:39]   attempt 1: valid=True label=- publishing=- 
+[20:36:39] [5/5] ndt ndt 0.5/0.5 Mb/s
+[20:37:43]   attempt 1: valid=True label=- publishing=- 
+[20:37:43] === MEET DONE: {"mode": "MEET", "elapsed_s": 309.3, "total": 5, "valid": 5, "invalid": 0, "suspect": 0, "flagged": []}
+[20:37:44] bot clip OK: 1280x720 (/home/student/pramana-assets/bbb_720p24_10s.y4m)
+[20:37:44] collector OK: video-qoe-collector:latest
+[20:37:44] room: https://meet.google.com/kiu-amox-fbz
+[20:37:44] using existing reference from the CSV: {'meet': {'resolution_p': 720, 'fps': 23.83}}
+[20:37:44] === MEET SWEEP: 5 runs (0 meet + 5 ndt)
+[20:37:44] [1/5] ndt ndt 25/25 Mb/s
+[20:38:45]   attempt 1: valid=True label=- publishing=- 
+[20:38:45] [2/5] ndt ndt 6/6 Mb/s
+[20:39:49]   attempt 1: valid=True label=- publishing=- 
+[20:39:49] [3/5] ndt ndt 3/3 Mb/s
+[20:40:52]   attempt 1: valid=True label=- publishing=- 
+[20:40:52] [4/5] ndt ndt 1/1 Mb/s
+[20:41:57]   attempt 1: valid=True label=- publishing=- 
+[20:41:57] [5/5] ndt ndt 0.5/0.5 Mb/s
+[20:43:02]   attempt 1: valid=True label=- publishing=- 
+[20:43:02] === MEET DONE: {"mode": "MEET", "elapsed_s": 318.4, "total": 5, "valid": 5, "invalid": 0, "suspect": 0, "flagged": []}
