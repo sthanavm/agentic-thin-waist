@@ -182,13 +182,19 @@ def run_app_point(plan, adapter, out_root, csv_path, reference, attempt):
         runner.write_row(csv_path, row)
         return row
 
-    # NOT calling guard_mod.verdict_from_record() -- same reasoning as
-    # teams.py: link_interference is unavailable on this branch (deps.py), so
-    # every row would read checked=False for the same non-reason and the
-    # suspect column would be meaningless noise rather than a real signal.
-    row["guard_note"] = (
-        "background-traffic interference guard not evaluated: link_interference unavailable (see deps.py)"
-    )
+    # Non-fatal: a failed verdict only sets suspect=True, same as meet.py and
+    # (after rebasing onto main's #23) teams.py. link_interference landed
+    # in-repo on main, so this is a real per-run judgement now, not the
+    # universal non-signal it would have been before that -- the original
+    # Vimeo batch (40/40 runs) predates this and was collected without it.
+    verdict = guard_mod.verdict_from_record(record)
+    row.update(verdict.as_row())
+    if not verdict.ok:
+        row["suspect"] = True
+        row["suspect_reason"] = (
+            "background-traffic guard failed: "
+            + ("; ".join(verdict.offenders) if verdict.offenders else verdict.note)
+        )[:300]
 
     label, reason, metric_row = adapter.label(res, plan.app, reference)
     row["qoe_label"] = label
