@@ -529,3 +529,75 @@ def teams_plan(
             plans.append(RunPlan(TEAMS_APP, cond, rep, "app", is_reference=is_ref))
             plans.append(RunPlan("", cond, rep, "ndt", is_reference=is_ref))
     return plans
+
+
+# ── Vimeo streaming sweep, same shape as teams_plan() ───────────────────────
+# Decision (2026-11-08): Vimeo, not Puffer -- STREAMING_APPS_PLAN above already
+# records why (0 archived Puffer runs vs 340 Vimeo, and Vimeo is the only app
+# observed scaling resolution with bandwidth). This combines Stage 1's IQB
+# corners (with induced loss) and the below-minimum sweep (`sweep_conditions`,
+# no induced loss) into one deduped matrix, at the plan doc's streaming RTTs:
+# 100 ms (IQB's minimum) and 20 ms (IQB's high per the plan doc; see
+# STREAMING_HIGH_RTT_MS_UNRESOLVED above -- the IQB table itself says 50 ms,
+# which is not included here for the same reason teams_plan's docstring does
+# not resolve the parallel conferencing question on its own).
+VIMEO_APP = "vimeo"
+VIMEO_RTTS_MS = (STREAMING_HIGH_RTT_MS_DEFAULT, IQB_VIDEO_STREAMING["latency_min_ms"])
+
+
+def stage2_streaming_conditions(
+    rates: tuple[float, ...] = SWEEP_RATES_MBPS,
+    rtts: tuple[float, ...] = VIMEO_RTTS_MS,
+) -> list[Condition]:
+    """`sweep_conditions()` generalised to more than one RTT, no induced loss."""
+    return [
+        Condition(r, SWEEP_UPLOAD_MBPS, rtt, 0.0, "none", label="stage2_sweep")
+        for rtt in rtts
+        for r in rates
+    ]
+
+
+def _is_vimeo_reference(cond: Condition) -> bool:
+    # No rtt_ms check, deliberately: like _is_teams_reference, every RTT in
+    # `rtts` needs ITS OWN reference row (labels are relative to a same-RTT
+    # reference -- see vimeo_reference()'s RTT filter), not just the one at
+    # REFERENCE.rtt_ms. A first pass of this function checked rtt_ms too and
+    # it silently starved every non-20ms RTT of a reference, leaving half the
+    # matrix (all 100 ms rows) stuck "deferred" with no label -- confirmed
+    # live across all 10 Vimeo runs at 100 ms in the first full batch.
+    return cond.rate_down_mbps == REFERENCE.rate_down_mbps and cond.loss_mode == "none"
+
+
+def vimeo_plan(
+    rates: tuple[float, ...] = SWEEP_RATES_MBPS,
+    rtts: tuple[float, ...] = VIMEO_RTTS_MS,
+    reps: int = 1,
+    high_rtt_ms: float = STREAMING_HIGH_RTT_MS_DEFAULT,
+) -> list[RunPlan]:
+    """Stage 1 + the below-minimum sweep for Vimeo, deduped, one Vimeo run and
+    one NDT run per condition and rep.
+
+    DEDUPE: Stage 1's 100/10 Mb/s no-loss corner at 20 ms is the same network
+    state as REFERENCE, and Stage 1's 25/10 Mb/s no-loss corner is the same
+    state as the sweep's top point at the same RTT. A condition is deduped by
+    `slug()`, which already encodes rate/RTT/loss, so no separate reference
+    run is scheduled -- the 100/10 Mb/s no-loss conditions are simply flagged
+    `is_reference=True` in place. Same approach as `teams_plan()`.
+    """
+    seen: dict[str, Condition] = {}
+    for cond in (
+        *stage1_streaming_conditions(high_rtt_ms=high_rtt_ms),
+        *stage2_streaming_conditions(rates, rtts),
+    ):
+        seen.setdefault(cond.slug(), cond)
+    conditions = sorted(
+        seen.values(), key=lambda c: (-c.rate_down_mbps, c.rtt_ms, c.loss_pct)
+    )
+
+    plans: list[RunPlan] = []
+    for rep in range(1, reps + 1):
+        for cond in conditions:
+            is_ref = _is_vimeo_reference(cond)
+            plans.append(RunPlan(VIMEO_APP, cond, rep, "app", is_reference=is_ref))
+            plans.append(RunPlan("", cond, rep, "ndt", is_reference=is_ref))
+    return plans
