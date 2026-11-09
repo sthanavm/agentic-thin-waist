@@ -149,9 +149,19 @@ def record_failures(record: dict, app: str) -> list[str]:
 
 
 def drive(
-    app: str, condition: Condition, duration_s: int, out_dir: str
+    app: str,
+    condition: Condition,
+    duration_s: int,
+    out_dir: str,
+    app_url: Optional[str] = None,
 ) -> AppRunResult:
-    """One app run in `condition`, returning what the guard and labeller need."""
+    """One app run in `condition`, returning what the guard and labeller need.
+
+    `app_url` is optional: omitted, `run_direct` falls back to
+    `pramana_helpers.APP_REGISTRY[app]["url"]`. Passed explicitly (e.g. by
+    vimeo.py) so every row's record carries exactly what was played rather
+    than relying on a registry default a reader of the CSV cannot see.
+    """
     H = _helpers()
     netns.start_iperf3_server()
 
@@ -165,6 +175,7 @@ def drive(
         cca="cubic",
         duration_s=duration_s,
         trial=condition.trial_for(app),
+        app_urls=({app: app_url} if app_url else {}),
         force_max_quality=FORCE_MAX_QUALITY,
         app_window=APP_WINDOW,
     )
