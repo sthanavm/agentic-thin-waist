@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Vimeo (Big Buck Bunny) streaming sweep: is IQB's streaming minimum too high?
+"""Vimeo streaming sweep: is IQB's streaming minimum too high?
 
 Same argument and harness shape as `teams.py`, on the streaming half of the
 plan doc instead of conferencing: Stage 1 runs IQB's own min/high download
@@ -11,12 +11,26 @@ dedupes the overlap into 20 unique conditions and 1 rep, so this script runs
 40 total: one Vimeo play and one NDT run per condition, never at the same
 time.
 
-VIDEO: Vimeo's default URL in `pramana_helpers.APP_REGISTRY` is already
-`https://player.vimeo.com/video/76979871?autoplay=1` -- Big Buck Bunny, the
-same test clip used across this codebase's YouTube/Vimeo experiments -- so no
-override is needed; it is still passed explicitly here so every row records
-exactly what was played rather than relying on a registry default a reader
-cannot see from the CSV.
+VIDEO: Vimeo's registry default (`pramana_helpers.APP_REGISTRY["vimeo"]`,
+video 76979871) was checked live before this was written and turned out to be
+Vimeo's own "The New Vimeo Player" staff demo clip, whose source master is
+1280x720 -- there is no 1080p to select for that video, confirmed via its
+player config endpoint, not assumed from the auto-picked rendition. Two other
+candidates (911411289's actual Big Buck Bunny-labelled lookalikes aside) were
+checked and rejected for being embed-restricted: HTTP 401 from
+player.vimeo.com directly, meaning Vimeo's "where can this be embedded"
+privacy setting does not include this collector regardless of resolution.
+
+`VIMEO_URL` below is the SAME video `run_direct_youtube_vimeo_experiment.py`
+used for the repo's existing youtube_vimeo_experiment (video 911411289,
+"Invincible") -- confirmed live before this was written: player.vimeo.com
+returns 200 (embeddable), and its page carries quality renditions up to
+1440p (1080p, 720p, 540p, 360p, 240p also present), found in the embedded
+player config JSON since the plain /config endpoint 403s for this video. No
+`quality=` override is set, matching how the historical experiment ran it --
+Vimeo's own ABR picks the rendition. The URL is passed explicitly so every
+row records exactly what was played rather than relying on a registry
+default a reader cannot see from the CSV.
 
 WHY NO BOT/ROOM MACHINERY: unlike Meet/Teams, Vimeo is on-demand HTML5 video,
 not a live call -- there is no peer to admit, no meeting to keep alive across
@@ -31,6 +45,7 @@ from __future__ import annotations
 import argparse
 import json
 import os
+import shlex
 import shutil
 import subprocess
 import sys
@@ -52,7 +67,7 @@ from cpuc.runner import run_ndt_point, verify_shaper_from_record  # noqa: E402
 
 MIN_FREE_BYTES = 2 * 1024**3
 VIMEO_URL = os.environ.get(
-    "CPUC_VIMEO_URL", "https://player.vimeo.com/video/76979871?autoplay=1"
+    "CPUC_VIMEO_URL", "https://player.vimeo.com/video/911411289?autoplay=1&muted=1"
 )
 
 
@@ -66,9 +81,11 @@ def assert_url_reachable(url: str) -> dict:
     Same reasoning as meet.py's assert_room_reachable: catches a dead link or
     broken egress in seconds rather than discovering it after a full run.
     """
+    # shlex.quote on the URL: it carries `&`-joined query params, which a
+    # bare interpolation into a shell=True string would split as job control.
     cmd = (
         f"docker exec {netns.WORKER_CONTAINER} ip netns exec {netns.CLIENT_NS} "
-        f"timeout 20 curl -s -o /dev/null -w '%{{http_code}}' -L {url}"
+        f"timeout 20 curl -s -o /dev/null -w '%{{http_code}}' -L {shlex.quote(url)}"
     )
     out = subprocess.run(cmd, shell=True, capture_output=True, text=True, timeout=60)
     code = (out.stdout or "").strip()

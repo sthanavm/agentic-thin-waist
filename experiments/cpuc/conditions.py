@@ -558,11 +558,14 @@ def stage2_streaming_conditions(
 
 
 def _is_vimeo_reference(cond: Condition) -> bool:
-    return (
-        cond.rate_down_mbps == REFERENCE.rate_down_mbps
-        and cond.rtt_ms == REFERENCE.rtt_ms
-        and cond.loss_mode == "none"
-    )
+    # No rtt_ms check, deliberately: like _is_teams_reference, every RTT in
+    # `rtts` needs ITS OWN reference row (labels are relative to a same-RTT
+    # reference -- see vimeo_reference()'s RTT filter), not just the one at
+    # REFERENCE.rtt_ms. A first pass of this function checked rtt_ms too and
+    # it silently starved every non-20ms RTT of a reference, leaving half the
+    # matrix (all 100 ms rows) stuck "deferred" with no label -- confirmed
+    # live across all 10 Vimeo runs at 100 ms in the first full batch.
+    return cond.rate_down_mbps == REFERENCE.rate_down_mbps and cond.loss_mode == "none"
 
 
 def vimeo_plan(
