@@ -1,0 +1,20 @@
+{
+ "mode": "TWITCH",
+ "reps": 3,
+ "rtt_ms": 20.0,
+ "channel": "lofigirl",
+ "source": {
+  "source_url": "https://www.twitch.tv/lofigirl",
+  "source_renditions": "1080,720,480,360,160",
+  "source_max_rendition_p": 1080,
+  "source_has_1080p_plus": true,
+  "source_transcode_count": 4,
+  "source_probed_utc": "2026-11-11T07:31:42Z"
+ },
+ "elapsed_s": 7131.8,
+ "total": 48,
+ "valid": 48,
+ "invalid": 0,
+ "suspect": 11,
+ "flagged": []
+}

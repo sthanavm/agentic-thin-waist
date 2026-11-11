@@ -1284,3 +1284,116 @@ def test_no_undeclared_url_divergence_between_the_two_registries():
         "these apps resolve to different URLs depending on which code path "
         f"runs; declare them in KNOWN_URL_DIVERGENCES or fix them: {undeclared}"
     )
+
+
+# ── the three-rep Twitch table ──────────────────────────────────────────────
+# These pin the parts of a multi-rep table that are easy to get subtly wrong,
+# and that an n=1 table never had to get right at all: which NDT row joins
+# which app row, what "the spread" means, and what happens when the reps
+# disagree.
+def _tw():
+    pytest.importorskip("matplotlib")  # report.py imports plots, which needs it
+    from cpuc import twitch_report
+
+    return twitch_report
+
+
+def _rep_rows(per_rep):
+    """Minimal CSV-shaped rows: [(rep, resolution, rebuffers, startup, ndt)]."""
+    rows = []
+    for rep, res, reb, su, ndt in per_rep:
+        rows.append(
+            {
+                "run_type": "app",
+                "rate_down": "6.25",
+                "rate_up": "10.0",
+                "rtt": "20.0",
+                "rep": str(rep),
+                "valid": "True",
+                "is_reference": "False",
+                "qoe_label": "acceptable",
+                "qoe_resolution_p": str(res),
+                "qoe_rebuffer_events": str(reb),
+                "qoe_rebuffer_ratio": "0.0",
+                "qoe_startup_delay_s": str(su),
+                "suspect": "False",
+                "guard_ok": "True",
+                "run_dir": f"/runs/twitch_rep{rep}",
+            }
+        )
+        rows.append(
+            {
+                "run_type": "ndt",
+                "rate_down": "6.25",
+                "rtt": "20.0",
+                "rep": str(rep),
+                "valid": "True",
+                "ndt_down": str(ndt),
+                "ndt_up": "9.5",
+                "ndt_minrtt": "23.0",
+            }
+        )
+    return rows
+
+
+def test_each_app_rep_joins_its_own_ndt_run_not_the_capacitys_last_one():
+    T = _tw()
+    runs = T.per_run_table(
+        _rep_rows([(1, 1080, 0, 4.0, 5.1), (2, 1080, 0, 4.0, 6.9)]), {}
+    )
+    got = {r["rep"]: r["ndt_down_mbps"] for r in runs}
+    assert got == {1.0: 5.1, 2.0: 6.9}
+
+
+def test_the_published_spread_runs_from_the_minimum_not_from_the_median():
+    # 1, 2, 2 has median 2 and max 2. Printing median-to-max would say "2"
+    # and hide the repetition that only rebuffered once.
+    T = _tw()
+    runs = T.per_run_table(
+        _rep_rows(
+            [(1, 1080, 1, 4.0, 5.0), (2, 1080, 2, 4.0, 5.0), (3, 1080, 2, 4.0, 5.0)]
+        ),
+        {},
+    )
+    row = T.aggregate(runs)[0]
+    assert (row["rebuffer_events_min"], row["rebuffer_events_max"]) == (1.0, 2.0)
+    assert "1–2" in T.markdown_table([row])
+
+
+def test_disagreeing_reps_are_reported_as_mixed_rather_than_by_majority():
+    T = _tw()
+    assert T._label_cell(["high", "high", "acceptable"]) == (
+        "mixed (high x2, acceptable x1)",
+        False,
+    )
+    assert T._label_cell(["high", "high", "high"]) == ("high", True)
+
+
+def test_a_point_is_good_only_if_every_repetition_is_good():
+    T = _tw()
+    rows = _rep_rows(
+        [(1, 1080, 0, 4.0, 5.0), (2, 1080, 0, 4.0, 5.0), (3, 1080, 1, 4.0, 5.0)]
+    )
+    ref = dict(
+        rows[0], rate_down="100.0", rep="9", is_reference="True", qoe_label="high"
+    )
+    runs = T.per_run_table(rows + [ref], {})
+    table = T.aggregate(runs)
+    finding = T.find_degradation(table, runs)
+    # one rep of three rebuffered, so 6.25 is the first degraded point and
+    # there is no good point below the reference.
+    assert finding["first_degraded_mbps"] == 6.25
+    assert finding["lowest_good_mbps"] is None
+
+
+def test_sweep_plan_gives_every_app_the_same_eight_capacities():
+    plan = C.sweep_plan(reps=3, rtt_ms=20.0, app="twitch")
+    caps = sorted({p.condition.rate_down_mbps for p in plan}, reverse=True)
+    assert caps == sorted(
+        {p.condition.rate_down_mbps for p in C.sweep_plan(reps=1)}, reverse=True
+    )
+    assert len(caps) == 8
+    # NDT plans carry a blank app, as they do in every published runs CSV.
+    assert {p.app for p in plan if p.run_type == "app"} == {"twitch"}
+    assert len([p for p in plan if p.run_type == "app"]) == 24
+    assert len([p for p in plan if p.run_type == "ndt"]) == 24

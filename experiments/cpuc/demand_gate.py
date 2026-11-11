@@ -23,6 +23,18 @@ session that downshifted carries its earlier, larger segments in the same byte
 total, and a capacity-limited row is judged against the cap -- at a 0.5 Mb/s cap
 no resolution can draw more than 0.5 Mb/s, and flagging that would be flagging
 physics.
+
+A SESSION THAT RAMPED UP breaks the ceiling the same way, and the note above
+only described the downshift. The Twitch sweep found it: at 1.5 Mb/s the
+player sat at 144p for 36 of 60 samples and then climbed through 360p to 480p,
+still rising when the window closed. `resolution_p` is the MODAL sample height
+(shared/qoe.py:514), so the row says 144p while the demand mean covers the
+larger later segments too, and 1.06 Mb/s lands above the 0.60 ceiling with
+nothing wrong with either figure. A flag here is the gate doing its job --
+comparing a whole-session mean against a single-rendition band -- and the row
+needs its modal share and final rendition published beside it, not a wider
+band. `twitch_report.py` publishes `resolution_modal_share`,
+`resolution_final_p` and a per-run `resolution_timeline` for that reason.
 """
 
 from __future__ import annotations

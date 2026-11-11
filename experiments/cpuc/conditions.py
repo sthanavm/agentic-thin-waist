@@ -363,12 +363,19 @@ def sweep_conditions(rtt_ms: float = SWEEP_RTT_MS) -> list[Condition]:
     ]
 
 
-def sweep_plan(reps: int = 1, rtt_ms: float = SWEEP_RTT_MS) -> list[RunPlan]:
+def sweep_plan(
+    reps: int = 1, rtt_ms: float = SWEEP_RTT_MS, app: str = SWEEP_APP
+) -> list[RunPlan]:
     """Reference first, then each bandwidth point: one app run and one NDT run.
 
     The reference run (100 Mb/s, 20 ms) comes FIRST and is not optional: every
     QoE label is relative to it, so running it last would leave every row
     deferred. It is also the top of the curve the plot needs.
+
+    `app` is a parameter so another streaming app can be swept across the
+    IDENTICAL eight capacities rather than a copied tuple that can drift from
+    them. `twitch.py` passes "twitch" for exactly that: "the same eight
+    capacities as YouTube" is then structurally true, not a comment.
     """
     # The reference belongs to the latency it was measured at: every label is
     # relative to it, so grading a 100 ms run against a 20 ms reference would
@@ -379,10 +386,10 @@ def sweep_plan(reps: int = 1, rtt_ms: float = SWEEP_RTT_MS) -> list[RunPlan]:
     )
     plans: list[RunPlan] = []
     for rep in range(1, reps + 1):
-        plans.append(RunPlan(SWEEP_APP, reference, rep, "app", is_reference=True))
+        plans.append(RunPlan(app, reference, rep, "app", is_reference=True))
         plans.append(RunPlan("", reference, rep, "ndt", is_reference=True))
         for cond in sweep_conditions(rtt_ms=rtt_ms):
-            plans.append(RunPlan(SWEEP_APP, cond, rep, "app"))
+            plans.append(RunPlan(app, cond, rep, "app"))
             plans.append(RunPlan("", cond, rep, "ndt"))
     return plans
 
