@@ -294,6 +294,17 @@ COLLECT_ENABLED = os.environ.get("PRAMANA_COLLECT", "1") not in ("0", "false", "
 # The deployed substrate NetGent (v2) plays a page and generates real traffic via
 # `go_to_url` + `wait`. `url` is the page it opens. Streaming apps autoplay where
 # possible. Calls (zoom/meet) need a join URL supplied via cfg.app_urls.
+#
+# SCOPE, because getting this wrong has cost us twice. `url` here reaches a run
+# only through `ExperimentConfig.url_for` -> `_build_workflow`, i.e. the NetGent
+# workflow and the `wget` shell apps. A run WITH A PLAYER -- every QoE run,
+# including every CPUC row -- opens `shared.apps`'s `default_url` instead, via
+# `build_collector_jobs` -> `shared.apps.url_for`. So repinning a URL here does
+# not change what the collector loads, which is how a Twitch channel stayed
+# effectively unpinned behind a comment saying it was pinned, and how tubi came
+# to name a different film in each registry. Change both, or change neither;
+# `experiments/cpuc/tests/test_harness.py` fails on an undeclared divergence.
+# `domains`, `type`, `plot_directions` and `color` ARE read on every path.
 APP_REGISTRY: dict[str, dict[str, Any]] = {
     # Our own WebRTC peer (webrtc_peer_server.py). Reached by IP with no DNS
     # name, so `domains` is empty and the capture is attributed by connection
@@ -342,7 +353,20 @@ APP_REGISTRY: dict[str, dict[str, Any]] = {
         # Pinned channel: the bare homepage autoplays whatever is featured at
         # that moment, so runs silently compared different source content.
         # Live channels can go offline - verify before a measurement campaign.
-        "url": "https://www.twitch.tv/relaxbeats",
+        #
+        # Repinned from relaxbeats 2026-11-07. Its ladder was probed and tops
+        # out at 720p (chunked 1280x720, then 720p30/480p30/360p30/160p30),
+        # which is BELOW the 1080p the sweep's source gate requires, so a
+        # Twitch sweep against it would abort in assert_source_high_enough
+        # rather than produce rows. lofigirl was probed at the same time and
+        # offers chunked 1920x1080 plus 720p30/480p30/360p30/160p30, and is a
+        # 24/7 stream, so it is far less likely to end mid-sweep.
+        #
+        # Probe the ladder again before a campaign: neither channel is a
+        # Twitch partner, so transcodes are not guaranteed to persist, and a
+        # source-only stream offers ONE rendition, against which a bandwidth
+        # sweep measures buffering rather than adaptation.
+        "url": "https://www.twitch.tv/lofigirl",
         "runtime": "browser",
         "type": "streaming",
         "domains": [
@@ -357,9 +381,18 @@ APP_REGISTRY: dict[str, dict[str, Any]] = {
         "color": "#9146FF",
     },
     "tubi": {
-        # Pinned title: the previous default (movies/100014) had been removed from
-        # the catalogue and 302d to a 404 page, so no <video> was ever created.
-        "url": "https://tubitv.com/movies/593796/another-cinderella-story",
+        # Pinned title. The history matters, because two of these were wrong:
+        # movies/100014 had been pulled from the catalogue, and its
+        # replacement (593796/another-cinderella-story) was pulled too --
+        # verified 2026-11-08, its page carries `"video_resources":[]` and a
+        # "Remind Me" button instead of a player. Worse, `shared/apps.py`
+        # named a THIRD film (568500/forrest-gump, also dead), so which movie
+        # a Tubi run measured depended on which code path drove it: this entry
+        # feeds ExperimentConfig.url_for and the NetGent workflow, while
+        # shared/apps.py's default_url is what build_collector_jobs opens.
+        # Both now name the same title; the re-probe recipe and the expiry
+        # date are in shared/apps.py, and a cpuc test fails if they drift.
+        "url": "https://tubitv.com/movies/100057731/the-magnificent-seven",
         "runtime": "browser",
         "type": "streaming",
         "domains": ["tubitv.com", "adrise.tv", "tubi.video", "tubi.io"],
@@ -472,6 +505,29 @@ MEDIA_HOST_SUFFIXES: dict[str, tuple[str, ...]] = {
 def media_host_suffixes(app: str) -> tuple[str, ...]:
     """Hostname suffixes that carry `app`'s media segments."""
     return MEDIA_HOST_SUFFIXES.get(app, ())
+
+
+def media_attribution_apps(apps, method: str = "remote_hostname") -> list[str]:
+    """Apps whose media bytes can be told apart from the rest of their traffic.
+
+    The media tally works by matching the remote host NAME against
+    MEDIA_HOST_SUFFIXES, so it is only defined where two things hold: the app
+    has suffixes listed, and attribution is keyed on the remote end.
+
+    Neither holds for a conferencing app. Meet, Zoom and Teams carry media
+    over WebRTC to endpoints picked by ICE, which are never named in DNS and
+    have no suffix to match, so the tally stayed at 0 for every Meet run ever
+    captured -- including the known-720p control, where 29 MB of inbound video
+    is visible in the pcap. Reporting that as `media_bytes={'meet': 0}` is a
+    silent zero: an undefined measurement rendered as a measured absence.
+    Apps outside this list get no entry at all, so a reader who asks for the
+    figure gets nothing rather than a zero.
+    """
+    if method == "local_alias_ip":
+        # Attribution is keyed on the LOCAL alias, so no remote hostname is
+        # available to match and the tally cannot run for any app.
+        return []
+    return [a for a in apps if media_host_suffixes(a)]
 
 
 def app_domains(app: str) -> list[str]:
@@ -592,6 +648,13 @@ class ExperimentConfig:
         return "solo" if n == 1 else f"concurrent{n}"
 
     def url_for(self, app: str) -> str:
+        """The NetGent/shell URL for `app`. NOT what the collector opens.
+
+        Reads APP_REGISTRY. A run with a player goes through
+        `build_collector_jobs` -> `shared.apps.url_for`, which reads
+        `shared/apps.py`'s `default_url`. Both honour `cfg.app_urls` first,
+        so an override set there is the one way to pin a URL on every path.
+        """
         if self.app_urls and app in self.app_urls:
             return self.app_urls[app]
         return APP_REGISTRY[app].get("url", "")
@@ -2386,6 +2449,11 @@ class CaptureAttribution:
     # those count media responses and nothing else. Bytes on an app endpoint
     # that was never named stay OUT, so a lost media flow shows up as a
     # shortfall here instead of being quietly absorbed.
+    #
+    # An app is ABSENT from this dict when the figure is not defined for it --
+    # see media_attribution_apps(). A WebRTC call has no named media host, so
+    # an entry of 0 would be indistinguishable from a real shortfall, which is
+    # exactly what it looked like for every Meet run.
     media_bytes: dict[str, dict[str, int]] = field(default_factory=dict)
     # bucket -> direction -> per-bin Mbps, for every bucket that is NOT an app:
     # browser_infra, other, and each declared probe. Totals cannot answer the
@@ -2927,7 +2995,8 @@ def attribute_capture(
     res.ip_side = "local" if res.method == "local_alias_ip" else "remote"
     res.app_ips = {a: sorted(bucket_ips.get(a, ())) for a in apps}
     res.media_bytes = {
-        a: {d: media_tally.get((a, d), 0) for d in ("download", "upload")} for a in apps
+        a: {d: media_tally.get((a, d), 0) for d in ("download", "upload")}
+        for a in media_attribution_apps(apps, res.method)
     }
     res.nonapp_mbps = {
         bucket: {
@@ -3985,9 +4054,10 @@ def generate_run_plots(
 ) -> dict[str, str]:
     """Every plot for one run — called automatically when a run finishes.
 
-    Per run: `throughput_download_all.png` and `throughput_upload_all.png` —
-    plain line graphs carrying one line per app (never summed), each with its
-    own avg/peak/total. Per app: one `qoe_summary_<app>.png`.
+    Per run and per plotted direction: `throughput_<dir>_all.png` — a plain
+    line graph carrying one line per app (never summed), each with its own
+    avg/peak/total. Per app and direction: `throughput_<dir>_<app>.png`. Per
+    app: one `qoe_summary_<app>.png`.
     """
     plots: dict[str, str] = {}
     if _plt() is None:
@@ -3996,8 +4066,9 @@ def generate_run_plots(
 
     # Throughput: ONE merged chart per direction for the whole run — every app's
     # own line on one axis, nothing summed. Produced for solo runs too (a single
-    # app is simply a single line), so every run has the same two files and no
-    # per-app throughput variants exist.
+    # app is simply a single line), so every run has this chart for every
+    # direction its first app plots. The per-app charts below are IN ADDITION
+    # to it; this comment used to claim they did not exist.
     for _d in app_plot_directions(cfg.apps[0] if cfg.apps else "youtube"):
         ap = plot_apps_throughput(
             attribution, cfg, run_dir / f"throughput_{_d}_all.png", _d

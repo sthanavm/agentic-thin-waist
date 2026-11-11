@@ -1,6 +1,7 @@
 {
  "reference_resolution_p": 720.0,
  "lowest_good_mbps": 6.25,
+ "ungradeable_mbps": [],
  "first_degraded_mbps": 3.0,
  "iqb_minimum_mbps": 25.0,
  "factor_below_iqb": 4.0,

@@ -1,5 +1,16 @@
 # YouTube streaming against IQB 2025 — bandwidth × latency
 
+**This README covers the `streaming_*` files only.** The folder holds three
+studies: `streaming_*` (YouTube, #21), `meet_*` (Google Meet, #20) and
+`teams_*` (Microsoft Teams, #22, not ours, not merged yet). For Meet and Teams read
+`../RESULTS.md`, which is the index for all three and carries the corrections
+log. The `*_manifest.lat.*` and `*_manifest.lowend.*` files record sha256 on vm4
+and after transfer under the names the files had **on vm4**, before the
+per-study prefix was added — `cpuc_runs.csv` there is this folder's
+`streaming_cpuc_runs.csv`, and the hashes still match. The
+`*_manifest.charts.txt` files use this folder's own names and can be checked
+in place with `shasum -a 256 -c`.
+
 Does IQB 2025's **25 Mb/s** streaming download minimum (Fig 10) describe what
 streaming actually needs? This set answers it across three configured
 latencies, with a speed test run on the same shaped link at every point so the
@@ -19,13 +30,15 @@ measured QoE can be set against the verdict a speed test would have produced.
   `—` for both NDT columns and `no ndt` for the IQB verdict rather than
   borrowing a number from another latency. The **app** runs at those points
   are valid and complete — only the speed test is missing.
-- **Mean demand is not comparable across latencies.** It is averaged over the
-  whole capture window, and an adaptive player fills its buffer and then goes
-  quiet; the idle tail ranges from **6 s to 72 s** across these runs. The mean
-  is sound for "how much of the link did a viewing session need", which is the
-  claim against IQB's minimum. It is not evidence that latency changed demand.
-  Each sidecar entry carries `window_s`, `idle_s` and `youtube_active_mbps`
-  (the rate while the player was actually pulling) so the dilution is visible.
+- **Mean demand is over the sustained playback window, not the whole
+  capture.** It runs from the first app byte to the last, per run, with GGC
+  media attribution corrected (#25) — an earlier version of this note
+  described a whole-capture mean diluted by a 6–72 s idle tail, which stopped
+  being true when the window was introduced and the figures were re-derived.
+  Each sidecar entry carries its own `basis`, `window_s`, `window_start_s` and
+  `youtube_active_mbps` (the rate while the player was actually pulling), so
+  the basis of every number can be checked against the number. Still not
+  evidence that latency changed demand: each point is one run.
 - **19 of 24 app runs carry the `suspect` flag** (⚠ in the table) for Chrome's
   own background fetches inside the measured window. That makes those rows
   conservative — the app had *less* of the link than the capacity suggests,
@@ -89,7 +102,7 @@ both the configured and the measured RTT in the legend or panel title.
 | chart | what it shows |
 |---|---|
 | `streaming_contrast_iqb_vs_qoe.png` | IQB's verdict against measured QoE, one panel per latency. The ringed points are where they disagree. |
-| `streaming_demand_vs_capacity.png` | what YouTube used against what the link offered, with the averaging caveat on the chart itself |
+| `streaming_demand_vs_capacity.png` | what YouTube used against what the link offered, with the window and the n=1 caveat on the chart itself |
 | `streaming_source_vs_delivered.png` | the 2160p ladder the source offered against the rendition the player chose, per latency |
 | `streaming_startup_vs_bandwidth.png` | startup delay, which is where latency and capacity actually show up |
 | `streaming_rebuffer_vs_bandwidth.png` | rebuffer ratio — zero everywhere above 1 Mb/s |
@@ -101,7 +114,7 @@ both the configured and the measured RTT in the legend or panel title.
 |---|---|
 | `streaming_cpuc_runs.csv` | one row per run, all three latencies, 53 rows |
 | `streaming_iqb_vs_qoe_table.md` / `.csv` | the joined app + speed-test table, 24 points |
-| `youtube_demand_bylat.json` | per-app demand keyed `capacity@rtt`, with window, idle and active rate |
+| `youtube_demand_bylat.json` | per-app demand keyed `capacity@rtt`, with the window, its basis, and the active rate |
 | `youtube_demand.json` | the original rate-only sidecar, kept because the 20 ms entries name the specific runs they came from |
 | `renditions.json` | the source ladder, probed once |
 | `lat100.log.txt` / `lat50.log.txt` | the two batch logs |

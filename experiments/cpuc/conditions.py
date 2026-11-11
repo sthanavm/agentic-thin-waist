@@ -79,7 +79,13 @@ RunType = Literal["app", "ndt"]
 # Decision (2026-11-04): Vimeo replaces Puffer. The plan doc says the choice
 # of applications is not strict, and the evidence is one-sided -- across 785
 # archived records Puffer has 0 runs and has never been driven, while Vimeo has
-# 340 (316 served). Vimeo is also the only app measured scaling with bandwidth
+# 340 (316 served).
+#
+# Re-checked 2026-11-08 over what is actually on vm4 now: 7 dataset indexes,
+# 284 runs, Puffer 0 in every one of them, Vimeo 99. The load-bearing half --
+# Puffer has never been driven -- reproduces exactly. The 785/340 totals do
+# not: they were counted over an archive that is no longer all present, so
+# quote the 284-run figures, not those two. Vimeo is also the only app measured scaling with bandwidth
 # (240p at 1 Mb/s to 1080p at 10 Mb/s), which separately satisfies the 1080p+
 # source requirement that YouTube cannot meet on auto quality.
 #
@@ -96,7 +102,39 @@ RunType = Literal["app", "ndt"]
 # and YouTube's 720p ceiling on the same machine is a player-side decision,
 # not a decoder limit. That also weakens the decode explanation offered for
 # the 1080p-viewport supplementary set -- see results_1080p/README.md.
+# Twitch and Vimeo are planned, not collected: every streaming number so far is
+# YouTube. Two things to know before reading a cross-app comparison.
+#
+# The Twitch channel is pinned to lofigirl because relaxbeats tops out at 720p
+# and would abort at the source gate. lofigirl offers a full ladder to
+# 1920x1080 and runs 24/7.
+#
+# The pin lives in TWO registries and BOTH have to say it, which is how the
+# first attempt at this went wrong: `APP_REGISTRY["twitch"]` in
+# pramana_helpers feeds the NetGent workflow, while `shared/apps.py`'s
+# `default_url` is what `build_collector_jobs` opens -- so the real-Chrome run
+# used the old channel while this comment claimed otherwise. The probed
+# ladders below are recorded as data so a test can run the source gate against
+# them, and test_harness pins the two registries and this comment to the same
+# channel. A comment is not a pin.
+#
+# But its BITRATE IS NOT COMPARABLE TO YOUTUBE'S. lofigirl is a near-static
+# animation: a mostly-still 1080p frame encodes for a small fraction of what
+# Big Buck Bunny costs at the same resolution. So "Twitch demanded less than
+# YouTube at 1080p" would be a statement about the content, not about Twitch.
+# Across apps, compare the SHAPE of the degradation -- which rendition the
+# player picks at each capacity, where it starts rebuffering, how startup
+# grows -- and compare demand only within an app.
 STREAMING_APPS_PLAN = ("youtube", "twitch", "vimeo")
+
+# Twitch source probes of 2026-11-07, channel -> highest rendition offered,
+# read from Twitch's own HLS master playlist (the ladder the player sees).
+# Recorded rather than described, so `sweep.assert_source_high_enough` can be
+# run against them in a test instead of the claim being taken on trust.
+# Re-probe before a campaign: neither channel is a Twitch partner, so the
+# transcodes are not guaranteed to persist.
+TWITCH_PROBED_LADDERS_P = {"lofigirl": 1080, "relaxbeats": 720}
+TWITCH_PINNED_CHANNEL = "lofigirl"
 
 
 @dataclass(frozen=True)

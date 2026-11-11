@@ -15,8 +15,9 @@ registry slot and a stub that fails with what is missing rather than a
 half-working default. The runner itself knows nothing about browsers, WebRTC or
 ndt7 beyond these calls, so neither of them has to touch it.
 
-WHAT THIS DOES NOT DO: collect data. `execute_run` runs one unit of work when
-handed real adapters; nothing in this module schedules a matrix, and no
+WHAT THIS DOES NOT DO: collect data. `execute_app_run` and `execute_ndt_run`
+each run one unit of work when handed real adapters, and `execute_condition_rep`
+runs one condition's worth; nothing in this module schedules a matrix, and no
 condition is applied unless a caller asks for it. Gate 1 is the harness only.
 """
 

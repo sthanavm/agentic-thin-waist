@@ -28,3 +28,5 @@
 *(ref)* is the reference run, graded against itself: its resolution is 100% of its own, and the rebuffer and startup tests are absolute, so the label is earned rather than granted.
 
 ⚠ the background-traffic guard failed for that run; see the contamination note.
+
+**demand** is the mean over the sustained playback window (first app byte to last), per run, with GGC media attribution corrected -- not over the whole capture. **infra share** is the rest of the shaped link over the same window.

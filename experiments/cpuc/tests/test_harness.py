@@ -908,11 +908,13 @@ def test_missing_collector_exit_status_is_not_a_pass():
 
 
 def test_collector_failure_is_fatal_even_when_the_app_moved_bytes():
-    # DELIBERATE, and it has a consequence worth knowing: the low-capacity
-    # Meet runs that currently yield the "no remote media" rows have real
-    # traffic AND a non-zero collector exit, so they become unusable here.
-    # "No remote video arrived" must be read off the capture, not inferred
-    # from the collector having died.
+    # DELIBERATE, and it had a consequence worth knowing: the low-capacity
+    # Meet runs behind those rows have real traffic AND a non-zero collector
+    # exit, so they become unusable here. That re-derivation has since been
+    # done from the captures (report_meet.INBOUND_MEDIA_BY_CAPTURE), and it
+    # overturned the published claim: remote video WAS arriving at three of
+    # the five points. "No remote video arrived" can only be read off the
+    # capture, never inferred from the collector having died.
     rec = _good_record()
     rec["per_app_stats"]["youtube"]["download"] = {
         "total_mb": 3.348,
@@ -995,3 +997,290 @@ def test_drive_reports_a_good_record_as_ok(monkeypatch):
     res = D.drive("youtube", C.REFERENCE, 60, "/tmp/unused")
     assert res.ok is True
     assert res.error == ""
+
+
+# ── report labels: what the capture says, not what the collector did ────────
+#
+# These pin the correction of 2026-11-08. Three Meet rows were published as
+# "no remote media", and the finding quoted them as "no remote video arrived
+# at all", on the strength of the collector having exited non-zero. The
+# captures show 2.2-3.2 MB of inbound media from Meet's own endpoints in both
+# attempts at each point. A label must not outrun its evidence.
+def _meet_row(rate, rtt, reason="NoRemoteInboundMedia: meet: no remote inbound video"):
+    return {
+        "rate_mbps_symmetric": rate,
+        "rtt_configured_ms": rtt,
+        "is_reference": False,
+        "qoe_label": "collector produced no samples",
+        "invalid_reason": reason,
+        "resolution_p": None,
+        "fps": None,
+        "freeze_ratio": None,
+    }
+
+
+def _rm():
+    pytest.importorskip("matplotlib")
+    import cpuc.report_meet as RM
+
+    return RM
+
+
+def test_a_collector_failure_claims_nothing_about_remote_media():
+    RM = _rm()
+    # The label a run earns from the collector's own output says only that no
+    # samples came back. It must not mention remote media, because the
+    # collector cannot see the wire: a dead collector and a silent peer look
+    # identical to it. That was the whole mistake.
+    assert "remote" not in RM.LABEL_NO_SAMPLES
+
+
+def test_a_point_with_no_capture_evidence_keeps_the_unknown_label():
+    RM = _rm()
+    # 6 Mb/s was never in the re-derived set. Absent evidence must leave the
+    # label where it was rather than filling in either verdict.
+    out = RM.label_from_capture(_meet_row(6.0, 20.0))
+    assert out["qoe_label"] == RM.LABEL_NO_SAMPLES
+    assert "inbound_media_mb_min" not in out
+    assert "invalid_run" not in out
+
+
+def test_capture_evidence_relabels_the_three_rows_that_carried_video():
+    RM = _rm()
+    for rate, rtt in ((1.0, 50.0), (0.5, 20.0), (0.5, 50.0)):
+        out = RM.label_from_capture(_meet_row(rate, rtt))
+        assert out["qoe_label"] == RM.LABEL_UNMEASURED, (rate, rtt)
+        # The evidence travels with the label, both attempts of it.
+        assert out["attempts"] == 2
+        assert out["inbound_media_mb_min"] >= 2.0
+        assert out["inbound_media_packets_min"] >= 1000
+        assert out.get("resolution_p") is None  # still unmeasured, not graded
+
+
+def test_an_empty_capture_is_an_invalid_run_not_a_result():
+    RM = _rm()
+    for rate in (1.0, 0.5):
+        out = RM.label_from_capture(_meet_row(rate, 100.0))
+        assert out["qoe_label"] == RM.LABEL_INVALID
+        assert out["invalid_run"] is True
+        assert "no inbound packets" in out["invalid_run_reason"]
+
+
+def test_an_unmeasured_row_is_not_counted_as_a_measured_failure():
+    RM = _rm()
+    table = [
+        {
+            "rate_mbps_symmetric": 100.0,
+            "rtt_configured_ms": 50.0,
+            "qoe_label": "high",
+            "is_reference": True,
+        },
+        {
+            "rate_mbps_symmetric": 3.0,
+            "rtt_configured_ms": 50.0,
+            "qoe_label": "high",
+            "is_reference": False,
+        },
+        {
+            "rate_mbps_symmetric": 1.0,
+            "rtt_configured_ms": 50.0,
+            "qoe_label": RM.LABEL_UNMEASURED,
+            "is_reference": False,
+        },
+        {
+            "rate_mbps_symmetric": 100.0,
+            "rtt_configured_ms": 20.0,
+            "qoe_label": "high",
+            "is_reference": True,
+        },
+        {
+            "rate_mbps_symmetric": 1.0,
+            "rtt_configured_ms": 20.0,
+            "qoe_label": "unusable",
+            "is_reference": False,
+        },
+    ]
+    text = RM.latency_sentences(table)
+    # 20 ms has a measured failure and may say so; 50 ms does not.
+    assert "at 20 ms" in text and "unusable by 1 Mb/s" in text
+    assert "at 50 ms it held reference quality to 3 Mb/s (quality at 1 Mb/s" in text
+    assert "failed by" not in text
+
+
+def test_the_finding_does_not_say_no_video_arrived():
+    RM = _rm()
+    table = [
+        {
+            "rate_mbps_symmetric": 100.0,
+            "is_reference": True,
+            "resolution_p": 720,
+            "fps": 24.0,
+            "freeze_ratio": 0.0,
+            "qoe_label": "high",
+            "meet_demand_mbps": 3.74,
+            "iqb_verdict": "meets minimum only",
+        },
+        {
+            "rate_mbps_symmetric": 1.0,
+            "is_reference": False,
+            "resolution_p": 360,
+            "fps": 19.9,
+            "freeze_ratio": 0.1795,
+            "qoe_label": "unusable",
+            "meet_demand_mbps": 0.51,
+            "iqb_verdict": "fails minimum",
+        },
+        dict(
+            _meet_row(0.5, 20.0),
+            qoe_label=RM.LABEL_UNMEASURED,
+            inbound_media_mb_min=2.96,
+            inbound_media_mb_max=3.20,
+            meet_demand_mbps=None,
+            iqb_verdict="fails minimum",
+        ),
+    ]
+    text = RM.sentences(RM.find_breakpoint(table), table)
+    # The old sentence shape -- "At <rate> Mb/s no remote video arrived at
+    # all" -- must be gone. The phrase survives only inside the correction,
+    # quoted as what was wrong, which is the record we want kept.
+    assert "Mb/s no remote video arrived" not in text
+    assert 'as "no remote video arrived at all", which was inferred' in text
+    assert "UNMEASURED" in text
+    assert "3.0-3.2 MB" in text
+    assert "lowest capacity with measured quality is 1 Mb/s" in text
+
+
+# ── streaming: a missing metric is not a good one ───────────────────────────
+def test_a_row_missing_rebuffer_or_startup_is_not_graded_good():
+    pytest.importorskip("matplotlib")
+    import cpuc.report as RP
+
+    def row(rate, **kw):
+        base = {
+            "rate_down_mbps": rate,
+            "is_reference": False,
+            "resolution_p": 720,
+            "rebuffer_events": 0,
+            "startup_s": 1.0,
+            "iqb_verdict_download_only": "fails minimum",
+            "iqb_verdict": "fails minimum",
+        }
+        base.update(kw)
+        return base
+
+    ref = row(100.0, is_reference=True)
+    table = [ref, row(25.0), row(6.25, rebuffer_events=None), row(3.0, startup_s=None)]
+    f = RP.find_degradation(table)
+    # Under `or 0` both holes graded as flawless and 3 Mb/s became the
+    # headline. They must be neither good nor degraded, and must be named.
+    assert f["lowest_good_mbps"] == 25.0
+    assert f["ungradeable_mbps"] == [3.0, 6.25]
+    assert 6.25 not in f["points_good_below_iqb"]
+
+
+# ── the Twitch pin must be real, in every registry that can serve it ────────
+#
+# A comment said the channel was pinned to lofigirl while the URL the
+# collector actually opens still said relaxbeats, so the sweep would have
+# aborted at the source gate with the comment insisting it could not. That is
+# the second time a comment has asserted something the code did not do (the
+# GGC double-r regex was the first), and both times the comment is what people
+# read. These tests make the claim and the code fail together.
+#
+# There are two registries. `APP_REGISTRY["twitch"]["url"]` in pramana_helpers
+# feeds ExperimentConfig.url_for and the NetGent workflow;
+# `shared/apps.py`'s `default_url` is what build_collector_jobs opens, which is
+# the path a real-Chrome CPUC run takes. Pinning one is not pinning the run.
+def _registries():
+    import pramana_helpers as H
+    from shared import apps as SA
+
+    return H, SA
+
+
+def test_the_collector_opens_the_pinned_twitch_channel():
+    # This is the one that matters: the URL the real run opens.
+    _H, SA = _registries()
+    assert SA.url_for("twitch").rstrip("/").endswith("/" + C.TWITCH_PINNED_CHANNEL)
+
+
+def test_both_twitch_registries_name_the_same_channel():
+    H, SA = _registries()
+    assert H.APP_REGISTRY["twitch"]["url"] == SA.url_for("twitch")
+
+
+def test_the_pinned_channel_is_a_channel_and_is_live():
+    _H, SA = _registries()
+    url = SA.url_for("twitch")
+    # The bare home page autoplays whatever is featured and yields no <video>.
+    assert url.rstrip("/") != "https://www.twitch.tv"
+    assert url.startswith("https://www.twitch.tv/")
+    assert SA.get("twitch").live is True
+
+
+def test_the_conditions_comment_names_the_pinned_channel():
+    # The comment is read by people and by nothing else, so it is checked
+    # here rather than trusted.
+    src = open(os.path.join(os.path.dirname(C.__file__), "conditions.py")).read()
+    head = src[: src.index("STREAMING_APPS_PLAN")]
+    assert C.TWITCH_PINNED_CHANNEL in head
+    for other in C.TWITCH_PROBED_LADDERS_P:
+        if other == C.TWITCH_PINNED_CHANNEL:
+            continue
+        # A rejected channel may be named, but only as the one NOT pinned.
+        assert f"pinned to {other}" not in head
+
+
+def test_the_pinned_channel_passes_the_source_gate():
+    pytest.importorskip("matplotlib")  # sweep -> runner -> plots
+    from cpuc import sweep
+
+    ladder = C.TWITCH_PROBED_LADDERS_P[C.TWITCH_PINNED_CHANNEL]
+    # Does not raise: the probed ladder clears the 1080p requirement.
+    sweep.assert_source_high_enough({"source_max_rendition_p": ladder})
+    assert ladder >= sweep.MIN_SOURCE_HEIGHT
+
+
+def test_the_old_pin_would_have_aborted_the_sweep():
+    # Teeth for the test above. If this stops raising, the gate has been
+    # loosened and the whole reason for the repin is gone.
+    pytest.importorskip("matplotlib")
+    from cpuc import sweep
+
+    with pytest.raises(sweep.SourceTooLowRes):
+        sweep.assert_source_high_enough(
+            {"source_max_rendition_p": C.TWITCH_PROBED_LADDERS_P["relaxbeats"]}
+        )
+
+
+# Apps whose two registry entries are KNOWINGLY different, with the reason.
+# Declared so the drift is visible: an undeclared difference fails below.
+# None of these are ours to resolve -- they predate this study -- but a silent
+# divergence is how the Twitch pin got lost.
+KNOWN_URL_DIVERGENCES = {
+    "youtube": "same video id; APP_REGISTRY omits &mute=1",
+    "vimeo": "same video id; APP_REGISTRY omits &muted=1",
+    # tubi is deliberately NOT here any more. It used to name two different
+    # films, so which movie a run measured depended on the code path. Both
+    # registries now name one title, and this test is what keeps it that way.
+}
+
+
+def test_no_undeclared_url_divergence_between_the_two_registries():
+    H, SA = _registries()
+    both = [
+        a
+        for a in sorted(set(SA.known_apps()) & set(H.APP_REGISTRY))
+        if SA.get(a).default_url or H.APP_REGISTRY[a].get("url")
+    ]
+    assert "twitch" in both  # the test is pointless if it skips the app
+    drifted = {
+        a: (SA.get(a).default_url, H.APP_REGISTRY[a].get("url"))
+        for a in both
+        if SA.get(a).default_url != H.APP_REGISTRY[a].get("url")
+    }
+    undeclared = {a: v for a, v in drifted.items() if a not in KNOWN_URL_DIVERGENCES}
+    assert not undeclared, (
+        "these apps resolve to different URLs depending on which code path "
+        f"runs; declare them in KNOWN_URL_DIVERGENCES or fix them: {undeclared}"
+    )
