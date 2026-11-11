@@ -1,0 +1,29 @@
+{
+ "condition": "300dn_300up_1ms_noloss_pfifo",
+ "variants": 4,
+ "valid": 4,
+ "delivered": {
+  "A_default_viewport": "1280x720",
+  "B_fullscreen": "1280x720",
+  "C_fullscreen_forced_1080": "1920x1080",
+  "D_fullscreen_no_av01": "1280x720"
+ },
+ "sfn": {
+  "A_default_viewport": "1280x720@25 / 1280x720@25",
+  "B_fullscreen": "1280x720@25 / 1920x1080@25",
+  "C_fullscreen_forced_1080": "1920x1080@25 / 1920x1080@25",
+  "D_fullscreen_no_av01": "1280x720@25 / 1920x1080@25"
+ },
+ "codec": {
+  "A_default_viewport": "av01.0.05M.08 (398)",
+  "B_fullscreen": "av01.0.05M.08 (398)",
+  "C_fullscreen_forced_1080": "av01.0.08M.08 (399)",
+  "D_fullscreen_no_av01": "vp09.00.51.08.01.01.01.01.00 (247)"
+ },
+ "pcap": {
+  "A_default_viewport": "/home/student/cpuc_tw/experiments/pramana/results/pramana_runs/youtube_300mbps_1ms_0pct_pfifo_cubic_solo_t16006_62f1223a37/capture.pcap",
+  "B_fullscreen": "/home/student/cpuc_tw/experiments/pramana/results/pramana_runs/youtube_300mbps_1ms_0pct_pfifo_cubic_solo_t16006_vcapyoutubefullscreen_b03d593017/capture.pcap",
+  "C_fullscreen_forced_1080": "/home/student/cpuc_tw/experiments/pramana/results/pramana_runs/youtube_300mbps_1ms_0pct_pfifo_cubic_solo_t16006_forcedq_vcapyoutubefullscreen_ce25c20a07/capture.pcap",
+  "D_fullscreen_no_av01": "/home/student/cpuc_tw/experiments/pramana/results/pramana_runs/youtube_300mbps_1ms_0pct_pfifo_cubic_solo_t16006_vcapyoutubefullscreen_nocyoutubeav01_9fe4410fb1/capture.pcap"
+ }
+}
