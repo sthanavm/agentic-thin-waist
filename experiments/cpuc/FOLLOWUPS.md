@@ -83,3 +83,71 @@ themselves are parameterised (`C.sweep_plan(reps, rtt_ms=...)` and
 missing capability: `sweep.py` takes `--reps`, `--out-root`, `--csv` and
 `--marker`, and never passes `rtt_ms`. Until it is
 added, those rows are reproducible only from the archived run directories.
+
+---
+
+## The CTP corpus on vm4 is one profile, and nothing assigns a cluster
+
+**Status:** blocked on data and on a definition, not on code. Written up in
+full in [CTP.md](CTP.md); this is the short form.
+
+The replay mechanism is complete and the worker on vm4 can replay today
+(`tcpreplay_available: true`). What is missing is the corpus:
+
+- **One** CTP profile pair exists on the whole box, and it is the one
+  **committed to the repo** at `services/substrate-worker/{download,upload}/`
+  — 21,478 / 31,087 packets, 29.9 s, 6.15 / 6.18 Mb/s. Nothing was copied onto
+  the VM beyond the checkout.
+- `$CTP_DIR` is `/tmp/substrate-ctp` on the running worker and is **empty**,
+  so `/replay` would 400 on that profile until it is staged there.
+- **Nothing in this pipeline assigns a cluster.** The corpus is organised
+  dataset → subnet → window and queried by statistical descriptors;
+  `grep -i cluster services/ctp-service/` finds nothing. `ctp_cluster` in the
+  orchestration schema is accepted, carried onto the spec, and never read by
+  `_select_ctp`, which queries on `intensity_range_mbps` alone. The
+  `cluster26_tree10_profile424` example in `ReplayRequest`'s docstring is a
+  naming convention from another corpus.
+
+So "10 random clusters, one random CTP each" has no referent yet. Settling
+what a cluster is — source subnet, descriptor band, or something external —
+is the first question, and it is Jaber's and Sthanav's to answer.
+
+Also noted while reading the path, because it would silently produce the wrong
+experiment: `/replay` does **not** pass `--loop`, so a run longer than the
+profile (29.9 s here) spends the remainder uncontended. The one script that
+has actually replayed a CTP beside a measured run
+(`run_direct_google_meet_only_experiment.py`) calls `tcpreplay-edit` itself
+with `--loop=0` for exactly that reason.
+
+---
+
+## Twitch has one latency, and Vimeo has none
+
+**Status:** not started.
+
+The Twitch sweep in this PR is 20 ms only, where YouTube and Meet each have
+20/50/100 ms. `sweep_plan(reps, rtt_ms, app)` already takes the latency, so
+the two further passes are runs rather than code — about 4 h each at 3 reps.
+
+Vimeo still has no capacity sweep at all; the only Vimeo runs are the single
+decoder check that refuted the AV1 explanation. The plan's three streaming
+apps are two.
+
+---
+
+## The 60 s window is too short for Twitch below 3 Mb/s
+
+**Status:** found by this PR's demand-gate flags, not fixed.
+
+At 1.5 and 1 Mb/s the Twitch player was **still climbing** when the collection
+window closed — 144p for the first 36 of 60 samples, then 360p, then 480p. The
+published `resolution_p` for those rows is the modal height, which is
+therefore a statement about the first half of a session that had not settled.
+A longer window (180 s) would say what the viewer actually ends up with at
+those capacities, and would also make the demand figure comparable with a
+single-rendition band instead of flagging against it.
+
+The rows are not wrong and are not withdrawn — `resolution_modal_share`,
+`resolution_final_p` and `resolution_timeline` are published beside them so a
+ramp and a steady point can be told apart. But the number a reader most wants
+at 1 Mb/s is the steady state, and 60 s does not measure it.

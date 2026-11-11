@@ -4,17 +4,30 @@ Running log of what we have measured against IQB 2025 Fig 10. Updated as
 things land — not regenerated, so the history of what changed stays readable.
 Work this study found and did not do is in [FOLLOWUPS.md](FOLLOWUPS.md).
 
-**Every point in every study is n=1.** One run per (app, capacity, latency).
-Where two runs exist for a cell it is because the first failed, and the table
-keeps the valid one. Nothing here has a confidence interval, and the
-non-monotonic rows named below are the visible cost of that.
+**Every point is n=1 except Twitch, which is n=3.** One run per (app,
+capacity, latency) everywhere else; where two runs exist for such a cell it is
+because the first failed and the table keeps the valid one. The Twitch sweep
+below runs three repetitions per capacity and publishes the spread beside the
+median, so one study now says how repeatable these numbers are. It is the
+answer to the first item under "What would change these conclusions", and the
+non-monotonic rows named below are what n=1 costs.
 
-Common to all three studies: netem adds its delay on top of the real path to
+Common to every study: netem adds its delay on top of the real path to
 M-Lab, so a 20 ms setpoint measures 22.6–23.3 ms, 50 ms measures 52.5–53.3 ms
 and 100 ms measures 102.5–103.2 ms. The 50 ms rows therefore sit **over** IQB's
 50 ms conferencing minimum, and the 100 ms rows **over** its 100 ms streaming
 minimum, by 2.5–3.3 ms. Every table carries both the configured and the
 measured RTT for this reason.
+
+Also common to every study, and verified against the live qdiscs on vm4 for
+this PR: **the configured latency is applied once, on one interface, in one
+direction.** A single `netem delay <figure>ms` sits on `ns2:veth3` — whose
+egress is the *download* path, counted through the netem itself — and
+`ns1:veth1` is `noqueue`, so no delay is added to uploads. There is no `ifb0`
+on the box and no half-per-direction split: 1 ms configured measures 1.13 ms
+RTT, not 2 ms. `shaping.py`'s docstring claimed otherwise until this PR and is
+corrected there, with the `/shape` `latency_location` mapping that produces
+it.
 
 ---
 
@@ -36,10 +49,16 @@ resolution result is not bounded by the source; chart hashes in
 `results/streaming_manifest.charts.txt`.
 
 **Assumed, not verified:** the source ladder was probed once and assumed stable
-across the sweep. The 720p ceiling on a 100 Mb/s link is unexplained — it is
-not the viewport (tested) and not host decode (a Vimeo run served 1920x1440 in
-AV1 on the same host), so it is a property of this YouTube session we have not
-pinned down.
+across the sweep.
+
+**The 720p ceiling is now explained — it is the player.** Four runs on one
+300 Mb/s / 1 ms link (`results_1080p/yt1080_link_runs.csv`, this PR) separate
+the candidates: on auto the player serves 720p while reporting 1080p as its
+own optimal, drawing 2.56–2.68 Mb/s of a 300 Mb/s link (0.9%) on a link that
+peaked at 223 Mb/s when asked; pinning the rendition on the same URL and link
+delivers 1920x1080 for 60 of 60 samples with **zero** dropped frames and the
+fastest startup of the four. So it is not the link, not the video, not our
+collection, and not the decoder. See `results_1080p/README.md`.
 
 **Non-monotonic row, stated plainly:** at 100 ms, **1 Mb/s delivered 360p while
 1.5 Mb/s delivered 240p** — less bandwidth, higher resolution. Both are labelled
@@ -48,8 +67,8 @@ zero, so the labels are ordered even though the resolutions are not. With n=1
 this is within what ABR run-to-run variance can produce; it is not evidence
 that lower capacity helps.
 
-**Open:** Twitch and Vimeo are not run, so the plan's three streaming apps are
-one. Twitch is now unblocked — the pinned channel is `lofigirl` as of this PR,
+**Open:** Vimeo is not swept, so the plan's three streaming apps are two.
+Twitch is swept in this PR — the section below. It was unblocked — the pinned channel is `lofigirl` as of this PR,
 in **both** registries (`shared/apps.py`, which is what the collector opens,
 and `APP_REGISTRY["twitch"]`), probed live at a full ladder to 1920x1080 where
 `relaxbeats` topped out at 720p and would have aborted at the source gate. Its bitrate is **not**
@@ -58,6 +77,77 @@ Twitch sweep compares the *shape* of degradation, and demand only within the
 app. Neither channel is a Twitch partner, so re-probe the ladder before the
 campaign: a source-only stream has one rendition and the sweep would measure
 buffering rather than adaptation.
+
+---
+
+## Twitch — streaming (this PR)
+
+**Run:** the same 8 capacities as YouTube (100, 25, 12.5, 6.25, 3, 1.5, 1,
+0.5 Mb/s) at 20 ms, **3 repetitions each**, channel pinned to `lofigirl`,
+upload fixed at 10 Mb/s. 24 app runs + 24 ndt7 runs, all 48 valid, none
+invalid, ~2 h wall clock. Tables and charts in `results/twitch_*`; the
+per-repetition rows are in `twitch_runs_table.csv`, the reduced table in
+`twitch_iqb_vs_qoe_table.{csv,md}`.
+
+**Source gate passed before the sweep started.** Re-probed live: 5 variants,
+**4 transcodes**, 1080p24 source at 6.92 Mb/s plus 720p30 (2.37), 480p30
+(1.43), 360p30 (0.63) and 160p30 (0.23). A source-only ladder would have
+aborted the sweep, because it would have measured buffering rather than
+adaptation. Recorded in `twitch_renditions.json`.
+
+**Headline:** Twitch held **1080p with zero rebuffering and sub-5 s startup
+down to 12.5 Mb/s in all three repetitions — half IQB's 25 Mb/s minimum** —
+while a speed test on the same link calls it failing. It breaks one step
+lower: at 6.25 Mb/s the player keeps asking for 1080p against a 6.9 Mb/s
+source, rebuffers 1–2 times and starts in 6.2–6.7 s (`acceptable`); at 3 Mb/s
+and below every repetition is `unusable`, on startup rather than on rendition.
+
+**The repetitions agree.** Across all 8 capacities the three reps agreed on
+the QoE label and on the delivered resolution, every time. The spread that
+exists is in startup (±0.4 s at the top, ±15 s at 0.5 Mb/s) and in rebuffer
+counts at the two breaking points. `twitch_rep_spread.png` draws every run
+rather than a mean.
+
+**Twitch is more demanding than YouTube, and the comparison is about shape.**
+YouTube held its (720p) ceiling down to 6.25 Mb/s; Twitch holds 1080p to
+12.5 and breaks at 6.25. The bitrates are not comparable — lofigirl is
+near-static animation and YouTube's player would not leave 720p at any
+capacity — so what transfers is the shape: both players hold their chosen
+rendition far below IQB's minimum and then fail on **startup**, not on
+resolution.
+
+**Verified:** 48/48 runs valid; shaping confirmed under cap on every published
+row; source ladder probed live and re-checked against
+`conditions.TWITCH_PROBED_LADDERS_P`; all 24 NDT runs completed on the first
+attempt with no M-Lab rate limiting (starts spaced ≥300 s); demand gate run
+over **both** published tables, 18/24 and 6/8 PASS with the two flagged points
+explained below; chart hashes in `twitch_manifest.files.txt`, transfer hashes
+in `twitch_manifest.{remote,local}.txt`.
+
+**Demand gate: 2 of 8 points flagged, and the reason is in the data.** At
+1.5 Mb/s and 1 Mb/s the measured demand (1.06 and 0.78 Mb/s) sits above the
+gate's 0.60 Mb/s ceiling for 144p. Neither figure is wrong. `resolution_p` is
+the **modal** sample height (`shared/qoe.py:514`), and those sessions were not
+at one rendition: at 1.5 Mb/s the player sat at 144p for 36 of 60 samples and
+then climbed through 360p to 480p, **still rising when the window closed**.
+The demand mean covers the whole session including the larger later segments.
+The gate's own note anticipated the opposite case — a session that downshifts
+carrying its earlier, larger segments — and the direction here is the reverse.
+Every row now publishes `resolution_modal_share`, `resolution_final_p` and a
+per-run `resolution_timeline`, so a steady point and a ramp can be told apart.
+
+**Contamination, stated rather than hidden:** the background-traffic guard
+failed on **11 of 24** runs, all at 3 Mb/s and below — Chrome's own non-media
+traffic takes more than 10% of the cap in more bins than the budget allows
+once the cap is small enough. Those runs are **flagged, not discarded**
+(`⚠n/m` in the table, `reps_suspect` in the CSV). Over the whole window the
+infra share is 5% at 3 Mb/s rising to 18% at 0.5 Mb/s. The headline rests on
+12.5 Mb/s and above, where no repetition was flagged and infra share is 2%.
+
+**What this does not say:** one latency (20 ms), one channel, one hour of one
+day. `lofigirl` is not a Twitch partner, so the ladder can lose its transcodes
+at any time — the sweep re-probes and aborts rather than silently measuring a
+source-only stream, but a future run may abort for that reason.
 
 ---
 
@@ -190,6 +280,31 @@ trace is indistinguishable from one that was never made.
   `generate_run_plots` claimed "no per-app throughput variants exist" directly
   above the loop that writes `throughput_<dir>_<app>.png`. Third and fourth
   instances of the class review caught twice.
+- **2026-11-11 — `startup_s` was blank in all three published 1080p
+  supplementary rows.** `supp1080.py` read `player_qoe[app]["startup_delay_ms"]`,
+  a key that does not exist at that level — it lives under the `uniform` block,
+  which is where `qoe_labels` reads it. The lookup returned `None` every time
+  and the CSV column came out empty, indistinguishable from "not measured".
+  It **was** measured: 3.07 / 2.16 / 3.65 s, sitting in each record all along.
+  Both readers now use the labeller's own definition, and the three published
+  rows were backfilled from their own records rather than re-run (originals
+  kept as `.pre-startup-backfill`). No label changed. Fifth instance of the
+  silent-zero/silent-absence class.
+- **2026-11-11 — `shaping.py` described a latency split this harness has
+  never done.** Its docstring said netem delay is "split HALF PER DIRECTION"
+  with ingress redirected to an `ifb0`, which describes the borrowed reference
+  implementation. The live layout on vm4 refutes it: one netem on `ns2:veth3`
+  carrying the whole figure, `ns1:veth1` `noqueue`, no `ifb0` on the box, and
+  1 ms configured measuring 1.13 ms RTT. It also contradicted
+  `conditions.latency_for_platform()` in the same package, so a reader who
+  found `shaping.py` first would have concluded the opposite of the truth. The
+  docstring now states the measured behaviour, including that the worker's
+  `latency_location` labels are node positions rather than traffic directions
+  (`"upstream"` → `ns2:veth3` → the *download* path) and that `"both"` doubles
+  the RTT rather than splitting it. **No published number changes** — all 785
+  archived runs were taken this way and every table already carried the
+  measured RTT. Fifth instance of the comment-asserts-what-the-code-doesn't-do
+  class.
 - **2026-11-08 — two of the five Meet charts on `main` could not be
   reproduced by `main`'s own code.** They were generated before #20's and
   #21's `plots.py` were merged. Regenerated and re-hashed in
@@ -197,8 +312,15 @@ trace is indistinguishable from one that was never made.
 
 ## What would change these conclusions
 
-- More than one run per point. Every headline above rests on single runs.
-- The 720p ceiling being explained. If it is a session property rather than a
-  link property, the streaming numbers describe YouTube-at-720p, not YouTube.
-- Twitch and Vimeo. One streaming app is not the plan's three, and YouTube's
-  ABR behaviour is not obviously general.
+- More than one run per point. **Twitch now has three**, and the three agreed
+  on every label and every rendition, which is evidence that the single-run
+  numbers are not noise — but it is evidence from one app at one latency. The
+  YouTube and Meet headlines still rest on single runs.
+- ~~The 720p ceiling being explained.~~ Explained in this PR: it is the
+  player, not the link, the video, our collection or the decoder. The
+  streaming numbers do describe **YouTube-at-720p**, by the player's choice,
+  on a link with 100× the headroom it used.
+- Vimeo. Two streaming apps are not the plan's three, and the two we have
+  disagree about where quality breaks (YouTube 6.25 Mb/s, Twitch 12.5), which
+  is a reason to want the third rather than a reason to doubt either.
+- A second latency for Twitch. Everything above is 20 ms.
