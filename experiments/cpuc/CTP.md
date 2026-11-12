@@ -40,6 +40,19 @@ Five things that follow from it, each of which removes a problem:
 | **Never touches the shared worker** | `docker run --detach --rm --privileged --pid host --publish 127.0.0.1::8002`, torn down in `finally` along with the tempdir (`:460-495`, `:631-652`) | no replay can outlive the run and keep injecting into everyone's namespace, and no `DELETE /replay/{id}` to forget |
 | **Records which profile ran** | `ctp.json` in the result dir, `ctp_file`/`ctp_direction`/`ctp_pnat` in `experiment.json`, and the name in the experiment id itself — `teams-only-{cap}mbps-{lat}ms-pfifo-{ctp_name}` (`:124-141`, `:579`) | the profile reaches the artefacts, so a dataset cannot have rows that differ by a variable nobody can see |
 
+**`$CTP_DIR` on the shared worker is not hard to fill, as it turns out.**
+`/tmp/substrate-ctp` is a **host bind mount at the identical path inside the
+container** (`docker inspect substrate-worker`:
+`bind|/tmp/substrate-ctp|/tmp/substrate-ctp|rw=true`, with
+`CTP_DIR=/tmp/substrate-ctp`), writable from the host with `sudo`. So a
+profile dropped at `/tmp/substrate-ctp/<name>.pcap` is visible to the running
+worker immediately — no `docker cp`, no restart, no mount change, nothing
+written inside the container's own filesystem. The Teams pattern's `/ctpsrc`
+mount is still the cleaner route *for that script*, because its worker is
+ephemeral and gets the corpus at launch; but anything driving the **shared**
+worker has a supported place to put files. That is what makes the CPUC
+integration in §6 cheap rather than structural.
+
 Two more details worth copying rather than rediscovering:
 
 - **Ordering.** The replay starts *after* the capture is running and *before*
@@ -246,11 +259,34 @@ this study — the QoE label, the demand figure, `infra_share_pct`, the
 background-traffic guard, the shaping check — comes from that path.
 
 So a CTP campaign run through the Teams script today produces pcaps and its
-own collector output, and none of the CPUC grading. Carrying the replay into
-`runner.py` beside `apply_condition` is a design question with one real
-tension — the Teams pattern's strength is its **ephemeral** worker, and the
-CPUC harness is built around the **shared** one. That is written up separately
-rather than guessed at here.
+own collector output, and none of the CPUC grading.
+
+Carrying the replay into `runner.py` beside `apply_condition` turns out **not**
+to be blocked on the worker. The obvious obstacle — the Teams pattern mounts
+the corpus at container launch, and you cannot add a bind mount to a running
+container — does not apply, because `/tmp/substrate-ctp` is already a writable
+host bind mount at the same path inside the shared worker (§1). The replay
+command itself is a `docker exec` into a container we are already talking to.
+
+What is left is not plumbing:
+
+- **The background-traffic guard would fail every CTP run.**
+  `execute_app_run` treats `BackgroundContention` as fatal, and a CTP replay is
+  background contention by construction. The guard has to learn the difference
+  between a **declared** cross-traffic source (the CTP pnat address) and
+  undeclared traffic — accounting and reporting the first, still failing on the
+  second. Weaken that and the dataset loses the check that keeps it honest.
+- **Demand would not say how much pressure was applied.** `infra_share_pct` is
+  `infra / (app + infra)` and CTP bytes land in `other`, so a contended row
+  would publish a demand figure indistinguishable from a baseline's. It needs
+  `ctp_mb` / `ctp_mean_mbps` measured over the same sustained window, rather
+  than the profile's nominal rate assumed.
+- **Ordering.** `calibrate()` gates the run on iperf3 and ping over the shaped
+  link, so the replay must start after it returns or the gate is applied to a
+  contended probe.
+- **The slug.** A CTP run has to be marked in the run id the way
+  `drive_pramana` already slugs `_forcedq` and `_noav01`, or it can be averaged
+  into a baseline.
 
 ## 7. What to ask Sthanav
 

@@ -130,11 +130,35 @@ background-traffic guard and no shaping check — every published number in this
 study comes from the CPUC path instead. A CTP campaign run through that script
 therefore cannot be set beside the sweeps in `results/`.
 
-The one real tension: the Teams pattern's strength is its **ephemeral** worker
-(nothing can outlive the run), and the CPUC harness is built around the
-**shared** one (`netns.netns_path()` resolves the running worker's pid). Which
-of the two gives way is the design decision, and it should be made with
-Sthanav rather than assumed.
+**Not blocked on the worker.** The obvious obstacle — the Teams pattern mounts
+the corpus at `docker run`, and a bind mount cannot be added to a running
+container — does not apply: `/tmp/substrate-ctp` is already a writable host
+bind mount at the same path inside the shared worker
+(`bind|/tmp/substrate-ctp|/tmp/substrate-ctp|rw=true`, `CTP_DIR` points at it),
+so a profile staged there is visible to the running worker immediately. The
+replay is then a `docker exec` into a container the harness already talks to.
+
+What actually has to be designed, in order of judgement required:
+
+1. **The guard.** `execute_app_run` treats `BackgroundContention` as fatal and
+   a CTP replay is background contention by construction, so every CTP run
+   would be written invalid. The guard needs a declared-source concept: account
+   and report the CTP pnat address, keep failing on everything undeclared, and
+   hold `browser_infra` to the budget it has now.
+2. **Demand.** CTP bytes land in `other`, and `infra_share_pct` is
+   `infra / (app + infra)`, so a contended row would look exactly like a
+   baseline. Needs `ctp_mb` / `ctp_mean_mbps` over the same sustained window —
+   the pressure measured, not assumed from the profile's nominal rate.
+3. **Ordering and the slug.** `calibrate()` must finish before the replay
+   starts, or the gate runs against a contended probe; and the run id must
+   carry the profile name the way `_forcedq` and `_noav01` are carried, or a
+   CTP run can be averaged into a baseline.
+
+Worth doing first, and it needs neither a corpus nor a cluster definition: one
+Twitch run at 10 Mb/s / 100 ms with and without the single profile we have,
+through the CPUC path with the guard change in place. It exercises all three
+points above and says whether the applied pressure is visible in our own
+attribution.
 
 ## Twitch has one latency, and Vimeo has none
 
