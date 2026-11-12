@@ -38,7 +38,8 @@ from collections import Counter
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from cpuc import conditions as C  # noqa: E402
-from cpuc import drive_pramana, guard as guard_mod, netns, runner  # noqa: E402
+from cpuc import drive_pramana, guard as guard_mod  # noqa: E402
+from cpuc import netns, qoe_labels, runner  # noqa: E402
 from cpuc.conditions import Condition  # noqa: E402
 from cpuc.runner import tc_drop_stats, verify_shaper_from_record  # noqa: E402
 from cpuc.sweep import load_renditions  # noqa: E402
@@ -262,11 +263,22 @@ def run_point(cond: Condition, adapter, csv_path: str, attempt: int = 1) -> dict
     # at the other viewport. Grading these against it would compare two
     # different experiments.
     per_app = (res.player_qoe or {}).get(app, res.player_qoe) or {}
-    row["startup_s"] = per_app.get("startup_delay_ms")
-    if row["startup_s"] is not None:
-        row["startup_s"] = round(row["startup_s"] / 1000.0, 2)
-    row["rebuffer_events"] = per_app.get("rebuffer_events")
-    row["rebuffer_ms"] = per_app.get("rebuffer_duration_ms")
+    # Startup and rebuffering come from `qoe_labels.extract_streaming_metrics`,
+    # which reads the `uniform` block (schema uniform_qoe/1) -- the SAME
+    # definition every graded sweep row uses.
+    #
+    # This used to read `per_app["startup_delay_ms"]` directly. That key does
+    # not exist at that level (it lives under `uniform`), so it returned None
+    # for every run and the CSV's startup column came out EMPTY -- which is
+    # what the three committed rows in `results_1080p/supp1080_runs.csv` show.
+    # Another absent-reads-as-nothing bug: no error, no zero, just a blank
+    # column nobody could tell from "startup was not measured".
+    m = qoe_labels.extract_streaming_metrics(per_app)
+    row["startup_s"] = m.startup_delay_s
+    row["startup_basis"] = m.startup_basis
+    row["rebuffer_events"] = m.rebuffer_events
+    row["rebuffer_ms"] = m.rebuffer_duration_ms
+    row["rebuffer_ratio"] = m.rebuffer_ratio
     row["qoe_label"] = "deferred"
     row["qoe_reason"] = "no same-viewport reference run in this set"
 

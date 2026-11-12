@@ -1,0 +1,317 @@
+{
+ "A_default_viewport": {
+  "pcap": "/home/student/cpuc_tw/experiments/pramana/results/pramana_runs/youtube_300mbps_1ms_0pct_pfifo_cubic_solo_t16006_62f1223a37/capture.pcap",
+  "bin_s": 1.0,
+  "total_MB": 19.97,
+  "peak_mbps": 27.238,
+  "n_bursts": 9,
+  "first_burst": {
+   "start_s": 2.0,
+   "end_s": 6.0,
+   "dur_s": 4.0,
+   "MB": 6.57,
+   "peak_mbps": 27.2,
+   "mean_mbps": 13.1
+  },
+  "later_mean_MB": 1.66,
+  "gaps_s": [
+   8.0,
+   6.0,
+   4.0,
+   18.0,
+   7.0,
+   7.0,
+   5.0,
+   10.0
+  ],
+  "gap_median_s": 7.0,
+  "gap_mean_s": 8.12,
+  "bursts": [
+   {
+    "start_s": 2.0,
+    "end_s": 6.0,
+    "dur_s": 4.0,
+    "MB": 6.57,
+    "peak_mbps": 27.2,
+    "mean_mbps": 13.1
+   },
+   {
+    "start_s": 10.0,
+    "end_s": 11.0,
+    "dur_s": 1.0,
+    "MB": 1.27,
+    "peak_mbps": 10.1,
+    "mean_mbps": 10.1
+   },
+   {
+    "start_s": 16.0,
+    "end_s": 17.0,
+    "dur_s": 1.0,
+    "MB": 1.37,
+    "peak_mbps": 11.0,
+    "mean_mbps": 11.0
+   },
+   {
+    "start_s": 20.0,
+    "end_s": 31.0,
+    "dur_s": 11.0,
+    "MB": 2.94,
+    "peak_mbps": 8.4,
+    "mean_mbps": 2.1
+   },
+   {
+    "start_s": 38.0,
+    "end_s": 39.0,
+    "dur_s": 1.0,
+    "MB": 1.55,
+    "peak_mbps": 12.4,
+    "mean_mbps": 12.4
+   },
+   {
+    "start_s": 45.0,
+    "end_s": 46.0,
+    "dur_s": 1.0,
+    "MB": 1.71,
+    "peak_mbps": 13.7,
+    "mean_mbps": 13.7
+   },
+   {
+    "start_s": 52.0,
+    "end_s": 54.0,
+    "dur_s": 2.0,
+    "MB": 1.17,
+    "peak_mbps": 4.8,
+    "mean_mbps": 4.7
+   },
+   {
+    "start_s": 57.0,
+    "end_s": 61.0,
+    "dur_s": 4.0,
+    "MB": 2.13,
+    "peak_mbps": 10.6,
+    "mean_mbps": 4.3
+   },
+   {
+    "start_s": 67.0,
+    "end_s": 68.0,
+    "dur_s": 1.0,
+    "MB": 1.17,
+    "peak_mbps": 9.4,
+    "mean_mbps": 9.4
+   }
+  ]
+ },
+ "B_fullscreen": {
+  "pcap": "/home/student/cpuc_tw/experiments/pramana/results/pramana_runs/youtube_300mbps_1ms_0pct_pfifo_cubic_solo_t16006_vcapyoutubefullscreen_b03d593017/capture.pcap",
+  "bin_s": 1.0,
+  "total_MB": 20.19,
+  "peak_mbps": 27.796,
+  "n_bursts": 9,
+  "first_burst": {
+   "start_s": 1.0,
+   "end_s": 11.0,
+   "dur_s": 10.0,
+   "MB": 8.16,
+   "peak_mbps": 27.8,
+   "mean_mbps": 6.5
+  },
+  "later_mean_MB": 1.5,
+  "gaps_s": [
+   15.0,
+   4.0,
+   9.0,
+   9.0,
+   5.0,
+   12.0,
+   6.0,
+   4.0
+  ],
+  "gap_median_s": 7.5,
+  "gap_mean_s": 8.0,
+  "bursts": [
+   {
+    "start_s": 1.0,
+    "end_s": 11.0,
+    "dur_s": 10.0,
+    "MB": 8.16,
+    "peak_mbps": 27.8,
+    "mean_mbps": 6.5
+   },
+   {
+    "start_s": 16.0,
+    "end_s": 17.0,
+    "dur_s": 1.0,
+    "MB": 1.37,
+    "peak_mbps": 11.0,
+    "mean_mbps": 11.0
+   },
+   {
+    "start_s": 20.0,
+    "end_s": 22.0,
+    "dur_s": 2.0,
+    "MB": 1.27,
+    "peak_mbps": 5.2,
+    "mean_mbps": 5.1
+   },
+   {
+    "start_s": 29.0,
+    "end_s": 33.0,
+    "dur_s": 4.0,
+    "MB": 2.09,
+    "peak_mbps": 9.7,
+    "mean_mbps": 4.2
+   },
+   {
+    "start_s": 38.0,
+    "end_s": 39.0,
+    "dur_s": 1.0,
+    "MB": 1.14,
+    "peak_mbps": 9.1,
+    "mean_mbps": 9.1
+   },
+   {
+    "start_s": 43.0,
+    "end_s": 48.0,
+    "dur_s": 5.0,
+    "MB": 2.17,
+    "peak_mbps": 7.6,
+    "mean_mbps": 3.5
+   },
+   {
+    "start_s": 55.0,
+    "end_s": 56.0,
+    "dur_s": 1.0,
+    "MB": 1.51,
+    "peak_mbps": 12.0,
+    "mean_mbps": 12.0
+   },
+   {
+    "start_s": 61.0,
+    "end_s": 62.0,
+    "dur_s": 1.0,
+    "MB": 1.32,
+    "peak_mbps": 10.6,
+    "mean_mbps": 10.6
+   },
+   {
+    "start_s": 65.0,
+    "end_s": 66.0,
+    "dur_s": 1.0,
+    "MB": 1.17,
+    "peak_mbps": 9.4,
+    "mean_mbps": 9.4
+   }
+  ]
+ },
+ "C_forced_1080": {
+  "pcap": "/home/student/cpuc_tw/experiments/pramana/results/pramana_runs/youtube_300mbps_1ms_0pct_pfifo_cubic_solo_t16006_forcedq_vcapyoutubefullscreen_ce25c20a07/capture.pcap",
+  "bin_s": 1.0,
+  "total_MB": 31.98,
+  "peak_mbps": 28.487,
+  "n_bursts": 10,
+  "first_burst": {
+   "start_s": 1.0,
+   "end_s": 9.0,
+   "dur_s": 8.0,
+   "MB": 10.59,
+   "peak_mbps": 28.5,
+   "mean_mbps": 10.6
+  },
+  "later_mean_MB": 2.38,
+  "gaps_s": [
+   11.0,
+   6.0,
+   4.0,
+   9.0,
+   8.0,
+   11.0,
+   6.0,
+   7.0,
+   4.0
+  ],
+  "gap_median_s": 7.0,
+  "gap_mean_s": 7.33,
+  "bursts": [
+   {
+    "start_s": 1.0,
+    "end_s": 9.0,
+    "dur_s": 8.0,
+    "MB": 10.59,
+    "peak_mbps": 28.5,
+    "mean_mbps": 10.6
+   },
+   {
+    "start_s": 12.0,
+    "end_s": 13.0,
+    "dur_s": 1.0,
+    "MB": 2.03,
+    "peak_mbps": 16.3,
+    "mean_mbps": 16.3
+   },
+   {
+    "start_s": 18.0,
+    "end_s": 19.0,
+    "dur_s": 1.0,
+    "MB": 2.2,
+    "peak_mbps": 17.6,
+    "mean_mbps": 17.6
+   },
+   {
+    "start_s": 22.0,
+    "end_s": 24.0,
+    "dur_s": 2.0,
+    "MB": 2.24,
+    "peak_mbps": 15.2,
+    "mean_mbps": 9.0
+   },
+   {
+    "start_s": 31.0,
+    "end_s": 32.0,
+    "dur_s": 1.0,
+    "MB": 2.73,
+    "peak_mbps": 21.8,
+    "mean_mbps": 21.8
+   },
+   {
+    "start_s": 39.0,
+    "end_s": 46.0,
+    "dur_s": 7.0,
+    "MB": 3.92,
+    "peak_mbps": 13.6,
+    "mean_mbps": 4.5
+   },
+   {
+    "start_s": 50.0,
+    "end_s": 51.0,
+    "dur_s": 1.0,
+    "MB": 1.8,
+    "peak_mbps": 14.4,
+    "mean_mbps": 14.4
+   },
+   {
+    "start_s": 56.0,
+    "end_s": 57.0,
+    "dur_s": 1.0,
+    "MB": 2.41,
+    "peak_mbps": 19.3,
+    "mean_mbps": 19.3
+   },
+   {
+    "start_s": 63.0,
+    "end_s": 64.0,
+    "dur_s": 1.0,
+    "MB": 2.07,
+    "peak_mbps": 16.6,
+    "mean_mbps": 16.6
+   },
+   {
+    "start_s": 67.0,
+    "end_s": 68.0,
+    "dur_s": 1.0,
+    "MB": 1.99,
+    "peak_mbps": 15.9,
+    "mean_mbps": 15.9
+   }
+  ]
+ }
+}

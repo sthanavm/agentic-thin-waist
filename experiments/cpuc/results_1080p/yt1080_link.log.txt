@@ -1,0 +1,127 @@
+[yt1080 07:16:29] source OK: max 2160p -- https://www.youtube.com/watch?v=dQw4w9WgXcQ&autoplay=1&mute=1
+[yt1080 07:16:29] condition: 300dn_300up_1ms_noloss_pfifo (Jaber: 300 Mb/s both ways, 1 ms, nothing else)
+[yt1080 07:16:29] [1/4] A_default_viewport  (removes: nothing: Jaber's spec verbatim)
+▶ DIRECT run: youtube_300mbps_1ms_0pct_pfifo_cubic_solo_t16006
+  cap=300.0Mbps lat=1.0ms loss=0.0% aqm=pfifo cca=cubic dur=60s apps=['youtube']
+  • shaping ...
+  • capture on veth2 (auto-stop 105s) ...
+  • real QoE collector for ['youtube'] ...
+    · collector source overridden from /home/student/cpuc/services/orchestration/scripts/selenium_video_qoe/collect.py
+    · mounted sibling cdp_bytes.py
+    · mounted sibling inpage_log.py
+    · driving 1 browser app(s) in real Chrome inside ns1 (youtube) ...
+      [youtube] summary: 60 samples written to /out/youtube_stats.jsonl | current_time_secs range=[2.742313, 61.71381] | advanced=True | final_resolution=1280x720
+  • finalising capture + downloading pcap ...
+  • pcap saved → /home/student/cpuc_tw/experiments/pramana/results/pramana_runs/youtube_300mbps_1ms_0pct_pfifo_cubic_solo_t16006_62f1223a37/capture.pcap (23.4 MB)
+  • shaping check: avg 2.59 / cap 300 Mbps (-99.1%) → OK
+  • splitting capture per app ...
+    method=remote_hostname  local=['172.16.1.1']  (declared_client_ips)  99.5% of bytes attributed
+      youtube              20.25 MB
+      browser_infra         2.44 MB
+      other                 0.11 MB
+    · link interference: none above budget
+    · youtube: served (dl avg 2.32 / peak 27.24 Mbps, delivered 29%)
+  • generating per-app plots ...
+    · download: merged throughput chart saved
+    · upload: merged throughput chart saved
+    · youtube download: per-app throughput chart saved
+    · youtube upload: per-app throughput chart saved
+    · youtube: qoe_summary saved
+  ! telemetry store failed for youtube: HTTPConnectionPool(host='localhost', port=8004): Max retries exceeded with url: /results (Caused by NewConnectionError('<urllib3.connection.HTTPConnection object at 0x7e2408138fe0>: Failed to establish a new connection: [Errno 111] Connection refused'))
+  ✓ saved → /home/student/cpuc_tw/experiments/pramana/results/pramana_runs/youtube_300mbps_1ms_0pct_pfifo_cubic_solo_t16006_62f1223a37
+    pcap: capture.pcap | plots: 5 | record.json
+[yt1080 07:18:40]   valid=True elem=1387x780 delivered=1280x720 sfn=1280x720@25 / 1280x720@25 codec=av01.0.05M.08 (398) drop=1.1% 
+[yt1080 07:18:40] [2/4] B_fullscreen  (removes: the viewport)
+▶ DIRECT run: youtube_300mbps_1ms_0pct_pfifo_cubic_solo_t16006_vcapyoutubefullscreen
+  cap=300.0Mbps lat=1.0ms loss=0.0% aqm=pfifo cca=cubic dur=60s apps=['youtube']
+  • shaping ...
+  • capture on veth2 (auto-stop 105s) ...
+  • real QoE collector for ['youtube'] ...
+    · collector source overridden from /home/student/cpuc/services/orchestration/scripts/selenium_video_qoe/collect.py
+    · mounted sibling cdp_bytes.py
+    · mounted sibling inpage_log.py
+    · driving 1 browser app(s) in real Chrome inside ns1 (youtube) ...
+      [youtube] summary: 60 samples written to /out/youtube_stats.jsonl | current_time_secs range=[4.487357, 63.480058] | advanced=True | final_resolution=1280x720
+  • finalising capture + downloading pcap ...
+  • pcap saved → /home/student/cpuc_tw/experiments/pramana/results/pramana_runs/youtube_300mbps_1ms_0pct_pfifo_cubic_solo_t16006_vcapyoutubefullscreen_b03d593017/capture.pcap (23.6 MB)
+  • shaping check: avg 2.56 / cap 300 Mbps (-99.1%) → OK
+  • splitting capture per app ...
+    method=remote_hostname  local=['172.16.1.1']  (declared_client_ips)  99.5% of bytes attributed
+      youtube              20.48 MB
+      browser_infra         2.38 MB
+      other                 0.11 MB
+    · link interference: none above budget
+    · youtube: served (dl avg 2.31 / peak 27.80 Mbps, delivered 30%)
+  • generating per-app plots ...
+    · download: merged throughput chart saved
+    · upload: merged throughput chart saved
+    · youtube download: per-app throughput chart saved
+    · youtube upload: per-app throughput chart saved
+    · youtube: qoe_summary saved
+  ! telemetry store failed for youtube: HTTPConnectionPool(host='localhost', port=8004): Max retries exceeded with url: /results (Caused by NewConnectionError('<urllib3.connection.HTTPConnection object at 0x7e24081f27b0>: Failed to establish a new connection: [Errno 111] Connection refused'))
+  ✓ saved → /home/student/cpuc_tw/experiments/pramana/results/pramana_runs/youtube_300mbps_1ms_0pct_pfifo_cubic_solo_t16006_vcapyoutubefullscreen_b03d593017
+    pcap: capture.pcap | plots: 5 | record.json
+[yt1080 07:20:49]   valid=True elem=1920x1080 delivered=1280x720 sfn=1280x720@25 / 1920x1080@25 codec=av01.0.05M.08 (398) drop=15.09% 
+[yt1080 07:20:49] [3/4] C_fullscreen_forced_1080  (removes: the player's ABR)
+▶ DIRECT run: youtube_300mbps_1ms_0pct_pfifo_cubic_solo_t16006_forcedq_vcapyoutubefullscreen
+  cap=300.0Mbps lat=1.0ms loss=0.0% aqm=pfifo cca=cubic dur=60s apps=['youtube']
+  • shaping ...
+  • capture on veth2 (auto-stop 105s) ...
+  • real QoE collector for ['youtube'] ...
+    · collector source overridden from /home/student/cpuc/services/orchestration/scripts/selenium_video_qoe/collect.py
+    · mounted sibling cdp_bytes.py
+    · mounted sibling inpage_log.py
+    · driving 1 browser app(s) in real Chrome inside ns1 (youtube) ...
+      [youtube] summary: 60 samples written to /out/youtube_stats.jsonl | current_time_secs range=[3.59082, 62.58118] | advanced=True | final_resolution=1920x1080
+  • finalising capture + downloading pcap ...
+  • pcap saved → /home/student/cpuc_tw/experiments/pramana/results/pramana_runs/youtube_300mbps_1ms_0pct_pfifo_cubic_solo_t16006_forcedq_vcapyoutubefullscreen_ce25c20a07/capture.pcap (35.9 MB)
+  • shaping check: avg 3.89 / cap 300 Mbps (-98.7%) → OK
+  • splitting capture per app ...
+    method=remote_hostname  local=['172.16.1.1']  (declared_client_ips)  99.7% of bytes attributed
+      youtube              32.38 MB
+      browser_infra         2.41 MB
+      other                 0.11 MB
+    · link interference: none above budget
+    · youtube: served (dl avg 3.60 / peak 28.49 Mbps, delivered 30%)
+  • generating per-app plots ...
+    · download: merged throughput chart saved
+    · upload: merged throughput chart saved
+    · youtube download: per-app throughput chart saved
+    · youtube upload: per-app throughput chart saved
+    · youtube: qoe_summary saved
+  ! telemetry store failed for youtube: HTTPConnectionPool(host='localhost', port=8004): Max retries exceeded with url: /results (Caused by NewConnectionError('<urllib3.connection.HTTPConnection object at 0x7e24081e2b10>: Failed to establish a new connection: [Errno 111] Connection refused'))
+  ✓ saved → /home/student/cpuc_tw/experiments/pramana/results/pramana_runs/youtube_300mbps_1ms_0pct_pfifo_cubic_solo_t16006_forcedq_vcapyoutubefullscreen_ce25c20a07
+    pcap: capture.pcap | plots: 5 | record.json
+[yt1080 07:22:59]   valid=True elem=1920x1080 delivered=1920x1080 sfn=1920x1080@25 / 1920x1080@25 codec=av01.0.08M.08 (399) drop=0.0% 
+[yt1080 07:22:59] [4/4] D_fullscreen_no_av01  (removes: the AV1 decode path)
+▶ DIRECT run: youtube_300mbps_1ms_0pct_pfifo_cubic_solo_t16006_vcapyoutubefullscreen_nocyoutubeav01
+  cap=300.0Mbps lat=1.0ms loss=0.0% aqm=pfifo cca=cubic dur=60s apps=['youtube']
+  • shaping ...
+  • capture on veth2 (auto-stop 105s) ...
+  • real QoE collector for ['youtube'] ...
+    · collector source overridden from /home/student/cpuc/services/orchestration/scripts/selenium_video_qoe/collect.py
+    · mounted sibling cdp_bytes.py
+    · mounted sibling inpage_log.py
+    · driving 1 browser app(s) in real Chrome inside ns1 (youtube) ...
+      [youtube] summary: 60 samples written to /out/youtube_stats.jsonl | current_time_secs range=[4.281943, 63.257159] | advanced=True | final_resolution=1280x720
+  • finalising capture + downloading pcap ...
+  • pcap saved → /home/student/cpuc_tw/experiments/pramana/results/pramana_runs/youtube_300mbps_1ms_0pct_pfifo_cubic_solo_t16006_vcapyoutubefullscreen_nocyoutubeav01_9fe4410fb1/capture.pcap (24.1 MB)
+  • shaping check: avg 2.68 / cap 300 Mbps (-99.1%) → OK
+  • splitting capture per app ...
+    method=remote_hostname  local=['172.16.1.1']  (declared_client_ips)  99.5% of bytes attributed
+      youtube              20.97 MB
+      browser_infra         2.42 MB
+      other                 0.11 MB
+    · link interference: none above budget
+    · youtube: served (dl avg 2.40 / peak 42.35 Mbps, delivered 29%)
+  • generating per-app plots ...
+    · download: merged throughput chart saved
+    · upload: merged throughput chart saved
+    · youtube download: per-app throughput chart saved
+    · youtube upload: per-app throughput chart saved
+    · youtube: qoe_summary saved
+  ! telemetry store failed for youtube: HTTPConnectionPool(host='localhost', port=8004): Max retries exceeded with url: /results (Caused by NewConnectionError('<urllib3.connection.HTTPConnection object at 0x7e240813ab10>: Failed to establish a new connection: [Errno 111] Connection refused'))
+  ✓ saved → /home/student/cpuc_tw/experiments/pramana/results/pramana_runs/youtube_300mbps_1ms_0pct_pfifo_cubic_solo_t16006_vcapyoutubefullscreen_nocyoutubeav01_9fe4410fb1
+    pcap: capture.pcap | plots: 5 | record.json
+[yt1080 07:25:08]   valid=True elem=1920x1080 delivered=1280x720 sfn=1280x720@25 / 1920x1080@25 codec=vp09.00.51.08.01.01.01.01.00 (247) drop=14.38% 
+[yt1080 07:25:08] done

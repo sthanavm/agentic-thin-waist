@@ -1,0 +1,98 @@
+{
+ "0.5": {
+  "twitch_avg_mbps": 0.42,
+  "twitch_active_mbps": 0.432,
+  "infra_share_pct": 17.8,
+  "n": 3,
+  "runs": [
+   "twitch_0.5mbps_20ms_0pct_pfifo_cubic_solo_t15931_674fa06160",
+   "twitch_0.5mbps_20ms_0pct_pfifo_cubic_solo_t15931_806e846f20",
+   "twitch_0.5mbps_20ms_0pct_pfifo_cubic_solo_t15931_d250571dde"
+  ],
+  "basis": "mean over the sustained window (first app byte to last), from the run's own capture"
+ },
+ "1.5": {
+  "twitch_avg_mbps": 1.056,
+  "twitch_active_mbps": 1.056,
+  "infra_share_pct": 7.4,
+  "n": 3,
+  "runs": [
+   "twitch_1.5mbps_20ms_0pct_pfifo_cubic_solo_t11709_4158b0f823",
+   "twitch_1.5mbps_20ms_0pct_pfifo_cubic_solo_t11709_655b45b05d",
+   "twitch_1.5mbps_20ms_0pct_pfifo_cubic_solo_t11709_9a076995f9"
+  ],
+  "basis": "mean over the sustained window (first app byte to last), from the run's own capture"
+ },
+ "100": {
+  "twitch_avg_mbps": 5.268,
+  "twitch_active_mbps": 5.65,
+  "infra_share_pct": 2.0,
+  "n": 3,
+  "runs": [
+   "twitch_100mbps_20ms_0pct_pfifo_cubic_solo_t16246_3a986aaa28",
+   "twitch_100mbps_20ms_0pct_pfifo_cubic_solo_t16246_595e0f721a",
+   "twitch_100mbps_20ms_0pct_pfifo_cubic_solo_t16246_ea0a1297bf"
+  ],
+  "basis": "mean over the sustained window (first app byte to last), from the run's own capture"
+ },
+ "12.5": {
+  "twitch_avg_mbps": 4.907,
+  "twitch_active_mbps": 5.048,
+  "infra_share_pct": 2.1,
+  "n": 3,
+  "runs": [
+   "twitch_12.5mbps_20ms_0pct_pfifo_cubic_solo_t13206_0d2355f0ef",
+   "twitch_12.5mbps_20ms_0pct_pfifo_cubic_solo_t13206_1c9b3799b2",
+   "twitch_12.5mbps_20ms_0pct_pfifo_cubic_solo_t13206_8498db4403"
+  ],
+  "basis": "mean over the sustained window (first app byte to last), from the run's own capture"
+ },
+ "1": {
+  "twitch_avg_mbps": 0.777,
+  "twitch_active_mbps": 0.78,
+  "infra_share_pct": 9.7,
+  "n": 3,
+  "runs": [
+   "twitch_1mbps_20ms_0pct_pfifo_cubic_solo_t16152_516543d2f6",
+   "twitch_1mbps_20ms_0pct_pfifo_cubic_solo_t16152_9aaed324dc",
+   "twitch_1mbps_20ms_0pct_pfifo_cubic_solo_t16152_d09f0e0be3"
+  ],
+  "basis": "mean over the sustained window (first app byte to last), from the run's own capture"
+ },
+ "25": {
+  "twitch_avg_mbps": 5.387,
+  "twitch_active_mbps": 5.547,
+  "infra_share_pct": 2.0,
+  "n": 3,
+  "runs": [
+   "twitch_25mbps_20ms_0pct_pfifo_cubic_solo_t15103_41948f94cc",
+   "twitch_25mbps_20ms_0pct_pfifo_cubic_solo_t15103_61d1a0ac42",
+   "twitch_25mbps_20ms_0pct_pfifo_cubic_solo_t15103_698f557184"
+  ],
+  "basis": "mean over the sustained window (first app byte to last), from the run's own capture"
+ },
+ "3": {
+  "twitch_avg_mbps": 1.674,
+  "twitch_active_mbps": 1.693,
+  "infra_share_pct": 5.2,
+  "n": 3,
+  "runs": [
+   "twitch_3mbps_20ms_0pct_pfifo_cubic_solo_t16403_10053ea33b",
+   "twitch_3mbps_20ms_0pct_pfifo_cubic_solo_t16403_252c8f8ad7",
+   "twitch_3mbps_20ms_0pct_pfifo_cubic_solo_t16403_dee3a7584f"
+  ],
+  "basis": "mean over the sustained window (first app byte to last), from the run's own capture"
+ },
+ "6.25": {
+  "twitch_avg_mbps": 2.721,
+  "twitch_active_mbps": 2.785,
+  "infra_share_pct": 3.6,
+  "n": 3,
+  "runs": [
+   "twitch_6.25mbps_20ms_0pct_pfifo_cubic_solo_t14987_4af9d7e15b",
+   "twitch_6.25mbps_20ms_0pct_pfifo_cubic_solo_t14987_b3f147aefd",
+   "twitch_6.25mbps_20ms_0pct_pfifo_cubic_solo_t14987_e17b597285"
+  ],
+  "basis": "mean over the sustained window (first app byte to last), from the run's own capture"
+ }
+}

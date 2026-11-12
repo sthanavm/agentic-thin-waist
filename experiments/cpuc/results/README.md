@@ -1,10 +1,12 @@
 # YouTube streaming against IQB 2025 — bandwidth × latency
 
-**This README covers the `streaming_*` files only.** The folder holds three
-studies: `streaming_*` (YouTube, #21), `meet_*` (Google Meet, #20) and
-`teams_*` (Microsoft Teams, #22, not ours, not merged yet). For Meet and Teams read
-`../RESULTS.md`, which is the index for all three and carries the corrections
-log. The `*_manifest.lat.*` and `*_manifest.lowend.*` files record sha256 on vm4
+**This README covers the `streaming_*` files only.** The folder holds four
+studies: `streaming_*` (YouTube, #21), `twitch_*` (Twitch, 3 reps per point,
+this PR), `meet_*` (Google Meet, #20) and `teams_*` (Microsoft Teams, #22, not
+ours, not merged yet). For the other three read `../RESULTS.md`, which is the
+index for all of them and carries the corrections log. Twitch's own tables
+carry their notes inline: `twitch_iqb_vs_qoe_table.md` is the reduced table and
+`twitch_runs_table.csv` has every repetition. The `*_manifest.lat.*` and `*_manifest.lowend.*` files record sha256 on vm4
 and after transfer under the names the files had **on vm4**, before the
 per-study prefix was added — `cpuc_runs.csv` there is this folder's
 `streaming_cpuc_runs.csv`, and the hashes still match. The

@@ -1,0 +1,60 @@
+{
+ "url": "https://www.twitch.tv/lofigirl",
+ "channel": "lofigirl",
+ "probed_utc": "2026-11-11T07:31:42Z",
+ "ok": true,
+ "rendition_heights": [
+  1080,
+  720,
+  480,
+  360,
+  160
+ ],
+ "max_rendition_p": 1080,
+ "has_1080p_plus": true,
+ "variant_count": 5,
+ "transcode_count": 4,
+ "source_only": false,
+ "ladder": [
+  {
+   "group": "chunked",
+   "name": "1080p (source)",
+   "width": 1920,
+   "height": 1080,
+   "bandwidth_bps": 6920184,
+   "fps": 24.0
+  },
+  {
+   "group": "720p30",
+   "name": "720p",
+   "width": 1280,
+   "height": 720,
+   "bandwidth_bps": 2373000,
+   "fps": 30.0
+  },
+  {
+   "group": "480p30",
+   "name": "480p",
+   "width": 852,
+   "height": 480,
+   "bandwidth_bps": 1427999,
+   "fps": 30.0
+  },
+  {
+   "group": "360p30",
+   "name": "360p",
+   "width": 640,
+   "height": 360,
+   "bandwidth_bps": 630000,
+   "fps": 30.0
+  },
+  {
+   "group": "160p30",
+   "name": "160p",
+   "width": 284,
+   "height": 160,
+   "bandwidth_bps": 230000,
+   "fps": 30.0
+  }
+ ]
+}

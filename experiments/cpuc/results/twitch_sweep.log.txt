@@ -1,0 +1,862 @@
+[twitch 07:31:41] collector OK: video-qoe-collector:latest
+[twitch 07:31:41] channel: https://www.twitch.tv/lofigirl (pinned: lofigirl)
+[twitch 07:31:42] ladder: 5 variants, 4 transcodes, max 1080p -> /home/student/cpuc_data/twitch/twitch_renditions.json
+[twitch 07:31:42]    1080p    6.92 Mb/s  group=chunked  (SOURCE)
+[twitch 07:31:42]     720p    2.37 Mb/s  group=720p30
+[twitch 07:31:42]     480p    1.43 Mb/s  group=480p30
+[twitch 07:31:42]     360p    0.63 Mb/s  group=360p30
+[twitch 07:31:42]     160p    0.23 Mb/s  group=160p30
+[twitch 07:31:42] source gate: OK (1080p+ present, ladder has transcodes to adapt along)
+[twitch 07:31:42] === TWITCH SWEEP: 48 runs (24 twitch + 24 ndt), 3 reps at 20 ms
+[twitch 07:31:42] [1/48] app twitch 100 Mb/s 20ms rep1
+▶ DIRECT run: twitch_100mbps_20ms_0pct_pfifo_cubic_solo_t16246
+  cap=100.0Mbps lat=20.0ms loss=0.0% aqm=pfifo cca=cubic dur=60s apps=['twitch']
+  • shaping ...
+  • capture on veth2 (auto-stop 105s) ...
+  • real QoE collector for ['twitch'] ...
+    · collector source overridden from /home/student/cpuc/services/orchestration/scripts/selenium_video_qoe/collect.py
+    · mounted sibling cdp_bytes.py
+    · mounted sibling inpage_log.py
+    · driving 1 browser app(s) in real Chrome inside ns1 (twitch) ...
+      [twitch] summary: 60 samples written to /out/twitch_stats.jsonl | current_time_secs range=[3.081535, 56.63016] | advanced=True | final_resolution=1920x1080
+  • finalising capture + downloading pcap ...
+  • pcap saved → /home/student/cpuc_tw/experiments/pramana/results/pramana_runs/twitch_100mbps_20ms_0pct_pfifo_cubic_solo_t16246_595e0f721a/capture.pcap (46.9 MB)
+  • shaping check: avg 5.22 / cap 100 Mbps (-94.8%) → OK
+  • splitting capture per app ...
+    method=remote_hostname  local=['172.16.1.1']  (declared_client_ips)  99.6% of bytes attributed
+      twitch               44.94 MB
+      browser_infra         1.09 MB
+      other                 0.20 MB
+    · link interference: none above budget
+    · twitch: served (dl avg 5.04 / peak 21.43 Mbps, delivered 74%)
+  • generating per-app plots ...
+    · download: merged throughput chart saved
+    · upload: merged throughput chart saved
+    · twitch download: per-app throughput chart saved
+    · twitch upload: per-app throughput chart saved
+    · twitch: qoe_summary saved
+  ! telemetry store failed for twitch: HTTPConnectionPool(host='localhost', port=8004): Max retries exceeded with url: /results (Caused by NewConnectionError('<urllib3.connection.HTTPConnection object at 0x7671eac77a40>: Failed to establish a new connection: [Errno 111] Connection refused'))
+  ✓ saved → /home/student/cpuc_tw/experiments/pramana/results/pramana_runs/twitch_100mbps_20ms_0pct_pfifo_cubic_solo_t16246_595e0f721a
+    pcap: capture.pcap | plots: 5 | record.json
+[twitch 07:34:31]   attempt 1: valid=True label=deferred res=1080 
+[twitch 07:34:31] [2/48] ndt ndt 100 Mb/s 20ms rep1
+[twitch 07:35:30]   attempt 1: valid=True label=- res=- 
+[twitch 07:35:30] [3/48] app twitch 25 Mb/s 20ms rep1
+▶ DIRECT run: twitch_25mbps_20ms_0pct_pfifo_cubic_solo_t15103
+  cap=25.0Mbps lat=20.0ms loss=0.0% aqm=pfifo cca=cubic dur=60s apps=['twitch']
+  • shaping ...
+  • capture on veth2 (auto-stop 105s) ...
+  • real QoE collector for ['twitch'] ...
+    · collector source overridden from /home/student/cpuc/services/orchestration/scripts/selenium_video_qoe/collect.py
+    · mounted sibling cdp_bytes.py
+    · mounted sibling inpage_log.py
+    · driving 1 browser app(s) in real Chrome inside ns1 (twitch) ...
+      [twitch] summary: 60 samples written to /out/twitch_stats.jsonl | current_time_secs range=[3.286589, 56.561747] | advanced=True | final_resolution=1920x1080
+  • finalising capture + downloading pcap ...
+  • pcap saved → /home/student/cpuc_tw/experiments/pramana/results/pramana_runs/twitch_25mbps_20ms_0pct_pfifo_cubic_solo_t15103_698f557184/capture.pcap (51.5 MB)
+  • shaping check: avg 5.53 / cap 25 Mbps (-77.9%) → OK
+  • splitting capture per app ...
+    method=remote_hostname  local=['172.16.1.1']  (declared_client_ips)  99.6% of bytes attributed
+      twitch               48.55 MB
+      browser_infra         1.09 MB
+      other                 0.21 MB
+    · link interference: none above budget
+    · twitch: served (dl avg 5.37 / peak 23.45 Mbps, delivered 87%)
+  • generating per-app plots ...
+    · download: merged throughput chart saved
+    · upload: merged throughput chart saved
+    · twitch download: per-app throughput chart saved
+    · twitch upload: per-app throughput chart saved
+    · twitch: qoe_summary saved
+  ! telemetry store failed for twitch: HTTPConnectionPool(host='localhost', port=8004): Max retries exceeded with url: /results (Caused by NewConnectionError('<urllib3.connection.HTTPConnection object at 0x7671eac758e0>: Failed to establish a new connection: [Errno 111] Connection refused'))
+  ✓ saved → /home/student/cpuc_tw/experiments/pramana/results/pramana_runs/twitch_25mbps_20ms_0pct_pfifo_cubic_solo_t15103_698f557184
+    pcap: capture.pcap | plots: 5 | record.json
+[twitch 07:38:23]   attempt 1: valid=True label=high res=1080 
+[twitch 07:38:23] [4/48] ndt ndt 25 Mb/s 20ms rep1
+[twitch 07:38:23]   NDT spacing: waiting 68s since the last one
+[twitch 07:40:30]   attempt 1: valid=True label=- res=- 
+[twitch 07:40:30] [5/48] app twitch 12.5 Mb/s 20ms rep1
+▶ DIRECT run: twitch_12.5mbps_20ms_0pct_pfifo_cubic_solo_t13206
+  cap=12.5Mbps lat=20.0ms loss=0.0% aqm=pfifo cca=cubic dur=60s apps=['twitch']
+  • shaping ...
+  • capture on veth2 (auto-stop 105s) ...
+  • real QoE collector for ['twitch'] ...
+    · collector source overridden from /home/student/cpuc/services/orchestration/scripts/selenium_video_qoe/collect.py
+    · mounted sibling cdp_bytes.py
+    · mounted sibling inpage_log.py
+    · driving 1 browser app(s) in real Chrome inside ns1 (twitch) ...
+      [twitch] summary: 60 samples written to /out/twitch_stats.jsonl | current_time_secs range=[4.833958, 58.946142] | advanced=True | final_resolution=1920x1080
+  • finalising capture + downloading pcap ...
+  • pcap saved → /home/student/cpuc_tw/experiments/pramana/results/pramana_runs/twitch_12.5mbps_20ms_0pct_pfifo_cubic_solo_t13206_1c9b3799b2/capture.pcap (46.9 MB)
+  • shaping check: avg 4.89 / cap 12.5 Mbps (-60.9%) → OK
+  • splitting capture per app ...
+    method=remote_hostname  local=['172.16.1.1']  (declared_client_ips)  99.4% of bytes attributed
+      twitch               44.01 MB
+      browser_infra         1.09 MB
+      other                 0.26 MB
+    · link interference: none above budget
+    · twitch: served (dl avg 4.73 / peak 12.43 Mbps, delivered 90%)
+  • generating per-app plots ...
+    · download: merged throughput chart saved
+    · upload: merged throughput chart saved
+    · twitch download: per-app throughput chart saved
+    · twitch upload: per-app throughput chart saved
+    · twitch: qoe_summary saved
+  ! telemetry store failed for twitch: HTTPConnectionPool(host='localhost', port=8004): Max retries exceeded with url: /results (Caused by NewConnectionError('<urllib3.connection.HTTPConnection object at 0x7671ead8cdd0>: Failed to establish a new connection: [Errno 111] Connection refused'))
+  ✓ saved → /home/student/cpuc_tw/experiments/pramana/results/pramana_runs/twitch_12.5mbps_20ms_0pct_pfifo_cubic_solo_t13206_1c9b3799b2
+    pcap: capture.pcap | plots: 5 | record.json
+[twitch 07:43:19]   attempt 1: valid=True label=high res=1080 
+[twitch 07:43:19] [6/48] ndt ndt 12.5 Mb/s 20ms rep1
+[twitch 07:43:19]   NDT spacing: waiting 72s since the last one
+[twitch 07:45:31]   attempt 1: valid=True label=- res=- 
+[twitch 07:45:31] [7/48] app twitch 6.25 Mb/s 20ms rep1
+▶ DIRECT run: twitch_6.25mbps_20ms_0pct_pfifo_cubic_solo_t14987
+  cap=6.25Mbps lat=20.0ms loss=0.0% aqm=pfifo cca=cubic dur=60s apps=['twitch']
+  • shaping ...
+  • capture on veth2 (auto-stop 105s) ...
+  • real QoE collector for ['twitch'] ...
+    · collector source overridden from /home/student/cpuc/services/orchestration/scripts/selenium_video_qoe/collect.py
+    · mounted sibling cdp_bytes.py
+    · mounted sibling inpage_log.py
+    · driving 1 browser app(s) in real Chrome inside ns1 (twitch) ...
+      [twitch] summary: 60 samples written to /out/twitch_stats.jsonl | current_time_secs range=[4.454436, 62.717451] | advanced=True | final_resolution=1280x720
+  • finalising capture + downloading pcap ...
+  • pcap saved → /home/student/cpuc_tw/experiments/pramana/results/pramana_runs/twitch_6.25mbps_20ms_0pct_pfifo_cubic_solo_t14987_e17b597285/capture.pcap (29.7 MB)
+  • shaping check: avg 2.87 / cap 6.25 Mbps (-54.1%) → OK
+  • splitting capture per app ...
+    method=remote_hostname  local=['172.16.1.1']  (declared_client_ips)  99.2% of bytes attributed
+      twitch               27.40 MB
+      browser_infra         1.13 MB
+      other                 0.22 MB
+    ! browser_infra/download peaked at 4.86 Mbps (78% of the 6.25 Mbps cap) somewhere in the capture
+    · twitch: served (dl avg 2.72 / peak 6.24 Mbps, delivered 92%)
+  • generating per-app plots ...
+    · download: merged throughput chart saved
+    · upload: merged throughput chart saved
+    · twitch download: per-app throughput chart saved
+    · twitch upload: per-app throughput chart saved
+    · twitch: qoe_summary saved
+  ! telemetry store failed for twitch: HTTPConnectionPool(host='localhost', port=8004): Max retries exceeded with url: /results (Caused by NewConnectionError('<urllib3.connection.HTTPConnection object at 0x7671eac0e090>: Failed to establish a new connection: [Errno 111] Connection refused'))
+  ✓ saved → /home/student/cpuc_tw/experiments/pramana/results/pramana_runs/twitch_6.25mbps_20ms_0pct_pfifo_cubic_solo_t14987_e17b597285
+    pcap: capture.pcap | plots: 5 | record.json
+[twitch 07:48:06]   attempt 1: valid=True label=acceptable res=1080 
+[twitch 07:48:06] [8/48] ndt ndt 6.25 Mb/s 20ms rep1
+[twitch 07:48:06]   NDT spacing: waiting 85s since the last one
+[twitch 07:50:30]   attempt 1: valid=True label=- res=- 
+[twitch 07:50:30] [9/48] app twitch 3 Mb/s 20ms rep1
+▶ DIRECT run: twitch_3mbps_20ms_0pct_pfifo_cubic_solo_t16403
+  cap=3.0Mbps lat=20.0ms loss=0.0% aqm=pfifo cca=cubic dur=60s apps=['twitch']
+  • shaping ...
+  • capture on veth2 (auto-stop 105s) ...
+  • real QoE collector for ['twitch'] ...
+    · collector source overridden from /home/student/cpuc/services/orchestration/scripts/selenium_video_qoe/collect.py
+    · mounted sibling cdp_bytes.py
+    · mounted sibling inpage_log.py
+    · driving 1 browser app(s) in real Chrome inside ns1 (twitch) ...
+      [twitch] summary: 60 samples written to /out/twitch_stats.jsonl | current_time_secs range=[11.761912, 70.370537] | advanced=True | final_resolution=1920x1080
+  • finalising capture + downloading pcap ...
+  • pcap saved → /home/student/cpuc_tw/experiments/pramana/results/pramana_runs/twitch_3mbps_20ms_0pct_pfifo_cubic_solo_t16403_dee3a7584f/capture.pcap (21.3 MB)
+  • shaping check: avg 1.78 / cap 3 Mbps (-40.8%) → OK
+  • splitting capture per app ...
+    method=remote_hostname  local=['172.16.1.1']  (declared_client_ips)  98.8% of bytes attributed
+      twitch               19.11 MB
+      browser_infra         1.20 MB
+      other                 0.25 MB
+    ! browser_infra/download peaked at 2.99 Mbps (100% of the 3 Mbps cap) somewhere in the capture
+    · twitch: served (dl avg 1.66 / peak 3.00 Mbps, delivered 94%)
+  • generating per-app plots ...
+    · download: merged throughput chart saved
+    · upload: merged throughput chart saved
+    · twitch download: per-app throughput chart saved
+    · twitch upload: per-app throughput chart saved
+    · twitch: qoe_summary saved
+  ! telemetry store failed for twitch: HTTPConnectionPool(host='localhost', port=8004): Max retries exceeded with url: /results (Caused by NewConnectionError('<urllib3.connection.HTTPConnection object at 0x7671eadec290>: Failed to establish a new connection: [Errno 111] Connection refused'))
+  ✓ saved → /home/student/cpuc_tw/experiments/pramana/results/pramana_runs/twitch_3mbps_20ms_0pct_pfifo_cubic_solo_t16403_dee3a7584f
+    pcap: capture.pcap | plots: 5 | record.json
+[twitch 07:52:57]   attempt 1: valid=True label=unusable res=480 
+[twitch 07:52:57] [10/48] ndt ndt 3 Mb/s 20ms rep1
+[twitch 07:52:57]   NDT spacing: waiting 94s since the last one
+[twitch 07:55:31]   attempt 1: valid=True label=- res=- 
+[twitch 07:55:31] [11/48] app twitch 1.5 Mb/s 20ms rep1
+▶ DIRECT run: twitch_1.5mbps_20ms_0pct_pfifo_cubic_solo_t11709
+  cap=1.5Mbps lat=20.0ms loss=0.0% aqm=pfifo cca=cubic dur=60s apps=['twitch']
+  • shaping ...
+  • capture on veth2 (auto-stop 105s) ...
+  • real QoE collector for ['twitch'] ...
+    · collector source overridden from /home/student/cpuc/services/orchestration/scripts/selenium_video_qoe/collect.py
+    · mounted sibling cdp_bytes.py
+    · mounted sibling inpage_log.py
+    · driving 1 browser app(s) in real Chrome inside ns1 (twitch) ...
+      [twitch] summary: 60 samples written to /out/twitch_stats.jsonl | current_time_secs range=[24.658632, 81.647336] | advanced=True | final_resolution=640x360
+  • finalising capture + downloading pcap ...
+  • pcap saved → /home/student/cpuc_tw/experiments/pramana/results/pramana_runs/twitch_1.5mbps_20ms_0pct_pfifo_cubic_solo_t11709_9a076995f9/capture.pcap (16.2 MB)
+  • shaping check: avg 1.13 / cap 1.5 Mbps (-24.5%) → OK
+  • splitting capture per app ...
+    method=remote_hostname  local=['172.16.1.1']  (declared_client_ips)  97.8% of bytes attributed
+      twitch               13.93 MB
+      browser_infra         1.25 MB
+      other                 0.34 MB
+    ! browser_infra/download peaked at 1.49 Mbps (99% of the 1.5 Mbps cap) somewhere in the capture
+    ✗ browser_infra/download took more than 10% of the 1.5 Mbps cap in 6 bins inside the app's measured window (worst 1.46 Mbps at t=2..43 s), limit 3 bins
+    · twitch: served (dl avg 1.02 / peak 1.50 Mbps, delivered 97%)
+  • generating per-app plots ...
+    · download: merged throughput chart saved
+    · upload: merged throughput chart saved
+    · twitch download: per-app throughput chart saved
+    · twitch upload: per-app throughput chart saved
+    · twitch: qoe_summary saved
+  ! telemetry store failed for twitch: HTTPConnectionPool(host='localhost', port=8004): Max retries exceeded with url: /results (Caused by NewConnectionError('<urllib3.connection.HTTPConnection object at 0x7671ead8e5a0>: Failed to establish a new connection: [Errno 111] Connection refused'))
+  ✓ saved → /home/student/cpuc_tw/experiments/pramana/results/pramana_runs/twitch_1.5mbps_20ms_0pct_pfifo_cubic_solo_t11709_9a076995f9
+    pcap: capture.pcap | plots: 5 | record.json
+[twitch 07:58:07]   attempt 1: valid=True label=unusable res=144 SUSPECT 
+[twitch 07:58:07] [12/48] ndt ndt 1.5 Mb/s 20ms rep1
+[twitch 07:58:07]   NDT spacing: waiting 84s since the last one
+[twitch 08:00:32]   attempt 1: valid=True label=- res=- 
+[twitch 08:00:32] [13/48] app twitch 1 Mb/s 20ms rep1
+▶ DIRECT run: twitch_1mbps_20ms_0pct_pfifo_cubic_solo_t16152
+  cap=1.0Mbps lat=20.0ms loss=0.0% aqm=pfifo cca=cubic dur=60s apps=['twitch']
+  • shaping ...
+  • capture on veth2 (auto-stop 105s) ...
+  • real QoE collector for ['twitch'] ...
+    · collector source overridden from /home/student/cpuc/services/orchestration/scripts/selenium_video_qoe/collect.py
+    · mounted sibling cdp_bytes.py
+    · mounted sibling inpage_log.py
+    · driving 1 browser app(s) in real Chrome inside ns1 (twitch) ...
+      [twitch] summary: 60 samples written to /out/twitch_stats.jsonl | current_time_secs range=[10.644305, 69.924566] | advanced=True | final_resolution=640x360
+  • finalising capture + downloading pcap ...
+  • pcap saved → /home/student/cpuc_tw/experiments/pramana/results/pramana_runs/twitch_1mbps_20ms_0pct_pfifo_cubic_solo_t16152_d09f0e0be3/capture.pcap (13.0 MB)
+  • shaping check: avg 0.89 / cap 1 Mbps (-11.2%) → OK
+  • splitting capture per app ...
+    method=remote_hostname  local=['172.16.1.1']  (declared_client_ips)  96.5% of bytes attributed
+      twitch               10.82 MB
+      browser_infra         1.19 MB
+      other                 0.43 MB
+      off_link              0.00 MB
+    ! browser_infra/download peaked at 1.00 Mbps (100% of the 1 Mbps cap) somewhere in the capture
+    ! other/upload peaked at 0.59 Mbps (59% of the 1 Mbps cap) somewhere in the capture
+    ✗ browser_infra/download took more than 10% of the 1 Mbps cap in 10 bins inside the app's measured window (worst 0.94 Mbps at t=2..60 s), limit 3 bins
+    ✗ other/download took more than 10% of the 1 Mbps cap in 7 bins inside the app's measured window (worst 0.21 Mbps at t=41..75 s), limit 3 bins
+    ✗ other/upload took more than 10% of the 1 Mbps cap in 4 bins inside the app's measured window (worst 0.59 Mbps at t=42..75 s), limit 3 bins
+    · twitch: served (dl avg 0.79 / peak 1.06 Mbps, delivered 98%)
+  • generating per-app plots ...
+    · download: merged throughput chart saved
+    · upload: merged throughput chart saved
+    · twitch download: per-app throughput chart saved
+    · twitch upload: per-app throughput chart saved
+    · twitch: qoe_summary saved
+  ! telemetry store failed for twitch: HTTPConnectionPool(host='localhost', port=8004): Max retries exceeded with url: /results (Caused by NewConnectionError('<urllib3.connection.HTTPConnection object at 0x7671eac41eb0>: Failed to establish a new connection: [Errno 111] Connection refused'))
+  ✓ saved → /home/student/cpuc_tw/experiments/pramana/results/pramana_runs/twitch_1mbps_20ms_0pct_pfifo_cubic_solo_t16152_d09f0e0be3
+    pcap: capture.pcap | plots: 5 | record.json
+[twitch 08:03:07]   attempt 1: valid=True label=unusable res=144 SUSPECT 
+[twitch 08:03:07] [14/48] ndt ndt 1 Mb/s 20ms rep1
+[twitch 08:03:07]   NDT spacing: waiting 84s since the last one
+[twitch 08:05:32]   attempt 1: valid=True label=- res=- 
+[twitch 08:05:32] [15/48] app twitch 0.5 Mb/s 20ms rep1
+▶ DIRECT run: twitch_0.5mbps_20ms_0pct_pfifo_cubic_solo_t15931
+  cap=0.5Mbps lat=20.0ms loss=0.0% aqm=pfifo cca=cubic dur=60s apps=['twitch']
+  • shaping ...
+  • capture on veth2 (auto-stop 105s) ...
+  • real QoE collector for ['twitch'] ...
+    · collector source overridden from /home/student/cpuc/services/orchestration/scripts/selenium_video_qoe/collect.py
+    · mounted sibling cdp_bytes.py
+    · mounted sibling inpage_log.py
+    · driving 1 browser app(s) in real Chrome inside ns1 (twitch) ...
+      [twitch] summary: 60 samples written to /out/twitch_stats.jsonl | current_time_secs range=[0.695939, 23.995304] | advanced=True | final_resolution=256x144
+  • finalising capture + downloading pcap ...
+  • pcap saved → /home/student/cpuc_tw/experiments/pramana/results/pramana_runs/twitch_0.5mbps_20ms_0pct_pfifo_cubic_solo_t15931_674fa06160/capture.pcap (7.5 MB)
+  • shaping check: avg 0.50 / cap 0.5 Mbps (-0.8%) → OK
+  • splitting capture per app ...
+    method=remote_hostname  local=['172.16.1.1']  (declared_client_ips)  95.9% of bytes attributed
+      twitch                5.51 MB
+      browser_infra         1.34 MB
+      other                 0.29 MB
+    ! browser_infra/download peaked at 0.51 Mbps (101% of the 0.5 Mbps cap) somewhere in the capture
+    ! browser_infra/upload peaked at 0.25 Mbps (51% of the 0.5 Mbps cap) somewhere in the capture
+    ✗ browser_infra/download took more than 10% of the 0.5 Mbps cap in 13 bins inside the app's measured window (worst 0.45 Mbps at t=3..93 s), limit 3 bins
+    ✗ browser_infra/upload took more than 10% of the 0.5 Mbps cap in 6 bins inside the app's measured window (worst 0.15 Mbps at t=3..20 s), limit 3 bins
+    ✗ other/download took more than 10% of the 0.5 Mbps cap in 11 bins inside the app's measured window (worst 0.25 Mbps at t=19..98 s), limit 3 bins
+    ✗ other/upload took more than 10% of the 0.5 Mbps cap in 5 bins inside the app's measured window (worst 0.22 Mbps at t=20..95 s), limit 3 bins
+    · twitch: served (dl avg 0.39 / peak 0.51 Mbps, delivered 89%)
+  • generating per-app plots ...
+    · download: merged throughput chart saved
+    · upload: merged throughput chart saved
+    · twitch download: per-app throughput chart saved
+    · twitch upload: per-app throughput chart saved
+    · twitch: qoe_summary saved
+  ! telemetry store failed for twitch: HTTPConnectionPool(host='localhost', port=8004): Max retries exceeded with url: /results (Caused by NewConnectionError('<urllib3.connection.HTTPConnection object at 0x7671eacc0f50>: Failed to establish a new connection: [Errno 111] Connection refused'))
+  ✓ saved → /home/student/cpuc_tw/experiments/pramana/results/pramana_runs/twitch_0.5mbps_20ms_0pct_pfifo_cubic_solo_t15931_674fa06160
+    pcap: capture.pcap | plots: 5 | record.json
+[twitch 08:08:29]   attempt 1: valid=True label=unusable res=144 SUSPECT 
+[twitch 08:08:29] [16/48] ndt ndt 0.5 Mb/s 20ms rep1
+[twitch 08:08:29]   NDT spacing: waiting 62s since the last one
+[twitch 08:10:34]   attempt 1: valid=True label=- res=- 
+[twitch 08:10:34] [17/48] app twitch 100 Mb/s 20ms rep2
+▶ DIRECT run: twitch_100mbps_20ms_0pct_pfifo_cubic_solo_t16246
+  cap=100.0Mbps lat=20.0ms loss=0.0% aqm=pfifo cca=cubic dur=60s apps=['twitch']
+  • shaping ...
+  • capture on veth2 (auto-stop 105s) ...
+  • real QoE collector for ['twitch'] ...
+    · collector source overridden from /home/student/cpuc/services/orchestration/scripts/selenium_video_qoe/collect.py
+    · mounted sibling cdp_bytes.py
+    · mounted sibling inpage_log.py
+    · driving 1 browser app(s) in real Chrome inside ns1 (twitch) ...
+      [twitch] summary: 60 samples written to /out/twitch_stats.jsonl | current_time_secs range=[3.469196, 57.20111] | advanced=True | final_resolution=1920x1080
+  • finalising capture + downloading pcap ...
+  • pcap saved → /home/student/cpuc_tw/experiments/pramana/results/pramana_runs/twitch_100mbps_20ms_0pct_pfifo_cubic_solo_t16246_3a986aaa28/capture.pcap (47.4 MB)
+  • shaping check: avg 5.22 / cap 100 Mbps (-94.8%) → OK
+  • splitting capture per app ...
+    method=remote_hostname  local=['172.16.1.1']  (declared_client_ips)  99.5% of bytes attributed
+      twitch               45.25 MB
+      browser_infra         1.12 MB
+      other                 0.23 MB
+    · link interference: none above budget
+    · twitch: served (dl avg 5.07 / peak 31.84 Mbps, delivered 89%)
+  • generating per-app plots ...
+    · download: merged throughput chart saved
+    · upload: merged throughput chart saved
+    · twitch download: per-app throughput chart saved
+    · twitch upload: per-app throughput chart saved
+    · twitch: qoe_summary saved
+  ! telemetry store failed for twitch: HTTPConnectionPool(host='localhost', port=8004): Max retries exceeded with url: /results (Caused by NewConnectionError('<urllib3.connection.HTTPConnection object at 0x7671ead085f0>: Failed to establish a new connection: [Errno 111] Connection refused'))
+  ✓ saved → /home/student/cpuc_tw/experiments/pramana/results/pramana_runs/twitch_100mbps_20ms_0pct_pfifo_cubic_solo_t16246_3a986aaa28
+    pcap: capture.pcap | plots: 5 | record.json
+[twitch 08:13:27]   attempt 1: valid=True label=high res=1080 
+[twitch 08:13:27] [18/48] ndt ndt 100 Mb/s 20ms rep2
+[twitch 08:13:27]   NDT spacing: waiting 64s since the last one
+[twitch 08:15:29]   attempt 1: valid=True label=- res=- 
+[twitch 08:15:29] [19/48] app twitch 25 Mb/s 20ms rep2
+▶ DIRECT run: twitch_25mbps_20ms_0pct_pfifo_cubic_solo_t15103
+  cap=25.0Mbps lat=20.0ms loss=0.0% aqm=pfifo cca=cubic dur=60s apps=['twitch']
+  • shaping ...
+  • capture on veth2 (auto-stop 105s) ...
+  • real QoE collector for ['twitch'] ...
+    · collector source overridden from /home/student/cpuc/services/orchestration/scripts/selenium_video_qoe/collect.py
+    · mounted sibling cdp_bytes.py
+    · mounted sibling inpage_log.py
+    · driving 1 browser app(s) in real Chrome inside ns1 (twitch) ...
+      [twitch] summary: 60 samples written to /out/twitch_stats.jsonl | current_time_secs range=[4.212512, 58.34815] | advanced=True | final_resolution=1920x1080
+  • finalising capture + downloading pcap ...
+  • pcap saved → /home/student/cpuc_tw/experiments/pramana/results/pramana_runs/twitch_25mbps_20ms_0pct_pfifo_cubic_solo_t15103_61d1a0ac42/capture.pcap (50.2 MB)
+  • shaping check: avg 5.32 / cap 25 Mbps (-78.7%) → OK
+  • splitting capture per app ...
+    method=remote_hostname  local=['172.16.1.1']  (declared_client_ips)  99.6% of bytes attributed
+      twitch               47.18 MB
+      browser_infra         1.14 MB
+      other                 0.21 MB
+    · link interference: none above budget
+    · twitch: served (dl avg 5.14 / peak 23.60 Mbps, delivered 89%)
+  • generating per-app plots ...
+    · download: merged throughput chart saved
+    · upload: merged throughput chart saved
+    · twitch download: per-app throughput chart saved
+    · twitch upload: per-app throughput chart saved
+    · twitch: qoe_summary saved
+  ! telemetry store failed for twitch: HTTPConnectionPool(host='localhost', port=8004): Max retries exceeded with url: /results (Caused by NewConnectionError('<urllib3.connection.HTTPConnection object at 0x7671eab9b890>: Failed to establish a new connection: [Errno 111] Connection refused'))
+  ✓ saved → /home/student/cpuc_tw/experiments/pramana/results/pramana_runs/twitch_25mbps_20ms_0pct_pfifo_cubic_solo_t15103_61d1a0ac42
+    pcap: capture.pcap | plots: 5 | record.json
+[twitch 08:18:20]   attempt 1: valid=True label=high res=1080 
+[twitch 08:18:20] [20/48] ndt ndt 25 Mb/s 20ms rep2
+[twitch 08:18:20]   NDT spacing: waiting 71s since the last one
+[twitch 08:20:31]   attempt 1: valid=True label=- res=- 
+[twitch 08:20:31] [21/48] app twitch 12.5 Mb/s 20ms rep2
+▶ DIRECT run: twitch_12.5mbps_20ms_0pct_pfifo_cubic_solo_t13206
+  cap=12.5Mbps lat=20.0ms loss=0.0% aqm=pfifo cca=cubic dur=60s apps=['twitch']
+  • shaping ...
+  • capture on veth2 (auto-stop 105s) ...
+  • real QoE collector for ['twitch'] ...
+    · collector source overridden from /home/student/cpuc/services/orchestration/scripts/selenium_video_qoe/collect.py
+    · mounted sibling cdp_bytes.py
+    · mounted sibling inpage_log.py
+    · driving 1 browser app(s) in real Chrome inside ns1 (twitch) ...
+      [twitch] summary: 60 samples written to /out/twitch_stats.jsonl | current_time_secs range=[5.215275, 59.779886] | advanced=True | final_resolution=1920x1080
+  • finalising capture + downloading pcap ...
+  • pcap saved → /home/student/cpuc_tw/experiments/pramana/results/pramana_runs/twitch_12.5mbps_20ms_0pct_pfifo_cubic_solo_t13206_8498db4403/capture.pcap (48.4 MB)
+  • shaping check: avg 4.99 / cap 12.5 Mbps (-60.1%) → OK
+  • splitting capture per app ...
+    method=remote_hostname  local=['172.16.1.1']  (declared_client_ips)  99.4% of bytes attributed
+      twitch               45.42 MB
+      browser_infra         1.11 MB
+      other                 0.28 MB
+    · link interference: none above budget
+    · twitch: served (dl avg 4.81 / peak 12.37 Mbps, delivered 90%)
+  • generating per-app plots ...
+    · download: merged throughput chart saved
+    · upload: merged throughput chart saved
+    · twitch download: per-app throughput chart saved
+    · twitch upload: per-app throughput chart saved
+    · twitch: qoe_summary saved
+  ! telemetry store failed for twitch: HTTPConnectionPool(host='localhost', port=8004): Max retries exceeded with url: /results (Caused by NewConnectionError('<urllib3.connection.HTTPConnection object at 0x7671eaaa3fe0>: Failed to establish a new connection: [Errno 111] Connection refused'))
+  ✓ saved → /home/student/cpuc_tw/experiments/pramana/results/pramana_runs/twitch_12.5mbps_20ms_0pct_pfifo_cubic_solo_t13206_8498db4403
+    pcap: capture.pcap | plots: 5 | record.json
+[twitch 08:23:20]   attempt 1: valid=True label=high res=1080 
+[twitch 08:23:20] [22/48] ndt ndt 12.5 Mb/s 20ms rep2
+[twitch 08:23:20]   NDT spacing: waiting 71s since the last one
+[twitch 08:25:31]   attempt 1: valid=True label=- res=- 
+[twitch 08:25:31] [23/48] app twitch 6.25 Mb/s 20ms rep2
+▶ DIRECT run: twitch_6.25mbps_20ms_0pct_pfifo_cubic_solo_t14987
+  cap=6.25Mbps lat=20.0ms loss=0.0% aqm=pfifo cca=cubic dur=60s apps=['twitch']
+  • shaping ...
+  • capture on veth2 (auto-stop 105s) ...
+  • real QoE collector for ['twitch'] ...
+    · collector source overridden from /home/student/cpuc/services/orchestration/scripts/selenium_video_qoe/collect.py
+    · mounted sibling cdp_bytes.py
+    · mounted sibling inpage_log.py
+    · driving 1 browser app(s) in real Chrome inside ns1 (twitch) ...
+      [twitch] summary: 60 samples written to /out/twitch_stats.jsonl | current_time_secs range=[5.924717, 64.054009] | advanced=True | final_resolution=1280x720
+  • finalising capture + downloading pcap ...
+  • pcap saved → /home/student/cpuc_tw/experiments/pramana/results/pramana_runs/twitch_6.25mbps_20ms_0pct_pfifo_cubic_solo_t14987_b3f147aefd/capture.pcap (29.1 MB)
+  • shaping check: avg 2.81 / cap 6.25 Mbps (-55.1%) → OK
+  • splitting capture per app ...
+    method=remote_hostname  local=['172.16.1.1']  (declared_client_ips)  99.2% of bytes attributed
+      twitch               26.79 MB
+      browser_infra         1.14 MB
+      other                 0.24 MB
+    ! browser_infra/download peaked at 4.54 Mbps (73% of the 6.25 Mbps cap) somewhere in the capture
+    · twitch: served (dl avg 2.69 / peak 6.25 Mbps, delivered 87%)
+  • generating per-app plots ...
+    · download: merged throughput chart saved
+    · upload: merged throughput chart saved
+    · twitch download: per-app throughput chart saved
+    · twitch upload: per-app throughput chart saved
+    · twitch: qoe_summary saved
+  ! telemetry store failed for twitch: HTTPConnectionPool(host='localhost', port=8004): Max retries exceeded with url: /results (Caused by NewConnectionError('<urllib3.connection.HTTPConnection object at 0x7671eac25bb0>: Failed to establish a new connection: [Errno 111] Connection refused'))
+  ✓ saved → /home/student/cpuc_tw/experiments/pramana/results/pramana_runs/twitch_6.25mbps_20ms_0pct_pfifo_cubic_solo_t14987_b3f147aefd
+    pcap: capture.pcap | plots: 5 | record.json
+[twitch 08:28:04]   attempt 1: valid=True label=acceptable res=1080 
+[twitch 08:28:04] [24/48] ndt ndt 6.25 Mb/s 20ms rep2
+[twitch 08:28:04]   NDT spacing: waiting 87s since the last one
+[twitch 08:30:32]   attempt 1: valid=True label=- res=- 
+[twitch 08:30:32] [25/48] app twitch 3 Mb/s 20ms rep2
+▶ DIRECT run: twitch_3mbps_20ms_0pct_pfifo_cubic_solo_t16403
+  cap=3.0Mbps lat=20.0ms loss=0.0% aqm=pfifo cca=cubic dur=60s apps=['twitch']
+  • shaping ...
+  • capture on veth2 (auto-stop 105s) ...
+  • real QoE collector for ['twitch'] ...
+    · collector source overridden from /home/student/cpuc/services/orchestration/scripts/selenium_video_qoe/collect.py
+    · mounted sibling cdp_bytes.py
+    · mounted sibling inpage_log.py
+    · driving 1 browser app(s) in real Chrome inside ns1 (twitch) ...
+      [twitch] summary: 60 samples written to /out/twitch_stats.jsonl | current_time_secs range=[9.860067, 69.045256] | advanced=True | final_resolution=852x480
+  • finalising capture + downloading pcap ...
+  • pcap saved → /home/student/cpuc_tw/experiments/pramana/results/pramana_runs/twitch_3mbps_20ms_0pct_pfifo_cubic_solo_t16403_252c8f8ad7/capture.pcap (20.3 MB)
+  • shaping check: avg 1.65 / cap 3 Mbps (-44.9%) → OK
+  • splitting capture per app ...
+    method=remote_hostname  local=['172.16.1.1']  (declared_client_ips)  98.7% of bytes attributed
+      twitch               18.21 MB
+      browser_infra         1.17 MB
+      other                 0.25 MB
+    ! browser_infra/download peaked at 3.00 Mbps (100% of the 3 Mbps cap) somewhere in the capture
+    ✗ browser_infra/download took more than 10% of the 3 Mbps cap in 3 bins inside the app's measured window (worst 2.29 Mbps at t=2..13 s), limit 3 bins
+    · twitch: served (dl avg 1.54 / peak 3.00 Mbps, delivered 89%)
+  • generating per-app plots ...
+    · download: merged throughput chart saved
+    · upload: merged throughput chart saved
+    · twitch download: per-app throughput chart saved
+    · twitch upload: per-app throughput chart saved
+    · twitch: qoe_summary saved
+  ! telemetry store failed for twitch: HTTPConnectionPool(host='localhost', port=8004): Max retries exceeded with url: /results (Caused by NewConnectionError('<urllib3.connection.HTTPConnection object at 0x7671eaea5bb0>: Failed to establish a new connection: [Errno 111] Connection refused'))
+  ✓ saved → /home/student/cpuc_tw/experiments/pramana/results/pramana_runs/twitch_3mbps_20ms_0pct_pfifo_cubic_solo_t16403_252c8f8ad7
+    pcap: capture.pcap | plots: 5 | record.json
+[twitch 08:32:59]   attempt 1: valid=True label=unusable res=480 SUSPECT 
+[twitch 08:32:59] [26/48] ndt ndt 3 Mb/s 20ms rep2
+[twitch 08:32:59]   NDT spacing: waiting 92s since the last one
+[twitch 08:35:33]   attempt 1: valid=True label=- res=- 
+[twitch 08:35:33] [27/48] app twitch 1.5 Mb/s 20ms rep2
+▶ DIRECT run: twitch_1.5mbps_20ms_0pct_pfifo_cubic_solo_t11709
+  cap=1.5Mbps lat=20.0ms loss=0.0% aqm=pfifo cca=cubic dur=60s apps=['twitch']
+  • shaping ...
+  • capture on veth2 (auto-stop 105s) ...
+  • real QoE collector for ['twitch'] ...
+    · collector source overridden from /home/student/cpuc/services/orchestration/scripts/selenium_video_qoe/collect.py
+    · mounted sibling cdp_bytes.py
+    · mounted sibling inpage_log.py
+    · driving 1 browser app(s) in real Chrome inside ns1 (twitch) ...
+      [twitch] summary: 60 samples written to /out/twitch_stats.jsonl | current_time_secs range=[25.333784, 70.907244] | advanced=True | final_resolution=852x480
+  • finalising capture + downloading pcap ...
+  • pcap saved → /home/student/cpuc_tw/experiments/pramana/results/pramana_runs/twitch_1.5mbps_20ms_0pct_pfifo_cubic_solo_t11709_655b45b05d/capture.pcap (16.3 MB)
+  • shaping check: avg 1.15 / cap 1.5 Mbps (-23.6%) → OK
+  • splitting capture per app ...
+    method=remote_hostname  local=['172.16.1.1']  (declared_client_ips)  98.0% of bytes attributed
+      twitch               14.09 MB
+      browser_infra         1.25 MB
+      other                 0.31 MB
+      off_link              0.00 MB
+    ! browser_infra/download peaked at 1.50 Mbps (100% of the 1.5 Mbps cap) somewhere in the capture
+    ✗ browser_infra/download took more than 10% of the 1.5 Mbps cap in 6 bins inside the app's measured window (worst 1.34 Mbps at t=3..43 s), limit 3 bins
+    · twitch: served (dl avg 1.04 / peak 1.51 Mbps, delivered 97%)
+  • generating per-app plots ...
+    · download: merged throughput chart saved
+    · upload: merged throughput chart saved
+    · twitch download: per-app throughput chart saved
+    · twitch upload: per-app throughput chart saved
+    · twitch: qoe_summary saved
+  ! telemetry store failed for twitch: HTTPConnectionPool(host='localhost', port=8004): Max retries exceeded with url: /results (Caused by NewConnectionError('<urllib3.connection.HTTPConnection object at 0x7671e9a57920>: Failed to establish a new connection: [Errno 111] Connection refused'))
+  ✓ saved → /home/student/cpuc_tw/experiments/pramana/results/pramana_runs/twitch_1.5mbps_20ms_0pct_pfifo_cubic_solo_t11709_655b45b05d
+    pcap: capture.pcap | plots: 5 | record.json
+[twitch 08:38:09]   attempt 1: valid=True label=unusable res=144 SUSPECT 
+[twitch 08:38:09] [28/48] ndt ndt 1.5 Mb/s 20ms rep2
+[twitch 08:38:09]   NDT spacing: waiting 82s since the last one
+[twitch 08:40:32]   attempt 1: valid=True label=- res=- 
+[twitch 08:40:32] [29/48] app twitch 1 Mb/s 20ms rep2
+▶ DIRECT run: twitch_1mbps_20ms_0pct_pfifo_cubic_solo_t16152
+  cap=1.0Mbps lat=20.0ms loss=0.0% aqm=pfifo cca=cubic dur=60s apps=['twitch']
+  • shaping ...
+  • capture on veth2 (auto-stop 105s) ...
+  • real QoE collector for ['twitch'] ...
+    · collector source overridden from /home/student/cpuc/services/orchestration/scripts/selenium_video_qoe/collect.py
+    · mounted sibling cdp_bytes.py
+    · mounted sibling inpage_log.py
+    · driving 1 browser app(s) in real Chrome inside ns1 (twitch) ...
+      [twitch] summary: 60 samples written to /out/twitch_stats.jsonl | current_time_secs range=[12.302258, 71.579894] | advanced=True | final_resolution=640x360
+  • finalising capture + downloading pcap ...
+  • pcap saved → /home/student/cpuc_tw/experiments/pramana/results/pramana_runs/twitch_1mbps_20ms_0pct_pfifo_cubic_solo_t16152_9aaed324dc/capture.pcap (12.3 MB)
+  • shaping check: avg 0.85 / cap 1 Mbps (-14.9%) → OK
+  • splitting capture per app ...
+    method=remote_hostname  local=['172.16.1.1']  (declared_client_ips)  96.8% of bytes attributed
+      twitch               10.16 MB
+      browser_infra         1.26 MB
+      other                 0.38 MB
+    ! browser_infra/download peaked at 1.01 Mbps (101% of the 1 Mbps cap) somewhere in the capture
+    ! other/upload peaked at 0.63 Mbps (63% of the 1 Mbps cap) somewhere in the capture
+    ✗ browser_infra/download took more than 10% of the 1 Mbps cap in 9 bins inside the app's measured window (worst 0.94 Mbps at t=3..62 s), limit 3 bins
+    ✗ other/download took more than 10% of the 1 Mbps cap in 6 bins inside the app's measured window (worst 0.23 Mbps at t=41..75 s), limit 3 bins
+    ✗ other/upload took more than 10% of the 1 Mbps cap in 4 bins inside the app's measured window (worst 0.63 Mbps at t=43..76 s), limit 3 bins
+    · twitch: served (dl avg 0.75 / peak 1.02 Mbps, delivered 96%)
+  • generating per-app plots ...
+    · download: merged throughput chart saved
+    · upload: merged throughput chart saved
+    · twitch download: per-app throughput chart saved
+    · twitch upload: per-app throughput chart saved
+    · twitch: qoe_summary saved
+  ! telemetry store failed for twitch: HTTPConnectionPool(host='localhost', port=8004): Max retries exceeded with url: /results (Caused by NewConnectionError('<urllib3.connection.HTTPConnection object at 0x7671ead8d700>: Failed to establish a new connection: [Errno 111] Connection refused'))
+  ✓ saved → /home/student/cpuc_tw/experiments/pramana/results/pramana_runs/twitch_1mbps_20ms_0pct_pfifo_cubic_solo_t16152_9aaed324dc
+    pcap: capture.pcap | plots: 5 | record.json
+[twitch 08:43:09]   attempt 1: valid=True label=unusable res=144 SUSPECT 
+[twitch 08:43:09] [30/48] ndt ndt 1 Mb/s 20ms rep2
+[twitch 08:43:09]   NDT spacing: waiting 82s since the last one
+[twitch 08:45:32]   attempt 1: valid=True label=- res=- 
+[twitch 08:45:32] [31/48] app twitch 0.5 Mb/s 20ms rep2
+▶ DIRECT run: twitch_0.5mbps_20ms_0pct_pfifo_cubic_solo_t15931
+  cap=0.5Mbps lat=20.0ms loss=0.0% aqm=pfifo cca=cubic dur=60s apps=['twitch']
+  • shaping ...
+  • capture on veth2 (auto-stop 105s) ...
+  • real QoE collector for ['twitch'] ...
+    · collector source overridden from /home/student/cpuc/services/orchestration/scripts/selenium_video_qoe/collect.py
+    · mounted sibling cdp_bytes.py
+    · mounted sibling inpage_log.py
+    · driving 1 browser app(s) in real Chrome inside ns1 (twitch) ...
+      [twitch] summary: 60 samples written to /out/twitch_stats.jsonl | current_time_secs range=[0.490567, 34.173515] | advanced=True | final_resolution=256x144
+  • finalising capture + downloading pcap ...
+  • pcap saved → /home/student/cpuc_tw/experiments/pramana/results/pramana_runs/twitch_0.5mbps_20ms_0pct_pfifo_cubic_solo_t15931_d250571dde/capture.pcap (7.5 MB)
+  • shaping check: avg 0.50 / cap 0.5 Mbps (-0.6%) → OK
+  • splitting capture per app ...
+    method=remote_hostname  local=['172.16.1.1']  (declared_client_ips)  96.2% of bytes attributed
+      twitch                5.51 MB
+      browser_infra         1.34 MB
+      other                 0.27 MB
+    ! browser_infra/download peaked at 0.51 Mbps (102% of the 0.5 Mbps cap) somewhere in the capture
+    ! browser_infra/upload peaked at 0.26 Mbps (51% of the 0.5 Mbps cap) somewhere in the capture
+    ✗ browser_infra/download took more than 10% of the 0.5 Mbps cap in 11 bins inside the app's measured window (worst 0.45 Mbps at t=3..91 s), limit 3 bins
+    ✗ browser_infra/upload took more than 10% of the 0.5 Mbps cap in 3 bins inside the app's measured window (worst 0.13 Mbps at t=3..19 s), limit 3 bins
+    ✗ other/download took more than 10% of the 0.5 Mbps cap in 8 bins inside the app's measured window (worst 0.21 Mbps at t=18..99 s), limit 3 bins
+    ✗ other/upload took more than 10% of the 0.5 Mbps cap in 6 bins inside the app's measured window (worst 0.12 Mbps at t=19..92 s), limit 3 bins
+    · twitch: served (dl avg 0.39 / peak 0.51 Mbps, delivered 88%)
+  • generating per-app plots ...
+    · download: merged throughput chart saved
+    · upload: merged throughput chart saved
+    · twitch download: per-app throughput chart saved
+    · twitch upload: per-app throughput chart saved
+    · twitch: qoe_summary saved
+  ! telemetry store failed for twitch: HTTPConnectionPool(host='localhost', port=8004): Max retries exceeded with url: /results (Caused by NewConnectionError('<urllib3.connection.HTTPConnection object at 0x7671ead30da0>: Failed to establish a new connection: [Errno 111] Connection refused'))
+  ✓ saved → /home/student/cpuc_tw/experiments/pramana/results/pramana_runs/twitch_0.5mbps_20ms_0pct_pfifo_cubic_solo_t15931_d250571dde
+    pcap: capture.pcap | plots: 5 | record.json
+[twitch 08:48:42]   attempt 1: valid=True label=unusable res=144 SUSPECT 
+[twitch 08:48:42] [32/48] ndt ndt 0.5 Mb/s 20ms rep2
+[twitch 08:48:42]   NDT spacing: waiting 49s since the last one
+[twitch 08:50:33]   attempt 1: valid=True label=- res=- 
+[twitch 08:50:33] [33/48] app twitch 100 Mb/s 20ms rep3
+▶ DIRECT run: twitch_100mbps_20ms_0pct_pfifo_cubic_solo_t16246
+  cap=100.0Mbps lat=20.0ms loss=0.0% aqm=pfifo cca=cubic dur=60s apps=['twitch']
+  • shaping ...
+  • capture on veth2 (auto-stop 105s) ...
+  • real QoE collector for ['twitch'] ...
+    · collector source overridden from /home/student/cpuc/services/orchestration/scripts/selenium_video_qoe/collect.py
+    · mounted sibling cdp_bytes.py
+    · mounted sibling inpage_log.py
+    · driving 1 browser app(s) in real Chrome inside ns1 (twitch) ...
+      [twitch] summary: 60 samples written to /out/twitch_stats.jsonl | current_time_secs range=[3.152468, 57.897026] | advanced=True | final_resolution=1920x1080
+  • finalising capture + downloading pcap ...
+  • pcap saved → /home/student/cpuc_tw/experiments/pramana/results/pramana_runs/twitch_100mbps_20ms_0pct_pfifo_cubic_solo_t16246_ea0a1297bf/capture.pcap (50.9 MB)
+  • shaping check: avg 5.30 / cap 100 Mbps (-94.7%) → OK
+  • splitting capture per app ...
+    method=remote_hostname  local=['172.16.1.1']  (declared_client_ips)  99.6% of bytes attributed
+      twitch               48.84 MB
+      browser_infra         1.09 MB
+      other                 0.20 MB
+    · link interference: none above budget
+    · twitch: served (dl avg 5.48 / peak 25.06 Mbps, delivered 87%)
+  • generating per-app plots ...
+    · download: merged throughput chart saved
+    · upload: merged throughput chart saved
+    · twitch download: per-app throughput chart saved
+    · twitch upload: per-app throughput chart saved
+    · twitch: qoe_summary saved
+  ! telemetry store failed for twitch: HTTPConnectionPool(host='localhost', port=8004): Max retries exceeded with url: /results (Caused by NewConnectionError('<urllib3.connection.HTTPConnection object at 0x7671eab98fb0>: Failed to establish a new connection: [Errno 111] Connection refused'))
+  ✓ saved → /home/student/cpuc_tw/experiments/pramana/results/pramana_runs/twitch_100mbps_20ms_0pct_pfifo_cubic_solo_t16246_ea0a1297bf
+    pcap: capture.pcap | plots: 5 | record.json
+[twitch 08:53:29]   attempt 1: valid=True label=high res=1080 
+[twitch 08:53:29] [34/48] ndt ndt 100 Mb/s 20ms rep3
+[twitch 08:53:29]   NDT spacing: waiting 62s since the last one
+[twitch 08:55:29]   attempt 1: valid=True label=- res=- 
+[twitch 08:55:29] [35/48] app twitch 25 Mb/s 20ms rep3
+▶ DIRECT run: twitch_25mbps_20ms_0pct_pfifo_cubic_solo_t15103
+  cap=25.0Mbps lat=20.0ms loss=0.0% aqm=pfifo cca=cubic dur=60s apps=['twitch']
+  • shaping ...
+  • capture on veth2 (auto-stop 105s) ...
+  • real QoE collector for ['twitch'] ...
+    · collector source overridden from /home/student/cpuc/services/orchestration/scripts/selenium_video_qoe/collect.py
+    · mounted sibling cdp_bytes.py
+    · mounted sibling inpage_log.py
+    · driving 1 browser app(s) in real Chrome inside ns1 (twitch) ...
+      [twitch] summary: 60 samples written to /out/twitch_stats.jsonl | current_time_secs range=[4.563167, 58.774346] | advanced=True | final_resolution=1920x1080
+  • finalising capture + downloading pcap ...
+  • pcap saved → /home/student/cpuc_tw/experiments/pramana/results/pramana_runs/twitch_25mbps_20ms_0pct_pfifo_cubic_solo_t15103_41948f94cc/capture.pcap (52.6 MB)
+  • shaping check: avg 5.55 / cap 25 Mbps (-77.8%) → OK
+  • splitting capture per app ...
+    method=remote_hostname  local=['172.16.1.1']  (declared_client_ips)  99.7% of bytes attributed
+      twitch               49.59 MB
+      browser_infra         1.11 MB
+      other                 0.17 MB
+    · link interference: none above budget
+    · twitch: served (dl avg 5.41 / peak 22.69 Mbps, delivered 87%)
+  • generating per-app plots ...
+    · download: merged throughput chart saved
+    · upload: merged throughput chart saved
+    · twitch download: per-app throughput chart saved
+    · twitch upload: per-app throughput chart saved
+    · twitch: qoe_summary saved
+  ! telemetry store failed for twitch: HTTPConnectionPool(host='localhost', port=8004): Max retries exceeded with url: /results (Caused by NewConnectionError('<urllib3.connection.HTTPConnection object at 0x7671eaaf6360>: Failed to establish a new connection: [Errno 111] Connection refused'))
+  ✓ saved → /home/student/cpuc_tw/experiments/pramana/results/pramana_runs/twitch_25mbps_20ms_0pct_pfifo_cubic_solo_t15103_41948f94cc
+    pcap: capture.pcap | plots: 5 | record.json
+[twitch 08:58:22]   attempt 1: valid=True label=high res=1080 
+[twitch 08:58:22] [36/48] ndt ndt 25 Mb/s 20ms rep3
+[twitch 08:58:22]   NDT spacing: waiting 68s since the last one
+[twitch 09:00:30]   attempt 1: valid=True label=- res=- 
+[twitch 09:00:30] [37/48] app twitch 12.5 Mb/s 20ms rep3
+▶ DIRECT run: twitch_12.5mbps_20ms_0pct_pfifo_cubic_solo_t13206
+  cap=12.5Mbps lat=20.0ms loss=0.0% aqm=pfifo cca=cubic dur=60s apps=['twitch']
+  • shaping ...
+  • capture on veth2 (auto-stop 105s) ...
+  • real QoE collector for ['twitch'] ...
+    · collector source overridden from /home/student/cpuc/services/orchestration/scripts/selenium_video_qoe/collect.py
+    · mounted sibling cdp_bytes.py
+    · mounted sibling inpage_log.py
+    · driving 1 browser app(s) in real Chrome inside ns1 (twitch) ...
+      [twitch] summary: 60 samples written to /out/twitch_stats.jsonl | current_time_secs range=[5.095797, 59.959606] | advanced=True | final_resolution=1920x1080
+  • finalising capture + downloading pcap ...
+  • pcap saved → /home/student/cpuc_tw/experiments/pramana/results/pramana_runs/twitch_12.5mbps_20ms_0pct_pfifo_cubic_solo_t13206_0d2355f0ef/capture.pcap (49.3 MB)
+  • shaping check: avg 4.90 / cap 12.5 Mbps (-60.8%) → OK
+  • splitting capture per app ...
+    method=remote_hostname  local=['172.16.1.1']  (declared_client_ips)  99.5% of bytes attributed
+      twitch               46.37 MB
+      browser_infra         1.13 MB
+      other                 0.25 MB
+    · link interference: none above budget
+    · twitch: served (dl avg 4.98 / peak 12.27 Mbps, delivered 93%)
+  • generating per-app plots ...
+    · download: merged throughput chart saved
+    · upload: merged throughput chart saved
+    · twitch download: per-app throughput chart saved
+    · twitch upload: per-app throughput chart saved
+    · twitch: qoe_summary saved
+  ! telemetry store failed for twitch: HTTPConnectionPool(host='localhost', port=8004): Max retries exceeded with url: /results (Caused by NewConnectionError('<urllib3.connection.HTTPConnection object at 0x7671eaab8110>: Failed to establish a new connection: [Errno 111] Connection refused'))
+  ✓ saved → /home/student/cpuc_tw/experiments/pramana/results/pramana_runs/twitch_12.5mbps_20ms_0pct_pfifo_cubic_solo_t13206_0d2355f0ef
+    pcap: capture.pcap | plots: 5 | record.json
+[twitch 09:03:22]   attempt 1: valid=True label=high res=1080 
+[twitch 09:03:22] [38/48] ndt ndt 12.5 Mb/s 20ms rep3
+[twitch 09:03:22]   NDT spacing: waiting 69s since the last one
+[twitch 09:05:31]   attempt 1: valid=True label=- res=- 
+[twitch 09:05:31] [39/48] app twitch 6.25 Mb/s 20ms rep3
+▶ DIRECT run: twitch_6.25mbps_20ms_0pct_pfifo_cubic_solo_t14987
+  cap=6.25Mbps lat=20.0ms loss=0.0% aqm=pfifo cca=cubic dur=60s apps=['twitch']
+  • shaping ...
+  • capture on veth2 (auto-stop 105s) ...
+  • real QoE collector for ['twitch'] ...
+    · collector source overridden from /home/student/cpuc/services/orchestration/scripts/selenium_video_qoe/collect.py
+    · mounted sibling cdp_bytes.py
+    · mounted sibling inpage_log.py
+    · driving 1 browser app(s) in real Chrome inside ns1 (twitch) ...
+      [twitch] summary: 60 samples written to /out/twitch_stats.jsonl | current_time_secs range=[5.590417, 63.629104] | advanced=True | final_resolution=1280x720
+  • finalising capture + downloading pcap ...
+  • pcap saved → /home/student/cpuc_tw/experiments/pramana/results/pramana_runs/twitch_6.25mbps_20ms_0pct_pfifo_cubic_solo_t14987_4af9d7e15b/capture.pcap (29.1 MB)
+  • shaping check: avg 2.79 / cap 6.25 Mbps (-55.4%) → OK
+  • splitting capture per app ...
+    method=remote_hostname  local=['172.16.1.1']  (declared_client_ips)  99.3% of bytes attributed
+      twitch               26.74 MB
+      browser_infra         1.14 MB
+      other                 0.21 MB
+    ! browser_infra/download peaked at 4.61 Mbps (74% of the 6.25 Mbps cap) somewhere in the capture
+    · twitch: served (dl avg 2.65 / peak 6.26 Mbps, delivered 96%)
+  • generating per-app plots ...
+    · download: merged throughput chart saved
+    · upload: merged throughput chart saved
+    · twitch download: per-app throughput chart saved
+    · twitch upload: per-app throughput chart saved
+    · twitch: qoe_summary saved
+  ! telemetry store failed for twitch: HTTPConnectionPool(host='localhost', port=8004): Max retries exceeded with url: /results (Caused by NewConnectionError('<urllib3.connection.HTTPConnection object at 0x7671e9aaaa80>: Failed to establish a new connection: [Errno 111] Connection refused'))
+  ✓ saved → /home/student/cpuc_tw/experiments/pramana/results/pramana_runs/twitch_6.25mbps_20ms_0pct_pfifo_cubic_solo_t14987_4af9d7e15b
+    pcap: capture.pcap | plots: 5 | record.json
+[twitch 09:08:05]   attempt 1: valid=True label=acceptable res=1080 
+[twitch 09:08:05] [40/48] ndt ndt 6.25 Mb/s 20ms rep3
+[twitch 09:08:05]   NDT spacing: waiting 86s since the last one
+[twitch 09:10:32]   attempt 1: valid=True label=- res=- 
+[twitch 09:10:32] [41/48] app twitch 3 Mb/s 20ms rep3
+▶ DIRECT run: twitch_3mbps_20ms_0pct_pfifo_cubic_solo_t16403
+  cap=3.0Mbps lat=20.0ms loss=0.0% aqm=pfifo cca=cubic dur=60s apps=['twitch']
+  • shaping ...
+  • capture on veth2 (auto-stop 105s) ...
+  • real QoE collector for ['twitch'] ...
+    · collector source overridden from /home/student/cpuc/services/orchestration/scripts/selenium_video_qoe/collect.py
+    · mounted sibling cdp_bytes.py
+    · mounted sibling inpage_log.py
+    · driving 1 browser app(s) in real Chrome inside ns1 (twitch) ...
+      [twitch] summary: 60 samples written to /out/twitch_stats.jsonl | current_time_secs range=[14.590611, 70.356411] | advanced=True | final_resolution=1920x1080
+  • finalising capture + downloading pcap ...
+  • pcap saved → /home/student/cpuc_tw/experiments/pramana/results/pramana_runs/twitch_3mbps_20ms_0pct_pfifo_cubic_solo_t16403_10053ea33b/capture.pcap (23.2 MB)
+  • shaping check: avg 1.84 / cap 3 Mbps (-38.6%) → OK
+  • splitting capture per app ...
+    method=remote_hostname  local=['172.16.1.1']  (declared_client_ips)  99.0% of bytes attributed
+      twitch               20.88 MB
+      browser_infra         1.25 MB
+      other                 0.23 MB
+      off_link              0.00 MB
+    ! browser_infra/download peaked at 2.38 Mbps (79% of the 3 Mbps cap) somewhere in the capture
+    ✗ browser_infra/download took more than 10% of the 3 Mbps cap in 5 bins inside the app's measured window (worst 2.38 Mbps at t=1..16 s), limit 3 bins
+    · twitch: served (dl avg 1.73 / peak 3.00 Mbps, delivered 96%)
+  • generating per-app plots ...
+    · download: merged throughput chart saved
+    · upload: merged throughput chart saved
+    · twitch download: per-app throughput chart saved
+    · twitch upload: per-app throughput chart saved
+    · twitch: qoe_summary saved
+  ! telemetry store failed for twitch: HTTPConnectionPool(host='localhost', port=8004): Max retries exceeded with url: /results (Caused by NewConnectionError('<urllib3.connection.HTTPConnection object at 0x7671eaa51820>: Failed to establish a new connection: [Errno 111] Connection refused'))
+  ✓ saved → /home/student/cpuc_tw/experiments/pramana/results/pramana_runs/twitch_3mbps_20ms_0pct_pfifo_cubic_solo_t16403_10053ea33b
+    pcap: capture.pcap | plots: 5 | record.json
+[twitch 09:13:00]   attempt 1: valid=True label=unusable res=480 SUSPECT 
+[twitch 09:13:00] [42/48] ndt ndt 3 Mb/s 20ms rep3
+[twitch 09:13:00]   NDT spacing: waiting 91s since the last one
+[twitch 09:15:33]   attempt 1: valid=True label=- res=- 
+[twitch 09:15:33] [43/48] app twitch 1.5 Mb/s 20ms rep3
+▶ DIRECT run: twitch_1.5mbps_20ms_0pct_pfifo_cubic_solo_t11709
+  cap=1.5Mbps lat=20.0ms loss=0.0% aqm=pfifo cca=cubic dur=60s apps=['twitch']
+  • shaping ...
+  • capture on veth2 (auto-stop 105s) ...
+  • real QoE collector for ['twitch'] ...
+    · collector source overridden from /home/student/cpuc/services/orchestration/scripts/selenium_video_qoe/collect.py
+    · mounted sibling cdp_bytes.py
+    · mounted sibling inpage_log.py
+    · driving 1 browser app(s) in real Chrome inside ns1 (twitch) ...
+      [twitch] summary: 60 samples written to /out/twitch_stats.jsonl | current_time_secs range=[25.392992, 82.868419] | advanced=True | final_resolution=640x360
+  • finalising capture + downloading pcap ...
+  • pcap saved → /home/student/cpuc_tw/experiments/pramana/results/pramana_runs/twitch_1.5mbps_20ms_0pct_pfifo_cubic_solo_t11709_4158b0f823/capture.pcap (16.4 MB)
+  • shaping check: avg 1.14 / cap 1.5 Mbps (-23.8%) → OK
+  • splitting capture per app ...
+    method=remote_hostname  local=['172.16.1.1']  (declared_client_ips)  97.8% of bytes attributed
+      twitch               14.13 MB
+      browser_infra         1.26 MB
+      other                 0.35 MB
+    ! browser_infra/download peaked at 1.49 Mbps (100% of the 1.5 Mbps cap) somewhere in the capture
+    ✗ browser_infra/download took more than 10% of the 1.5 Mbps cap in 6 bins inside the app's measured window (worst 1.43 Mbps at t=3..43 s), limit 3 bins
+    · twitch: served (dl avg 1.04 / peak 1.51 Mbps, delivered 95%)
+  • generating per-app plots ...
+    · download: merged throughput chart saved
+    · upload: merged throughput chart saved
+    · twitch download: per-app throughput chart saved
+    · twitch upload: per-app throughput chart saved
+    · twitch: qoe_summary saved
+  ! telemetry store failed for twitch: HTTPConnectionPool(host='localhost', port=8004): Max retries exceeded with url: /results (Caused by NewConnectionError('<urllib3.connection.HTTPConnection object at 0x7671eaaa23c0>: Failed to establish a new connection: [Errno 111] Connection refused'))
+  ✓ saved → /home/student/cpuc_tw/experiments/pramana/results/pramana_runs/twitch_1.5mbps_20ms_0pct_pfifo_cubic_solo_t11709_4158b0f823
+    pcap: capture.pcap | plots: 5 | record.json
+[twitch 09:18:09]   attempt 1: valid=True label=unusable res=144 SUSPECT 
+[twitch 09:18:09] [44/48] ndt ndt 1.5 Mb/s 20ms rep3
+[twitch 09:18:09]   NDT spacing: waiting 82s since the last one
+[twitch 09:20:31]   attempt 1: valid=True label=- res=- 
+[twitch 09:20:31] [45/48] app twitch 1 Mb/s 20ms rep3
+▶ DIRECT run: twitch_1mbps_20ms_0pct_pfifo_cubic_solo_t16152
+  cap=1.0Mbps lat=20.0ms loss=0.0% aqm=pfifo cca=cubic dur=60s apps=['twitch']
+  • shaping ...
+  • capture on veth2 (auto-stop 105s) ...
+  • real QoE collector for ['twitch'] ...
+    · collector source overridden from /home/student/cpuc/services/orchestration/scripts/selenium_video_qoe/collect.py
+    · mounted sibling cdp_bytes.py
+    · mounted sibling inpage_log.py
+    · driving 1 browser app(s) in real Chrome inside ns1 (twitch) ...
+      [twitch] summary: 60 samples written to /out/twitch_stats.jsonl | current_time_secs range=[9.974321, 69.168205] | advanced=True | final_resolution=640x360
+  • finalising capture + downloading pcap ...
+  • pcap saved → /home/student/cpuc_tw/experiments/pramana/results/pramana_runs/twitch_1mbps_20ms_0pct_pfifo_cubic_solo_t16152_516543d2f6/capture.pcap (12.5 MB)
+  • shaping check: avg 0.86 / cap 1 Mbps (-13.8%) → OK
+  • splitting capture per app ...
+    method=remote_hostname  local=['172.16.1.1']  (declared_client_ips)  97.0% of bytes attributed
+      twitch               10.34 MB
+      browser_infra         1.27 MB
+      other                 0.36 MB
+    ! browser_infra/download peaked at 1.01 Mbps (101% of the 1 Mbps cap) somewhere in the capture
+    ! other/upload peaked at 0.63 Mbps (63% of the 1 Mbps cap) somewhere in the capture
+    ✗ browser_infra/download took more than 10% of the 1 Mbps cap in 9 bins inside the app's measured window (worst 0.94 Mbps at t=2..65 s), limit 3 bins
+    ✗ browser_infra/upload took more than 10% of the 1 Mbps cap in 4 bins inside the app's measured window (worst 0.27 Mbps at t=2..10 s), limit 3 bins
+    ✗ other/download took more than 10% of the 1 Mbps cap in 5 bins inside the app's measured window (worst 0.26 Mbps at t=43..67 s), limit 3 bins
+    ✗ other/upload took more than 10% of the 1 Mbps cap in 3 bins inside the app's measured window (worst 0.63 Mbps at t=43..57 s), limit 3 bins
+    · twitch: served (dl avg 0.76 / peak 1.01 Mbps, delivered 97%)
+  • generating per-app plots ...
+    · download: merged throughput chart saved
+    · upload: merged throughput chart saved
+    · twitch download: per-app throughput chart saved
+    · twitch upload: per-app throughput chart saved
+    · twitch: qoe_summary saved
+  ! telemetry store failed for twitch: HTTPConnectionPool(host='localhost', port=8004): Max retries exceeded with url: /results (Caused by NewConnectionError('<urllib3.connection.HTTPConnection object at 0x7671ead9ef60>: Failed to establish a new connection: [Errno 111] Connection refused'))
+  ✓ saved → /home/student/cpuc_tw/experiments/pramana/results/pramana_runs/twitch_1mbps_20ms_0pct_pfifo_cubic_solo_t16152_516543d2f6
+    pcap: capture.pcap | plots: 5 | record.json
+[twitch 09:23:06]   attempt 1: valid=True label=unusable res=144 SUSPECT 
+[twitch 09:23:06] [46/48] ndt ndt 1 Mb/s 20ms rep3
+[twitch 09:23:06]   NDT spacing: waiting 85s since the last one
+[twitch 09:25:32]   attempt 1: valid=True label=- res=- 
+[twitch 09:25:32] [47/48] app twitch 0.5 Mb/s 20ms rep3
+▶ DIRECT run: twitch_0.5mbps_20ms_0pct_pfifo_cubic_solo_t15931
+  cap=0.5Mbps lat=20.0ms loss=0.0% aqm=pfifo cca=cubic dur=60s apps=['twitch']
+  • shaping ...
+  • capture on veth2 (auto-stop 105s) ...
+  • real QoE collector for ['twitch'] ...
+    · collector source overridden from /home/student/cpuc/services/orchestration/scripts/selenium_video_qoe/collect.py
+    · mounted sibling cdp_bytes.py
+    · mounted sibling inpage_log.py
+    · driving 1 browser app(s) in real Chrome inside ns1 (twitch) ...
+      [twitch] summary: 60 samples written to /out/twitch_stats.jsonl | current_time_secs range=[1.006852, 35.527999] | advanced=True | final_resolution=256x144
+  • finalising capture + downloading pcap ...
+  • pcap saved → /home/student/cpuc_tw/experiments/pramana/results/pramana_runs/twitch_0.5mbps_20ms_0pct_pfifo_cubic_solo_t15931_806e846f20/capture.pcap (7.5 MB)
+  • shaping check: avg 0.50 / cap 0.5 Mbps (-0.6%) → OK
+  • splitting capture per app ...
+    method=remote_hostname  local=['172.16.1.1']  (declared_client_ips)  96.2% of bytes attributed
+      twitch                5.54 MB
+      browser_infra         1.30 MB
+      other                 0.27 MB
+    ! browser_infra/download peaked at 0.51 Mbps (102% of the 0.5 Mbps cap) somewhere in the capture
+    ✗ browser_infra/download took more than 10% of the 0.5 Mbps cap in 7 bins inside the app's measured window (worst 0.36 Mbps at t=14..67 s), limit 3 bins
+    ✗ browser_infra/upload took more than 10% of the 0.5 Mbps cap in 3 bins inside the app's measured window (worst 0.17 Mbps at t=14..18 s), limit 3 bins
+    ✗ other/download took more than 10% of the 0.5 Mbps cap in 11 bins inside the app's measured window (worst 0.22 Mbps at t=14..99 s), limit 3 bins
+    ✗ other/upload took more than 10% of the 0.5 Mbps cap in 7 bins inside the app's measured window (worst 0.12 Mbps at t=14..97 s), limit 3 bins
+    · twitch: served (dl avg 0.40 / peak 0.51 Mbps, delivered 86%)
+  • generating per-app plots ...
+    · download: merged throughput chart saved
+    · upload: merged throughput chart saved
+    · twitch download: per-app throughput chart saved
+    · twitch upload: per-app throughput chart saved
+    · twitch: qoe_summary saved
+  ! telemetry store failed for twitch: HTTPConnectionPool(host='localhost', port=8004): Max retries exceeded with url: /results (Caused by NewConnectionError('<urllib3.connection.HTTPConnection object at 0x7671e9a57f50>: Failed to establish a new connection: [Errno 111] Connection refused'))
+  ✓ saved → /home/student/cpuc_tw/experiments/pramana/results/pramana_runs/twitch_0.5mbps_20ms_0pct_pfifo_cubic_solo_t15931_806e846f20
+    pcap: capture.pcap | plots: 5 | record.json
+[twitch 09:28:41]   attempt 1: valid=True label=unusable res=144 SUSPECT 
+[twitch 09:28:41] === ALL 24 TWITCH RUNS DONE ===
+[twitch 09:28:41] [48/48] ndt ndt 0.5 Mb/s 20ms rep3
+[twitch 09:28:41]   NDT spacing: waiting 49s since the last one
+[twitch 09:30:33]   attempt 1: valid=True label=- res=- 
+[twitch 09:30:33] === TWITCH DONE: {"mode": "TWITCH", "reps": 3, "rtt_ms": 20.0, "channel": "lofigirl", "source": {"source_url": "https://www.twitch.tv/lofigirl", "source_renditions": "1080,720,480,360,160", "source_max_rendition_p": 1080, "source_has_1080p_plus": true, "source_transcode_count": 4, "source_probed_utc": "2026-11-11T07:31:42Z"}, "elapsed_s": 7131.8, "total": 48, "valid": 48, "invalid": 0, "suspect": 11, "flagged": []

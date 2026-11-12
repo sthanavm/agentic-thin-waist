@@ -6,12 +6,42 @@ we want to keep identical to the published dataset:
 
   * HTB rate limiting with a `pfifo` leaf, applied per direction -- `veth2`
     carries download, `veth4` upload.
-  * netem delay split HALF PER DIRECTION, so the two halves sum to the target
-    RTT rather than doubling it. Egress is delayed on `veth3` inside ns2;
-    ingress is redirected to an `ifb0` and delayed there, because netem cannot
-    delay ingress in place.
+  * A single netem qdisc carrying the configured delay.
 
-Three things it does not have, added here:
+NOT carried over, although the sentence describing it survived here for
+several studies: the reference implementation splits netem delay HALF PER
+DIRECTION, redirecting ingress to an `ifb0` so the two halves sum to the
+target RTT. **This harness does not do that, and never did.** The whole
+configured figure is applied once, on `ns2:veth3`, and the live layout on vm4
+says so:
+
+    ns2:veth3  qdisc netem 814c: root limit 1000 delay 1ms
+    ns1:veth1  qdisc noqueue 0: root
+    ifb0       Cannot find device "ifb0"
+
+1 ms configured measured 1.13 ms RTT, not 2 ms. `ns2:veth3`'s egress is the
+DOWNLOAD path -- counted through the netem itself rather than inferred from
+the interface name: a 6 s bulk download put 149,310 packets / 226.0 MB through
+it against 3,334 / 0.2 MB for a 6 s upload. So the single delay sits on the
+downstream path, and an UPSTREAM delay would need a new qdisc on `ns1:veth1`,
+which is `noqueue` -- the same thing `netns.apply_loss()` already does for
+upload loss. `conditions.latency_for_platform()` has always documented the
+one-way behaviour; this docstring contradicted it in the same package.
+
+The worker can already put delay on the other interface -- `/shape` takes
+`latency_location` and maps it (substrate-worker `main.py:682`):
+
+    "downstream" -> ns1:veth1      "upstream" -> ns2:veth3      "both" -> both
+
+Those two labels are the reverse of the traffic direction they produce, so
+read them as node positions, not as directions: `pramana_helpers.py:787`
+hard-codes `"upstream"`, which is `ns2:veth3`, which is the DOWNLOAD path.
+Asking for `"downstream"` delays uploads. And `"both"` applies the FULL
+`latency_ms` to each interface rather than half to each, so it doubles the RTT
+instead of splitting it -- which is the one way the half-per-direction
+sentence above could still mislead someone acting on it.
+
+Three things the reference implementation does not have, added here:
 
   1. `tc netem loss`, in BOTH directions. Stage 1 runs every corner twice, once
      clean and once at IQB's loss rate for that corner.

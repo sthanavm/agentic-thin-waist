@@ -154,6 +154,8 @@ def drive(
     duration_s: int,
     out_dir: str,
     app_url: Optional[str] = None,
+    force_quality: Optional[str] = None,
+    block_codecs: Optional[list[str]] = None,
 ) -> AppRunResult:
     """One app run in `condition`, returning what the guard and labeller need.
 
@@ -161,6 +163,17 @@ def drive(
     `pramana_helpers.APP_REGISTRY[app]["url"]`. Passed explicitly (e.g. by
     vimeo.py) so every row's record carries exactly what was played rather
     than relying on a registry default a reader of the CSV cannot see.
+
+    `force_quality` and `block_codecs` are DIAGNOSTIC levers and default to
+    None, which is byte-for-byte the behaviour every collected row was taken
+    under: `force_max_quality` stays `conditions.FORCE_MAX_QUALITY` (False,
+    asserted by a test) and no codec is hidden. They exist for
+    `yt1080_link.py`, which has to separate three reasons a player can stay
+    at 720p -- its own ABR choice, the renditions the video carries, and the
+    codec the host must decode -- and cannot do that with ABR left alone in
+    every run. A run that passes either one is NOT comparable with the sweep:
+    `run_direct` slugs it `_forcedq` / `_noav01` precisely so it cannot be
+    mistaken for one, and nothing in this file lets a sweep set them.
     """
     H = _helpers()
     netns.start_iperf3_server()
@@ -176,8 +189,10 @@ def drive(
         duration_s=duration_s,
         trial=condition.trial_for(app),
         app_urls=({app: app_url} if app_url else {}),
-        force_max_quality=FORCE_MAX_QUALITY,
+        force_max_quality=FORCE_MAX_QUALITY or bool(force_quality),
         app_window=APP_WINDOW,
+        **({"force_quality_level": force_quality} if force_quality else {}),
+        **({"app_block_codecs": {app: list(block_codecs)}} if block_codecs else {}),
     )
 
     restore = netns.install_shape_hook(H, condition.loss_pct, condition.rtt_ms)

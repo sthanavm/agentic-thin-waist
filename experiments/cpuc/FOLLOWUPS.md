@@ -83,3 +83,110 @@ themselves are parameterised (`C.sweep_plan(reps, rtt_ms=...)` and
 missing capability: `sweep.py` takes `--reps`, `--out-root`, `--csv` and
 `--marker`, and never passes `rtt_ms`. Until it is
 added, those rows are reproducible only from the archived run directories.
+
+---
+
+## CTP: the corpus is one profile, and "cluster" has no referent
+
+**Status:** blocked on data and on a definition. **Not blocked on code** —
+`services/orchestration/scripts/run_direct_teams_only_experiment.py` on `main`
+already replays a CTP beside a measured run. Full write-up in [CTP.md](CTP.md);
+this is the short form.
+
+What that script settles, and an earlier draft of CTP.md wrongly listed as
+open: it bypasses `/replay` and drives `tcpreplay-edit` in ns2 on veth3
+directly, mounts the corpus `:/ctpsrc:ro` so the empty `$CTP_DIR` on the
+shared worker never matters, passes `--loop=0` so a 29.9 s profile covers the
+whole window, brings up its **own ephemeral worker** rather than touching the
+shared one, and records the profile in `ctp.json`, in `experiment.json` and in
+the experiment id.
+
+What genuinely remains:
+
+- **One profile exists.** `ctp-ctp_samples-169.231.112.0_20-w0001_6mbps`,
+  21,478 / 31,087 packets, 29.9 s, 6.15 / 6.18 Mb/s — and it is the pair
+  **committed to this repo**, not something copied onto the VM. A sample of
+  ten from a corpus of one is ten copies of one trace.
+- **Nothing in this pipeline assigns a cluster.** The corpus is organised
+  dataset → subnet → window and queried by statistical descriptors;
+  `grep -i cluster services/ctp-service/` finds nothing. `ctp_cluster` in the
+  orchestration schema is accepted, carried onto the spec, and never read by
+  `_select_ctp`, which queries on `intensity_range_mbps` alone. The
+  `cluster26_tree10_profile424` example in `ReplayRequest`'s docstring is a
+  naming convention from another corpus.
+
+Settling what a cluster is — source subnet, descriptor band, or something
+external — is the first question, and it is Jaber's and Sthanav's to answer.
+
+---
+
+## Carry the CTP replay pattern into the CPUC harness
+
+**Status:** designed, not built. See CTP.md §6.
+
+The Teams script produces pcaps and its own collector output. It produces no
+`cpuc_runs.csv` row, no QoE label, no demand figure, no `infra_share_pct`, no
+background-traffic guard and no shaping check — every published number in this
+study comes from the CPUC path instead. A CTP campaign run through that script
+therefore cannot be set beside the sweeps in `results/`.
+
+**Not blocked on the worker.** The obvious obstacle — the Teams pattern mounts
+the corpus at `docker run`, and a bind mount cannot be added to a running
+container — does not apply: `/tmp/substrate-ctp` is already a writable host
+bind mount at the same path inside the shared worker
+(`bind|/tmp/substrate-ctp|/tmp/substrate-ctp|rw=true`, `CTP_DIR` points at it),
+so a profile staged there is visible to the running worker immediately. The
+replay is then a `docker exec` into a container the harness already talks to.
+
+What actually has to be designed, in order of judgement required:
+
+1. **The guard.** `execute_app_run` treats `BackgroundContention` as fatal and
+   a CTP replay is background contention by construction, so every CTP run
+   would be written invalid. The guard needs a declared-source concept: account
+   and report the CTP pnat address, keep failing on everything undeclared, and
+   hold `browser_infra` to the budget it has now.
+2. **Demand.** CTP bytes land in `other`, and `infra_share_pct` is
+   `infra / (app + infra)`, so a contended row would look exactly like a
+   baseline. Needs `ctp_mb` / `ctp_mean_mbps` over the same sustained window —
+   the pressure measured, not assumed from the profile's nominal rate.
+3. **Ordering and the slug.** `calibrate()` must finish before the replay
+   starts, or the gate runs against a contended probe; and the run id must
+   carry the profile name the way `_forcedq` and `_noav01` are carried, or a
+   CTP run can be averaged into a baseline.
+
+Worth doing first, and it needs neither a corpus nor a cluster definition: one
+Twitch run at 10 Mb/s / 100 ms with and without the single profile we have,
+through the CPUC path with the guard change in place. It exercises all three
+points above and says whether the applied pressure is visible in our own
+attribution.
+
+## Twitch has one latency, and Vimeo has none
+
+**Status:** not started.
+
+The Twitch sweep in this PR is 20 ms only, where YouTube and Meet each have
+20/50/100 ms. `sweep_plan(reps, rtt_ms, app)` already takes the latency, so
+the two further passes are runs rather than code — about 4 h each at 3 reps.
+
+Vimeo still has no capacity sweep at all; the only Vimeo runs are the single
+decoder check that refuted the AV1 explanation. The plan's three streaming
+apps are two.
+
+---
+
+## The 60 s window is too short for Twitch below 3 Mb/s
+
+**Status:** found by this PR's demand-gate flags, not fixed.
+
+At 1.5 and 1 Mb/s the Twitch player was **still climbing** when the collection
+window closed — 144p for the first 36 of 60 samples, then 360p, then 480p. The
+published `resolution_p` for those rows is the modal height, which is
+therefore a statement about the first half of a session that had not settled.
+A longer window (180 s) would say what the viewer actually ends up with at
+those capacities, and would also make the demand figure comparable with a
+single-rendition band instead of flagging against it.
+
+The rows are not wrong and are not withdrawn — `resolution_modal_share`,
+`resolution_final_p` and `resolution_timeline` are published beside them so a
+ramp and a steady point can be told apart. But the number a reader most wants
+at 1 Mb/s is the steady state, and 60 s does not measure it.

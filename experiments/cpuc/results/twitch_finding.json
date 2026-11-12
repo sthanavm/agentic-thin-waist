@@ -1,0 +1,48 @@
+{
+ "app": "twitch",
+ "channel": "https://www.twitch.tv/lofigirl",
+ "reps_per_point": 3,
+ "criterion": "every repetition at the point must hold reference resolution (>=90%), rebuffer zero times, and start in under 5 s",
+ "reference_resolution_p": 1080.0,
+ "lowest_good_mbps": 12.5,
+ "first_degraded_mbps": 6.25,
+ "ungradeable_mbps": [],
+ "iqb_minimum_mbps": 25.0,
+ "factor_below_iqb": 2.0,
+ "points_good_below_iqb": [
+  12.5
+ ],
+ "points_iqb_download_would_fail_but_video_good": [
+  12.5,
+  25.0
+ ],
+ "source_max_rendition_p": 1080.0,
+ "points_where_source_exceeded_delivered": [
+  0.5,
+  1.0,
+  1.5,
+  3.0
+ ],
+ "points_where_reps_disagreed_on_label": [],
+ "points_where_reps_disagreed_on_resolution": [],
+ "points_not_steady_in_every_rep": [
+  1.0,
+  1.5,
+  3.0,
+  6.25
+ ],
+ "points_ramping_up_at_window_close": [
+  1.0,
+  1.5,
+  3.0
+ ],
+ "points_downshifting_at_window_close": [
+  6.25
+ ],
+ "points_with_any_suspect_rep": [
+  0.5,
+  1.0,
+  1.5,
+  3.0
+ ]
+}
