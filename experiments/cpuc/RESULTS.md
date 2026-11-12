@@ -51,14 +51,62 @@ resolution result is not bounded by the source; chart hashes in
 **Assumed, not verified:** the source ladder was probed once and assumed stable
 across the sweep.
 
-**The 720p ceiling is now explained — it is the player.** Four runs on one
-300 Mb/s / 1 ms link (`results_1080p/yt1080_link_runs.csv`, this PR) separate
-the candidates: on auto the player serves 720p while reporting 1080p as its
-own optimal, drawing 2.56–2.68 Mb/s of a 300 Mb/s link (0.9%) on a link that
-peaked at 223 Mb/s when asked; pinning the rendition on the same URL and link
-delivers 1920x1080 for 60 of 60 samples with **zero** dropped frames and the
-fastest startup of the four. So it is not the link, not the video, not our
-collection, and not the decoder. See `results_1080p/README.md`.
+### Does YouTube reach 1080p? No — and the ceiling is the player, not the link
+
+**Conclusion.** On a 300 Mb/s link at 1 ms, with nothing else shaped, YouTube
+delivers **720p**. On Jaber's spec verbatim the player's own `player_optimal`
+reads **`1280x720@25`** — the player is not being held back, it has decided
+720p is the right rendition. Put the element at 1920x1080 and its optimal
+changes to `1920x1080@25` while it **still serves 720p**. It used 2.56–2.68
+Mb/s of the 300 available (0.9%) on a link that peaked at 223 Mb/s when asked
+for it.
+
+**The control is on the same host.** Twitch reached **1080p** in this PR's
+sweep and Vimeo **1440p** in the decoder check — same VM, same browser, same
+collector. And YouTube itself delivered **1920x1080 in 60 of 60 samples** on
+the same URL and the same link when the rendition was pinned, with **zero**
+dropped frames and the fastest startup of the four runs. So the 720p is
+specific to what YouTube's ABR chooses on this path: not the link, not the
+video, not our QoE collection, not the decoder.
+
+**This means the existing YouTube sweep does not need redoing.** 720p is what
+YouTube serves on this path at any capacity we can offer it — 300 Mb/s with
+1 ms of latency changes nothing — so no row in `streaming_cpuc_runs.csv` would
+come back different. What the sweep measured is **YouTube-at-720p**, by the
+player's own choice, and the question it answers (where quality degrades
+against IQB's minimum) is unaffected. The ceiling is a caveat on the
+*interpretation*, not a defect in the data. Detail in
+`results_1080p/README.md`.
+
+### The burst shape Jaber described, in plain numbers
+
+Measured on YouTube's own attributed bytes from variant A — Jaber's spec
+verbatim — at 1 s bins (`results_1080p/yt1080_link_bursts.json`). The session
+carried 19.97 MB in 9 bursts:
+
+- **One large initial burst filling the buffer: t = 2–6 s, 6.57 MB**, peaking
+  at **27.2 Mb/s** and averaging 13.1 Mb/s across its four seconds.
+- **Then 8 smaller bursts averaging 1.66 MB** each — about a quarter of the
+  first one.
+
+So the shape he described is there: one big fill, then small periodic
+top-ups.
+
+**The period is not the one he predicted.** Gaps between burst starts are
+8, 6, 4, 18, 7, 7, 5, 10 s — **median 7.0 s, mean 8.1 s, range 4–18 s**
+against his **5–6 s**. It is in the right region and it is not his number,
+and it should not be rounded into his range.
+
+One qualifier that cuts the other way, stated so nobody is surprised by it
+later: the period depends on what counts as one burst. Re-binned at 100 ms
+with a ≥2 s quiet threshold, the same trace resolves into bursts a median
+**5.45 s** apart (6.66 MB first, 1.11 MB later mean), and at a 0.5–1 s
+threshold into sub-bursts 3.8–4.7 s apart. The 1 s figures above are the
+headline because they are the coarsest reading and the one that produces the
+clean "one fill then eight top-ups" structure; an earlier note led with the
+5.45 s figure, which had the effect of quoting the pass that happened to land
+inside the prediction. The full 3×3 sensitivity grid is published as
+`results_1080p/yt1080_link_bursts_grid_{A,B,C}.json`.
 
 **Non-monotonic row, stated plainly:** at 100 ms, **1 Mb/s delivered 360p while
 1.5 Mb/s delivered 240p** — less bandwidth, higher resolution. Both are labelled

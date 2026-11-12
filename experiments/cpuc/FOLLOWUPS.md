@@ -86,20 +86,27 @@ added, those rows are reproducible only from the archived run directories.
 
 ---
 
-## The CTP corpus on vm4 is one profile, and nothing assigns a cluster
+## CTP: the corpus is one profile, and "cluster" has no referent
 
-**Status:** blocked on data and on a definition, not on code. Written up in
-full in [CTP.md](CTP.md); this is the short form.
+**Status:** blocked on data and on a definition. **Not blocked on code** —
+`services/orchestration/scripts/run_direct_teams_only_experiment.py` on `main`
+already replays a CTP beside a measured run. Full write-up in [CTP.md](CTP.md);
+this is the short form.
 
-The replay mechanism is complete and the worker on vm4 can replay today
-(`tcpreplay_available: true`). What is missing is the corpus:
+What that script settles, and an earlier draft of CTP.md wrongly listed as
+open: it bypasses `/replay` and drives `tcpreplay-edit` in ns2 on veth3
+directly, mounts the corpus `:/ctpsrc:ro` so the empty `$CTP_DIR` on the
+shared worker never matters, passes `--loop=0` so a 29.9 s profile covers the
+whole window, brings up its **own ephemeral worker** rather than touching the
+shared one, and records the profile in `ctp.json`, in `experiment.json` and in
+the experiment id.
 
-- **One** CTP profile pair exists on the whole box, and it is the one
-  **committed to the repo** at `services/substrate-worker/{download,upload}/`
-  — 21,478 / 31,087 packets, 29.9 s, 6.15 / 6.18 Mb/s. Nothing was copied onto
-  the VM beyond the checkout.
-- `$CTP_DIR` is `/tmp/substrate-ctp` on the running worker and is **empty**,
-  so `/replay` would 400 on that profile until it is staged there.
+What genuinely remains:
+
+- **One profile exists.** `ctp-ctp_samples-169.231.112.0_20-w0001_6mbps`,
+  21,478 / 31,087 packets, 29.9 s, 6.15 / 6.18 Mb/s — and it is the pair
+  **committed to this repo**, not something copied onto the VM. A sample of
+  ten from a corpus of one is ten copies of one trace.
 - **Nothing in this pipeline assigns a cluster.** The corpus is organised
   dataset → subnet → window and queried by statistical descriptors;
   `grep -i cluster services/ctp-service/` finds nothing. `ctp_cluster` in the
@@ -108,18 +115,26 @@ The replay mechanism is complete and the worker on vm4 can replay today
   `cluster26_tree10_profile424` example in `ReplayRequest`'s docstring is a
   naming convention from another corpus.
 
-So "10 random clusters, one random CTP each" has no referent yet. Settling
-what a cluster is — source subnet, descriptor band, or something external —
-is the first question, and it is Jaber's and Sthanav's to answer.
-
-Also noted while reading the path, because it would silently produce the wrong
-experiment: `/replay` does **not** pass `--loop`, so a run longer than the
-profile (29.9 s here) spends the remainder uncontended. The one script that
-has actually replayed a CTP beside a measured run
-(`run_direct_google_meet_only_experiment.py`) calls `tcpreplay-edit` itself
-with `--loop=0` for exactly that reason.
+Settling what a cluster is — source subnet, descriptor band, or something
+external — is the first question, and it is Jaber's and Sthanav's to answer.
 
 ---
+
+## Carry the CTP replay pattern into the CPUC harness
+
+**Status:** designed, not built. See CTP.md §6.
+
+The Teams script produces pcaps and its own collector output. It produces no
+`cpuc_runs.csv` row, no QoE label, no demand figure, no `infra_share_pct`, no
+background-traffic guard and no shaping check — every published number in this
+study comes from the CPUC path instead. A CTP campaign run through that script
+therefore cannot be set beside the sweeps in `results/`.
+
+The one real tension: the Teams pattern's strength is its **ephemeral** worker
+(nothing can outlive the run), and the CPUC harness is built around the
+**shared** one (`netns.netns_path()` resolves the running worker's pid). Which
+of the two gives way is the design decision, and it should be made with
+Sthanav rather than assumed.
 
 ## Twitch has one latency, and Vimeo has none
 

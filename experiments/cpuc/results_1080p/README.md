@@ -135,21 +135,37 @@ either. The correction below is now positively refuted rather than merely
 unclaimed. The upscale correlation is reported **as observed**; no mechanism
 is claimed for it.
 
-### The packet trace matches the shape Jaber described
+### The burst structure: the shape matches, the period is 7.0 s not 5–6
 
-Measured on YouTube's own attributed bytes at 100 ms bins
-(`yt1080_link_bursts.json`, with a 3×3 sensitivity grid over the two free
-parameters in `yt1080_link_bursts_grid_{A,B,C}.json`):
+Measured on YouTube's own attributed bytes from **variant A — Jaber's spec
+verbatim — at 1 s bins** (`yt1080_link_bursts.json`). The session carried
+19.97 MB in 9 bursts:
 
-- **One large initial burst filling the buffer:** 6.66 MB (A), 6.89 (B),
-  10.58 (C) against a later-burst mean of 1.11 / 1.21 / 1.95 MB — about 6×.
-- **Then smaller bursts every 5–6 s:** median gap between burst starts
-  **5.45 s (A), 5.7 s (B), 6.0 s (C)**, inside the 5–6 s described.
+| | when | bytes | peak | mean |
+|---|---|---|---|---|
+| **first burst** | t = 2–6 s (4.0 s) | **6.57 MB** | **27.2 Mb/s** | 13.1 Mb/s |
+| **8 later bursts** | t = 10–68 s | **1.66 MB** each, on average | 4.8–13.7 Mb/s | — |
 
-Honest qualifier: the period depends on what counts as one burst. Those
-figures are at a ≥2 s quiet separation; at 0.5–1 s the same traffic resolves
-into sub-bursts 3.8–4.7 s apart. The 5–6 s reading is the one that corresponds
-to the description, and it holds across all three traces.
+So the described shape is there: **one large initial burst filling the buffer,
+then smaller periodic top-ups at about a quarter of its size.**
+
+**The period is not the predicted one.** Gaps between burst starts are
+8, 6, 4, 18, 7, 7, 5, 10 s — **median 7.0 s, mean 8.1 s, range 4–18 s** against
+the predicted **5–6 s**. Right region, not the same number, and it is reported
+as measured rather than rounded into the prediction.
+
+The qualifier, stated so it is not a surprise later: the period depends on what
+counts as one burst, and the answer moves with the bin width. Re-binned at
+100 ms with a ≥2 s quiet threshold the same trace gives a median **5.45 s**
+(A), 5.7 s (B), 6.0 s (C), with a 6.66/6.89/10.58 MB first burst against a
+1.11/1.21/1.95 MB later mean; at a 0.5–1 s threshold it resolves into
+sub-bursts 3.8–4.7 s apart. The 1 s reading is the headline because it is the
+coarsest and produces the clean one-fill-then-eight-top-ups structure. An
+earlier version of this note led with the 5.45 s figure and called it "inside
+the 5–6 s described", which amounted to quoting whichever pass agreed with the
+prediction. The full 3×3 grid over both free parameters is published as
+`yt1080_link_bursts_grid_{A,B,C}.json` so the sensitivity is checkable rather
+than asserted.
 
 ### Caveat on this set
 

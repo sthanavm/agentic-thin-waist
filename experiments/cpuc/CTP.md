@@ -1,77 +1,78 @@
-# How CTP replay works, and what it would take to run Jaber's spec
+# How CTP replay works, and what actually blocks Jaber's spec
 
 Written to be read before talking to Sthanav. **Nothing here was run.** Every
 path and line number is from the merged tree at `a9a0fb3`, and every figure
 about vm4 was read off vm4 on 2026-11-11.
 
-The short version: the mechanism is complete and the worker on vm4 can replay
-today. The *corpus* is not there. There is exactly **one** CTP profile on the
-whole box, it carries no cluster id because nothing in this pipeline assigns
-one, and it is not in the directory the running worker reads. Jaber's "10
-random clusters, one random CTP each" cannot be satisfied as things stand, and
-the gap is data, not code.
+The short version: **the mechanism is complete and there is already a working
+precedent for running it beside a measured application.**
+`services/orchestration/scripts/run_direct_teams_only_experiment.py` on `main`
+— Haarika's pattern — replays a CTP alongside a Teams run today, and it solves
+the operational problems an earlier draft of this document listed as open. Two
+blockers genuinely remain, and both are about data rather than code: **the
+corpus on vm4 is one profile**, and **"cluster" has no referent in this
+pipeline**.
 
 ---
 
-## 1. Where the profiles live
+## 1. The path that works: `run_direct_teams_only_experiment.py`
 
-Three different directories matter and they are easy to confuse.
+This is the file to copy, not `/replay`. It spins up its **own ephemeral
+substrate worker** per run and drives `tcpreplay-edit` inside it directly
+(`:230-257`):
+
+```python
+command = (
+    f"ip netns exec ns2 tcpreplay-edit -i veth3 "
+    f"--pnat={ctp_pnat} --loop=0 --duration={seconds} "
+    f"/ctpsrc/{ctp_name}.pcap"
+)
+docker("exec", "--detach", container, "sh", "-c", command)
+```
+
+Five things that follow from it, each of which removes a problem:
+
+| | how | why it matters |
+|---|---|---|
+| **Bypasses `/replay`** | calls `tcpreplay-edit` itself | `/replay` demands a matching `upload/<name>.pcap` and starts both directions; this run wants the downlink loaded only |
+| **The empty `$CTP_DIR` stops mattering** | the profile directory is mounted `:/ctpsrc:ro` and the container's own `CTP_DIR=/ctp` points at a throwaway tempdir (`:453`, `:477`, `:487-490`) | nothing has to be staged into `/tmp/substrate-ctp` on the shared worker, and nothing on the host is written |
+| **Loops for the whole window** | `--loop=0 --duration=max(240, duration+60)` (`:563`) | a 29.9 s profile against a 60 s measurement would otherwise leave the second half uncontended — a baseline wearing a cross-traffic label |
+| **Never touches the shared worker** | `docker run --detach --rm --privileged --pid host --publish 127.0.0.1::8002`, torn down in `finally` along with the tempdir (`:460-495`, `:631-652`) | no replay can outlive the run and keep injecting into everyone's namespace, and no `DELETE /replay/{id}` to forget |
+| **Records which profile ran** | `ctp.json` in the result dir, `ctp_file`/`ctp_direction`/`ctp_pnat` in `experiment.json`, and the name in the experiment id itself — `teams-only-{cap}mbps-{lat}ms-pfifo-{ctp_name}` (`:124-141`, `:579`) | the profile reaches the artefacts, so a dataset cannot have rows that differ by a variable nobody can see |
+
+Two more details worth copying rather than rediscovering:
+
+- **Ordering.** The replay starts *after* the capture is running and *before*
+  the application collector (`:547-583`), so the capture carries the cross
+  traffic across the whole app window.
+- **A failed replay is recorded, not fatal** (`:571-579`). `ctp_error` goes
+  into `ctp.json` and the run continues, so a broken replay can never be
+  mistaken for a clean baseline.
+
+**`--pnat` keeps the capture splittable.** The default is
+`169.231.0.0/16:172.16.1.20`, rewriting the trace's internal addresses onto an
+address that is **not** the application client (`172.16.1.1`). Every demand and
+`infra_share_pct` figure in this study depends on that separation; sending CTP
+to the app's own address would make the capture unsplittable.
+
+**It also sets `latency_location` explicitly** (`:132`), which is not optional
+in effect: `apply_shaping` deletes netem on both interfaces and adds it only
+where asked, so a `/shape` call that omits the field is shaped to capacity with
+**zero** added latency and nothing says so.
+
+---
+
+## 2. Where the profiles live, and how they are named
+
+Three directories matter. With the Teams pattern only the first and third do.
 
 | Directory | Who writes it | Who reads it |
 |---|---|---|
 | `CTP_OUTPUT_DIR/users/...` | CTP Service `extract`/`transform` | the service itself |
-| `$CTP_DIR/download/<name>.pcap`, `$CTP_DIR/upload/<name>.pcap` | whoever stages the files | **Substrate Worker `/replay`** |
-| `services/substrate-worker/{download,upload}/` | the git checkout | nothing at runtime |
+| `$CTP_DIR/{download,upload}/<name>.pcap` | whoever stages the files | Substrate Worker `/replay` **only** |
+| whatever you mount at `/ctpsrc` | you, read-only | `tcpreplay-edit` in the Teams pattern |
 
-`/replay` builds its two paths by string concatenation and nothing else
-(`services/substrate-worker/src/substrate/main.py:1475`):
-
-```python
-download_path = f"{CTP_DIR}/download/{cfg.ctp_file}.pcap"
-upload_path   = f"{CTP_DIR}/upload/{cfg.ctp_file}.pcap"
-```
-
-so a profile is replayable **only** if both files exist under `$CTP_DIR` with
-the same base name. `CTP_DIR` defaults to `/home/netreplica/config/ctp` in the
-worker source and is set to `/tmp/substrate-ctp` by compose
-(`docker-compose.yml:151`).
-
-**On vm4 right now:**
-
-```
-$ curl -s localhost:8002/health
-  "ctp_dir": "/tmp/substrate-ctp",  "tcpreplay_available": true,  "status": "ok"
-
-$ ls /tmp/substrate-ctp
-  (empty)
-```
-
-The one profile pair that exists on the box is the one **committed to the
-repo**, not something copied onto the VM:
-
-```
-services/substrate-worker/download/ctp-ctp_samples-169.231.112.0_20-w0001_6mbps.pcap
-services/substrate-worker/upload/ctp-ctp_samples-169.231.112.0_20-w0001_6mbps.pcap
-```
-
-Measured directly (no `tshark` or `capinfos` on this host — both absent, which
-is worth knowing before anyone trusts a packet count from a script here):
-
-| direction | packets | bytes | span | mean |
-|---|---|---|---|---|
-| download | 21,478 | 22.99 MB | 29.91 s | 6.15 Mb/s |
-| upload | 31,087 | 23.13 MB | 29.94 s | 6.18 Mb/s |
-
-The 30 s span is the pipeline's default window and the 6 Mb/s mean is the
-transform threshold in its own file name. Both directions are present, so this
-profile *would* replay through `/replay` as soon as it is staged under
-`$CTP_DIR`.
-
----
-
-## 2. How they are named — and why there is no cluster
-
-The name is built in two places and nothing in between adds a cluster.
+The name is built in two places and nothing in between adds a cluster:
 
 ```python
 # services/ctp-service/app/operations/extract.py:188
@@ -81,7 +82,7 @@ ctp_id = f"ctp-{dataset_name}-{subnet_str.replace('/', '_')}-w{window_index:04d}
 downlink_dir / f"{safe_id}_{throughput_threshold_mbps:.0f}mbps.pcap"
 ```
 
-Read the profile on vm4 straight off that:
+Read the one profile on vm4 straight off that:
 
 ```
 ctp-  ctp_samples  -169.231.112.0_20-  w0001  _6mbps  .pcap
@@ -95,34 +96,8 @@ Two more id shapes exist: `/merge` produces
 `ctp-merged-{dataset}-{subnet}-{start}-{end}` (`merge.py:106`), and a
 transformed CTP's **database id** is `ctp-transform-{safe_id}-{N}mbps`
 (`transform.py:224`) while its **file** is `{safe_id}_{N}mbps.pcap`. The id and
-the filename are not the same string — a script that passes a `ctp_id`
-straight to `/replay` as `ctp_file` will get a 400.
-
-**There is no clustering step anywhere in the CTP service.** The corpus is
-organised by dataset → subnet (a prefix tree, `/32` leaves summed up to `/16`)
-→ window index, and queried by statistical descriptors (intensity, burstiness,
-temporal correlation, structure). `grep -i cluster services/ctp-service/`
-returns nothing.
-
-Two things look like clusters and are not:
-
-1. **`ReplayRequest.ctp_file`'s docstring** gives the example
-   `'cluster26_tree10_profile424'` (`main.py:387`). That is a naming
-   convention from another corpus. Nothing in this repo produces such a name,
-   and `/replay` does not parse the string — it concatenates it into a path.
-2. **`ctp_cluster` in the orchestration schema** (`schemas.py:65`) is accepted
-   from the intent, carried onto the spec by `experiment_generator.py:88`, and
-   then **never read by the selection path**. `_select_ctp`
-   (`orchestration_manager.py:125`) takes `ctp_capacity_range` only and
-   queries the corpus on `{is_transformed: true, intensity_range_mbps,
-   intensity_direction: "download"}`. Setting `ctp_cluster` changes nothing
-   about which profile is chosen. It is a label that travels with the record.
-
-So "10 random clusters" has no referent today. The nearest honest reading of
-the intent is **10 distinct source subnets** (the tree already groups by
-prefix) or **10 descriptor bands** (10 non-overlapping `intensity_range_mbps`
-windows). That is a decision for Jaber and Sthanav, not one to guess at — and
-it is the first question to put to them.
+the filename are not the same string — worth knowing before passing one where
+the other belongs.
 
 ---
 
@@ -138,76 +113,71 @@ intent → ParsedIntent.ctp_capacity_range → _select_ctp()
                   "intensity_direction": "download"},
         "limit": 10, "order_by": "intensity"}
    → first match wins  (orchestration_manager.py:179-190)
-   → _ctp_pointer_for_worker(ctp) → worker /ctp/fetch → worker /replay
 ```
 
-Three properties worth stating plainly before anyone designs a campaign on it:
+Three properties to know before designing a campaign on it:
 
-- **It takes the first result**, ordered by intensity. It is not a random
-  draw. Jaber's "one random CTP each" needs the caller to do the sampling and
-  name the profile explicitly.
-- **No `ctp_capacity_range` means no cross traffic at all.** `_select_ctp`
-  short-circuits to `None` and `/replay` is skipped
-  (`orchestration_manager.py:135`). This is deliberate: a silent 1–10 Mb/s
-  default used to be synthesized, which put `172.16.1.20` packets into every
-  capture nobody had asked for.
+- **It takes the first result**, ordered by intensity. It is not a random draw,
+  so "one random CTP each" means the caller does the sampling and names the
+  profile explicitly — which is exactly what the Teams script's `--ctp-name`
+  expects.
+- **No `ctp_capacity_range` means no cross traffic at all**
+  (`orchestration_manager.py:135`). Deliberate: a silent 1–10 Mb/s default used
+  to be synthesized, which put `172.16.1.20` packets into captures nobody had
+  asked for.
 - **Only `is_transformed: true` profiles are selectable.** A raw extracted CTP
-  is never chosen; something must run `/transform` at a target capacity first.
-
-Manual path: skip selection entirely and name the file. That is what
-`run_direct_google_meet_only_experiment.py` does, and it is the only script in
-the tree that has actually replayed a CTP beside a measured application run.
+  is never chosen.
 
 ---
 
-## 4. How it is replayed beside an app run
+## 4. The two blockers that remain
 
-`POST /replay` starts **two** `tcpreplay-edit` processes, detached, and returns
-a `replay_id` (`main.py:1486-1520`):
-
-```
-ip netns exec ns2 tcpreplay-edit -i veth3 --pnat=<rules> [--duration=N] <download pcap>
-ip netns exec ns1 tcpreplay-edit -i veth1 --pnat=<rules> [--duration=N] <upload pcap>
-```
-
-Download is injected from **ns2 on veth3**, upload from **ns1 on veth1**. That
-matches what the qdisc counters say about this topology independently: during
-a bulk download 149,310 packets crossed the netem on `ns2:veth3` against 3,334
-during a bulk upload. So replayed cross traffic crosses the same shaped
-`veth2`/`veth4` HTB and the same single netem the application does — it is
-genuinely contending, not running alongside the bottleneck.
-
-`--pnat` rewrites the capture's internal addresses onto our topology. The
-working default in the direct script is:
+### 4.1 The corpus is one profile
 
 ```
---ctp-pnat 169.231.0.0/16:172.16.1.20
+services/substrate-worker/download/ctp-ctp_samples-169.231.112.0_20-w0001_6mbps.pcap
+services/substrate-worker/upload/ctp-ctp_samples-169.231.112.0_20-w0001_6mbps.pcap
 ```
 
-**Keep the CTP's target address different from the application's.** The
-application client is `172.16.1.1`; sending cross traffic to the same address
-makes the capture unsplittable, and every demand and `infra_share_pct` figure
-in this study depends on splitting it. `172.16.1.20` is the address the
-existing script uses and the one to keep.
+That pair is **committed to this repo** — it is not something copied onto the
+VM, and a filesystem search of vm4 finds no other CTP-shaped pcap anywhere.
+Measured directly (there is no `tshark` or `capinfos` on this host, worth
+knowing before trusting any packet count from a script here):
 
-Two further details from the direct script that `/replay` does not give you
-(`run_direct_google_meet_only_experiment.py:187-213`):
+| direction | packets | bytes | span | mean |
+|---|---|---|---|---|
+| download | 21,478 | 22.99 MB | 29.91 s | 6.15 Mb/s |
+| upload | 31,087 | 23.13 MB | 29.94 s | 6.18 Mb/s |
 
-- It replays the **download side only**, by calling `tcpreplay-edit` itself
-  rather than `/replay`, because `/replay` insists on a matching
-  `upload/<name>.pcap` and starts both directions.
-- It passes **`--loop=0`**, so a 30 s profile repeats for the whole window.
-  Without it a 60 s measurement spends its second half uncontended — and the
-  QoE numbers from that half would be a baseline wearing a cross-traffic
-  label. `/replay` does **not** pass `--loop`; with the profile on vm4 at
-  29.91 s, a `/replay`-driven run longer than 30 s is half uncontended.
+The 30 s span is the pipeline's default window and the 6 Mb/s mean is the
+transform threshold in the file's own name. A sample of ten from a corpus of
+one is ten copies of the same trace.
 
-**Nothing in `experiments/cpuc/` can replay a CTP.** `grep -i ctp
-experiments/cpuc/*.py` returns one line, in `shaping.py`, saying so. The CPUC
-drivers (`sweep.py`, `twitch.py`, `meet.py`, `vimeo.py`) talk to the worker's
-`/shape` and nothing else. Running Jaber's spec through the CPUC harness means
-adding a replay call to `runner.py` beside `apply_condition`, or driving it
-from the orchestration script instead and giving up the CPUC labelling.
+### 4.2 "Cluster" has no referent
+
+**There is no clustering step anywhere in the CTP service.** The corpus is
+organised dataset → subnet (a prefix tree, `/32` leaves summed up to `/16`) →
+window index, and queried by statistical descriptors — intensity, burstiness,
+temporal correlation, structure. `grep -i cluster services/ctp-service/`
+returns nothing.
+
+Two things look like clusters and are not:
+
+1. **`ReplayRequest.ctp_file`'s docstring** gives the example
+   `'cluster26_tree10_profile424'` (`main.py:387`). That is a naming convention
+   from another corpus; nothing here produces such a name, and the endpoint
+   concatenates the string into a path without parsing it.
+2. **`ctp_cluster` in the orchestration schema** (`schemas.py:65`) is accepted
+   from the intent, carried onto the spec by `experiment_generator.py:88`, and
+   **never read by the selection path**. `_select_ctp` takes
+   `ctp_capacity_range` only. Setting `ctp_cluster` changes nothing about which
+   profile is chosen; it is a label that travels with the record.
+
+The nearest honest readings of "10 clusters" are **10 distinct source
+subnets** (the tree already groups by prefix) or **10 non-overlapping
+descriptor bands** — e.g. ten `intensity_range_mbps` windows. That is a
+decision for Jaber and Sthanav, not one to guess at, and it is the first
+question to put to them.
 
 ---
 
@@ -216,84 +186,77 @@ from the orchestration script instead and giving up the CPUC labelling.
 **Spec:** 10 random clusters, one random CTP from each, names recorded, fixed
 at 10 Mb/s down and up, 100 ms.
 
-It cannot run as written today, for two reasons that are worth separating:
-
-1. **No clusters exist** (§2). Until "cluster" is given a referent, there is
-   nothing to sample 10 of.
-2. **One profile exists** (§1). Even with the definition settled, a sample of
-   10 from a corpus of 1 is 10 copies of the same trace.
-
-What the command *would* be, once a corpus is extracted and staged — this is a
-sketch to review with Sthanav, not something to paste:
+With a corpus in hand this is now a loop over the Teams script, not new
+plumbing. Sketch to review, not to paste:
 
 ```bash
-# 0. Stage the corpus where the running worker reads it. CTP_DIR on vm4 is
-#    /tmp/substrate-ctp and is empty; both directions are required.
-#    (The existing worker is shared — do not restart it to change CTP_DIR.)
-sudo mkdir -p /tmp/substrate-ctp/{download,upload}
-sudo cp <corpus>/download/*.pcap /tmp/substrate-ctp/download/
-sudo cp <corpus>/upload/*.pcap   /tmp/substrate-ctp/upload/
-
 # 1. Draw the sample yourself and WRITE THE NAMES DOWN before running.
 #    Selection does not randomise (§3), so the draw has to be explicit and
 #    recorded, or the run is not reproducible.
 python3 - <<'PY'
 import json, random
-random.seed(20261111)                      # recorded, so the draw repeats
+random.seed(20261111)                        # recorded, so the draw repeats
 clusters = json.load(open("clusters.json"))  # {cluster_id: [ctp_file, ...]}
 picked = {c: random.choice(clusters[c]) for c in random.sample(sorted(clusters), 10)}
 json.dump(picked, open("ctp_draw.json", "w"), indent=1)
-print(json.dumps(picked, indent=1))
 PY
 
-# 2. One run per drawn profile: shape 10/10 at 100 ms, start the replay,
-#    run the app, stop the replay.
+# 2. One run per drawn profile. The script brings up its own worker, mounts
+#    the corpus read-only, loops the profile for the whole window, records the
+#    name in ctp.json and in the experiment id, and tears everything down.
 for ctp in $(python3 -c 'import json;print(" ".join(json.load(open("ctp_draw.json")).values()))'); do
-  # ShapeRequest field names are exact, and latency_location is NOT optional
-  # in effect: omit it and apply_shaping() deletes netem and adds none, so the
-  # run is shaped to 10/10 with zero added latency and nothing says so.
-  curl -s -X POST localhost:8002/shape -H 'content-type: application/json' \
-       -d '{"downstream_iface": "veth2", "upstream_iface": "veth4",
-            "download_mbps": 10, "upload_mbps": 10,
-            "latency_ms": 100, "latency_location": "upstream",
-            "qdisc": "pfifo", "buffer_packets": 1000, "verify": true}'
-
-  rid=$(curl -s -X POST localhost:8002/replay -H 'content-type: application/json' \
-        -d "{\"ctp_file\": \"$ctp\",
-             \"pnat\": \"169.231.0.0/16:172.16.1.20,128.111.0.0/16:172.16.1.20\",
-             \"duration_seconds\": 90}" | python3 -c 'import json,sys;print(json.load(sys.stdin)["replay_id"])')
-
-  # ... the app run goes here ...
-
-  curl -s -X DELETE "localhost:8002/replay/$rid"
+  python3 services/orchestration/scripts/run_direct_teams_only_experiment.py \
+      --capacities-mbps 10 \
+      --latency-ms 100 \
+      --duration-seconds 60 \
+      --teams-url "<room url>" \
+      --ctp-name "$ctp" \
+      --ctp-host-dir /path/to/corpus/download \
+      --result-subdir "ctp_sweep/$ctp" \
+      --no-nest-mbps
 done
 ```
 
 Read before using it:
 
-- **`latency_ms: 100` is one-way-on-one-interface**, i.e. the whole 100 ms
-  lands as a single netem delay on `ns2:veth3` and measures ~103 ms RTT, not
-  2×100. `latency_location: "upstream"` is what puts it there — the worker's
-  label is a node position, and `ns2:veth3` is the *download* path. `"both"`
-  applies the full 100 ms to each interface and doubles the RTT; it does not
-  split it. See the corrected docstring in `shaping.py`.
-- **`/replay` does not loop.** With a 30 s profile and a 90 s window, two
-  thirds of the run is uncontended. Either pass a `duration_seconds` no longer
-  than the profile, or call `tcpreplay-edit --loop=0` directly the way the
-  direct script does.
-- **Nothing above records the draw into the run record.** The profile name has
-  to reach `record.json`, or the dataset will have ten rows that differ by a
-  variable nobody can see — which is exactly the failure this study keeps
-  finding in other shapes.
-- **The worker is shared.** A replay started and not deleted keeps injecting
-  into everyone's namespace. Every `POST /replay` needs its matching
-  `DELETE /replay/{id}`, including on the error path.
+- **It is Teams, and the upload is symmetric.** The script sets
+  `upload_mbps = capacity_mbps` (`:130`), which is what "10 Mb/s both
+  directions" asks for — but it also means this is a *conferencing* run.
+  A streaming equivalent does not exist; see below.
+- **`--ctp-host-dir` is the directory holding `<name>.pcap`**, i.e. the
+  `download/` side. The replay is download-only by design.
+- **100 ms lands as one netem on `ns2:veth3`** and measures ~103 ms RTT, not
+  2×100. The script's `latency_location: "upstream"` is what puts it there;
+  the worker's label is a node position and `ns2:veth3` is the *download*
+  path. `"both"` would apply the full figure to each interface and double the
+  RTT rather than splitting it.
+- **This produces the script's own artefacts, not CPUC rows.** No
+  `cpuc_runs.csv`, no QoE label, no demand gate, no interference guard — see
+  the next section.
 
-## 6. What to ask Sthanav
+---
+
+## 6. What this still does not give us
+
+**Nothing in `experiments/cpuc/` can replay a CTP.**
+`grep -i ctp experiments/cpuc/*.py` returns one line, in `shaping.py`, saying
+so. The CPUC drivers (`sweep.py`, `twitch.py`, `meet.py`, `vimeo.py`) talk to
+the shared worker's `/shape` and nothing else, and every published number in
+this study — the QoE label, the demand figure, `infra_share_pct`, the
+background-traffic guard, the shaping check — comes from that path.
+
+So a CTP campaign run through the Teams script today produces pcaps and its
+own collector output, and none of the CPUC grading. Carrying the replay into
+`runner.py` beside `apply_condition` is a design question with one real
+tension — the Teams pattern's strength is its **ephemeral** worker, and the
+CPUC harness is built around the **shared** one. That is written up separately
+rather than guessed at here.
+
+## 7. What to ask Sthanav
 
 1. What is a "cluster"? Source subnet, descriptor band, or something from a
    corpus this pipeline has not seen?
-2. Where is the corpus Harika copied? Only the repo-tracked profile is on vm4,
-   and `$CTP_DIR` is empty.
-3. Should the CPUC harness learn to replay, or should these runs go through
-   the orchestration path and lose the CPUC QoE labelling?
+2. Where is the corpus? Only the repo-tracked profile is on vm4.
+3. Conferencing or streaming for Jaber's 10 runs? The working script is Teams;
+   a streaming equivalent means either the CPUC harness learns to replay, or
+   the pattern is copied into a streaming script.
