@@ -265,6 +265,44 @@ class RunPlan:
     rep: int
     run_type: RunType = "app"
     is_reference: bool = False
+    # Non-empty => this run replays this CTP profile (see cpuc/ctp.py for
+    # picking profiles; this module stays I/O-free, so it only carries the
+    # name through, it does not read the corpus).
+    ctp_profile: str = ""
+
+
+# One fixed point for every CTP run: 10 Mb/s both directions, 100 ms, no
+# induced loss. Not derived from the Stage 1/Stage 2 matrices above -- the CTP
+# study asks a different question (does deliberate cross-traffic get
+# mis-attributed or flagged as interference), not where IQB's threshold sits,
+# so it does not need to vary bandwidth or RTT.
+CTP_CONDITION = Condition(
+    rate_down_mbps=10.0,
+    rate_up_mbps=10.0,
+    rtt_ms=100.0,
+    loss_pct=0.0,
+    loss_mode="none",
+    label="ctp",
+)
+
+
+def ctp_plan(app: str, profiles: list[str], rep: int = 1) -> list[RunPlan]:
+    """One run per CTP profile, all at CTP_CONDITION. Pure: no file I/O here.
+
+    Callers get `profiles` from `cpuc.ctp.random_profiles()` (or any other
+    list of names matching `<ctp_dir>/download/<name>.pcap`).
+    """
+    return [
+        RunPlan(
+            app=app,
+            condition=CTP_CONDITION,
+            rep=rep,
+            run_type="app",
+            is_reference=False,
+            ctp_profile=p,
+        )
+        for p in profiles
+    ]
 
 
 def stage1_streaming_plan(

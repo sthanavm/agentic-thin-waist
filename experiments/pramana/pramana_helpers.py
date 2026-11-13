@@ -628,6 +628,14 @@ class ExperimentConfig:
     # Turn the uniform streaming probe off for this run. Used to measure the
     # probe's own cost: the same cell with hooks on and off, on a 2-vCPU host.
     disable_stream_probe: bool = False
+    # Non-app traffic a CALLER injects on purpose (e.g. cpuc's CTP replay),
+    # named the same way IRTT/NetVibe already are: {probe_name: {ip, ...}}.
+    # Without this, link_interference has no way to tell "cross-traffic we
+    # asked for" from "Chrome's background updater" -- both are just an
+    # unnamed bucket moving bytes the app didn't -- so a deliberate CTP run
+    # would always get flagged as background contention. Named here, its
+    # bucket is skipped the same way probe_ips already is.
+    extra_probe_endpoint_ips: Optional[dict[str, set[str]]] = None
 
     experiment_id: str = ""
     slug: str = ""
@@ -6073,6 +6081,7 @@ def run_direct(cfg: ExperimentConfig) -> dict[str, Any]:
             probe_endpoint_ips=merge_endpoint_ips(
                 irtt_probe_endpoints(irtt_record),
                 netvibe_probe_endpoints(netvibe_record),
+                cfg.extra_probe_endpoint_ips,
             ),
         )
     if attribution.method != "none":

@@ -156,6 +156,7 @@ BASE_COLUMNS = [
     "loss_pct",
     "rep",
     "is_reference",
+    "ctp_profile",
     "valid",
     "invalid_reason",
     "qoe_label",
