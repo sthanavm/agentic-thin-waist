@@ -39,6 +39,7 @@ from __future__ import annotations
 import shlex
 import subprocess
 import time
+from pathlib import Path
 from typing import Optional
 
 WORKER_CONTAINER = "substrate-worker"
@@ -48,6 +49,22 @@ CLIENT_IFACE = "veth1"  # ns1 side: egress = upload
 SERVER_IFACE = "veth3"  # ns2 side: egress = download
 SERVER_ADDR = "172.16.2.1"
 CLIENT_ADDR = "172.16.1.1"
+
+# Where replayed CTP packets are rewritten to land -- distinct from
+# CLIENT_ADDR, so a capture can split app traffic from cross-traffic by
+# destination IP alone. Must match the name registered against
+# `ExperimentConfig.extra_probe_endpoint_ips` in drive_pramana.py/teams.py,
+# or link_interference will (correctly, by its own rules) flag this traffic
+# as unexplained contention.
+CTP_PNAT_IP = "172.16.1.20"
+CTP_PNAT_RULE = f"169.231.0.0/16:{CTP_PNAT_IP}"
+# Inside the worker container, bind-mounted read-only from the host's CTP
+# corpus (e.g. /home/student/ctp_data/download). NOT on the host: confirmed
+# live that tcpreplay-edit is absent from the VM host (`which tcpreplay-edit`
+# -> nothing) but present in the worker image
+# (`docker exec substrate-worker which tcpreplay-edit` -> /usr/bin/tcpreplay-
+# edit, v4.4.4) -- so replay must go through `docker exec`, never host nsenter.
+CTP_CONTAINER_DIR = "/ctpsrc"
 
 
 class NamespaceError(RuntimeError):
@@ -238,6 +255,81 @@ def link_idle_wait(
         else:
             quiet_since = None
     return False, last
+
+
+def assert_ctp_mount(container: str = WORKER_CONTAINER) -> None:
+    """The worker must have the CTP corpus bind-mounted before replay can work.
+
+    `/replay`'s own $CTP_DIR mount is a separate thing from this -- this harness
+    drives tcpreplay-edit itself (see start_ctp_replay), so it needs its own
+    mount, checked up front rather than discovered as a 400/ENOENT mid-batch.
+    """
+    out = subprocess.run(
+        ["docker", "exec", container, "test", "-d", CTP_CONTAINER_DIR],
+        capture_output=True,
+        text=True,
+        timeout=30,
+    )
+    if out.returncode != 0:
+        raise NamespaceError(
+            f"{container!r} has no {CTP_CONTAINER_DIR} mount, so CTP replay "
+            f"would read nothing. This is a one-time container recreation, "
+            f"not something a flag can fix at run time:\n"
+            f"  docker stop {container} && docker rm {container}\n"
+            f"  docker run -d --name {container} --privileged --pid host \\\n"
+            f"    -v /home/student/ctp_data/download:{CTP_CONTAINER_DIR}:ro \\\n"
+            f"    <the rest of this container's existing mounts/env/image>"
+        )
+
+
+def start_ctp_replay(
+    ctp_name: str,
+    ctp_host_dir: str,
+    seconds: int,
+    pnat: str = CTP_PNAT_RULE,
+    container: str = WORKER_CONTAINER,
+) -> dict[str, object]:
+    """Replay one CTP profile's download side through ns2:veth3, looped.
+
+    Injected on the SERVER_IFACE inside ns2, so it rides the same shaped
+    veth4->veth2 path the app's downlink crosses -- the same mechanism
+    `run_direct_teams_only_experiment.py` already uses standalone. `--pnat`
+    rewrites the replayed packets' destination to CTP_PNAT_IP, which is how a
+    capture (and `link_interference`, once that IP's bucket is named via
+    `ExperimentConfig.extra_probe_endpoint_ips`) tells this apart from the
+    app's own traffic.
+
+    `ctp_host_dir` is read on the HOST only to fail fast if the profile
+    doesn't exist -- the replay itself reads the container's own bind-mounted
+    copy at CTP_CONTAINER_DIR (see assert_ctp_mount), since tcpreplay-edit
+    cannot run via host nsenter the way tc/iperf3 do.
+
+    Fire-and-forget: `--loop=0` repeats the (short) profile pcap until
+    `--duration` elapses, started just before the app's own measurement
+    begins. This does not have Haarika's precise first-sample synchronization
+    (arm_measurement_window in run_direct_teams_experiment.py) -- `seconds`
+    should be given some margin over the app's duration_s to cover that.
+    """
+    source = Path(ctp_host_dir) / f"{ctp_name}.pcap"
+    if not source.is_file():
+        raise NamespaceError(f"CTP profile does not exist on host: {source}")
+    assert_ctp_mount(container)
+    cmd = (
+        f"ip netns exec {SERVER_NS} tcpreplay-edit -i {SERVER_IFACE} "
+        f"--pnat={pnat} --loop=0 --duration={seconds} "
+        f"{CTP_CONTAINER_DIR}/{ctp_name}.pcap"
+    )
+    subprocess.run(
+        ["docker", "exec", "--detach", container, "sh", "-c", cmd],
+        check=True,
+        timeout=30,
+    )
+    return {
+        "ctp_profile": ctp_name,
+        "ctp_direction": "download",
+        "ctp_pnat": pnat,
+        "ctp_replay_seconds": seconds,
+    }
 
 
 def start_iperf3_server(port: int = 5201) -> None:
