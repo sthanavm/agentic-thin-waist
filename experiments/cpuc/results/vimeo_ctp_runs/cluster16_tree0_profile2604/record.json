@@ -1,0 +1,1924 @@
+{
+  "experiment_id": "exp-64c50361ec",
+  "slug": "vimeo_10mbps_100ms_0pct_pfifo_cubic_solo_t11753",
+  "mode": "direct",
+  "timestamp": 1795116568.3321774,
+  "config": {
+    "apps": [
+      "vimeo"
+    ],
+    "bandwidth_mbps": 10.0,
+    "upload_mbps": 10.0,
+    "latency_ms": 100.0,
+    "loss_pct": 0.0,
+    "aqm": "pfifo",
+    "buffer_packets": 1000,
+    "qdisc_params": null,
+    "cca": "cubic",
+    "duration_s": 60,
+    "controller": "playwright",
+    "trial": 11753,
+    "tag": "",
+    "app_urls": {
+      "vimeo": "https://player.vimeo.com/video/911411289?autoplay=1&muted=1"
+    },
+    "peers": null,
+    "peer_wait_s": 900,
+    "force_max_quality": false,
+    "force_quality_level": "hd2160",
+    "app_window": null,
+    "app_block_codecs": null,
+    "merge_vendor_stats": false,
+    "disable_stream_probe": false,
+    "extra_probe_endpoint_ips": {
+      "ctp": "{'172.16.1.20'}"
+    },
+    "concurrency": "solo"
+  },
+  "plot_combined_throughput": false,
+  "per_app_plots": true,
+  "force_max_quality": false,
+  "app_window_caps": {},
+  "app_ladder_pinned": [],
+  "sampling_interval_s": 1.0,
+  "merge_vendor_stats": false,
+  "app_blocked_codecs": {},
+  "player_qoe": {
+    "vimeo": {
+      "app": "vimeo",
+      "kind": "html5_video",
+      "player_qoe_available": true,
+      "status": "ok",
+      "video_startup_time_ms": 1057.0,
+      "mean_bitrate_mbps": null,
+      "uniform": {
+        "schema": "uniform_qoe/1",
+        "sampling_interval_s": 1.0,
+        "startup_delay_ms": 2848.0,
+        "startup_basis": "requestVideoFrameCallback first presentationTime",
+        "buffer_level_secs": {
+          "mean": 16.4466,
+          "min": 9.360770000000002,
+          "max": 22.648073999999998,
+          "basis": "video.buffered end - currentTime, sampled once per interval"
+        },
+        "rebuffer_events": 2,
+        "rebuffer_duration_ms": 426.0,
+        "rebuffer_spans": [
+          {
+            "ct": 24.840461,
+            "dur_ms": 284,
+            "during_seek": false,
+            "end": 28083,
+            "start": 27799
+          },
+          {
+            "ct": 28.513892,
+            "dur_ms": 142,
+            "during_seek": false,
+            "end": 31890,
+            "start": 31748
+          }
+        ],
+        "rebuffer_basis": "media events (waiting -> playing), initial buffering excluded [1 initial span(s), 272ms, reported as startup]",
+        "initial_buffering_ms": 272.0,
+        "delivered_video_bitrate_mbps": 5.4036,
+        "delivered_audio_bitrate_mbps": 0.0944,
+        "bitrate_basis": "mse_appended_bytes(video sourcebuffer)",
+        "switch_events": [],
+        "switch_count": 0,
+        "switch_basis": "decoded_height + sourcebuffer mime history",
+        "rendered_fps": 23.32,
+        "rendered_fps_basis": "requestVideoFrameCallback.presentedFrames",
+        "raw_decoded_frames": 1445.0,
+        "raw_dropped_frames": 32.0,
+        "raw_presented_frames": 1410.0,
+        "mse_video_bytes": 39400661.0,
+        "mse_audio_bytes": 949118.0,
+        "mse_video_mime": "video/mp4; codecs=\"av01.0.00M.08.0.111.01.01.01.0\"",
+        "mse_audio_mime": "audio/mp4; codecs=\"opus\"",
+        "rt_media_bytes": 40534706.0,
+        "rt_sizes_usable": true,
+        "rt_all_bytes": 40558241.0,
+        "rt_all_entries": 75.0,
+        "rt_media_entries": 30.0,
+        "rt_dropped_by_initiator": 28.0,
+        "rt_dropped_by_size_floor": 17.0,
+        "rt_dropped_bytes": 23535.0,
+        "rt_bytes_by_initiator": {
+          "beacon": 0,
+          "fetch": 0,
+          "img": 0,
+          "link": 0,
+          "other": 829,
+          "script": 22670,
+          "xmlhttprequest": 40534742
+        },
+        "rt_buffer_full_events": 0.0,
+        "page_now_ms": 64049.0,
+        "probe_t0_page_ms": 716.0,
+        "nav_start_page_ms": 0.0,
+        "dom_content_loaded_ms": 769.0,
+        "uses_worker_media": false,
+        "mean_processing_duration_ms": 93.72301998519612
+      },
+      "max_bitrate_mbps": null,
+      "min_bitrate_mbps": null,
+      "mean_watched_bitrate_mbps": null,
+      "bitrate_changes": null,
+      "rebuffer_events": 0,
+      "rebuffer_duration_ms": 0.0,
+      "stall_duration_ms": 0.0,
+      "video_resolution_p": 1080,
+      "frame_rate_fps": 23.86,
+      "dropped_frame_pct": 2.215,
+      "dropped_video_frames": 32,
+      "total_video_frames": 1445,
+      "resolution_changes": 0,
+      "resolutions_observed": [
+        1080
+      ],
+      "mean_buffer_ahead_secs": 16.4518,
+      "min_buffer_ahead_secs": 9.36,
+      "connection_speed_estimate_mbps": null,
+      "watched_seconds": 58.6,
+      "session_seconds": 58.99,
+      "total_samples": 60,
+      "session_start_epoch": 1795116420.559,
+      "is_live": false,
+      "video_duration_secs": 1799.9583333333333,
+      "derivation": {
+        "progress_basis": "current_time_secs",
+        "startup_basis": "play_trigger",
+        "bitrate_basis": "unavailable (none)",
+        "fps_basis": "total_video_frames_delta",
+        "rebuffer_rule": "current_time_secs not advancing while not paused and not ended, corroborated by empty buffer or vendor BUFFERING state"
+      },
+      "series": {
+        "buffer_ahead_secs": [
+          {
+            "t": 0.0,
+            "v": 16.761138
+          },
+          {
+            "t": 0.98,
+            "v": 15.711822999999999
+          },
+          {
+            "t": 1.98,
+            "v": 20.611167000000002
+          },
+          {
+            "t": 2.98,
+            "v": 19.636823
+          },
+          {
+            "t": 3.98,
+            "v": 18.644293
+          },
+          {
+            "t": 4.99,
+            "v": 17.634958
+          },
+          {
+            "t": 5.99,
+            "v": 16.62117
+          },
+          {
+            "t": 6.98,
+            "v": 15.797298
+          },
+          {
+            "t": 7.99,
+            "v": 14.807153
+          },
+          {
+            "t": 8.99,
+            "v": 13.810737
+          },
+          {
+            "t": 9.98,
+            "v": 12.817362999999999
+          },
+          {
+            "t": 10.98,
+            "v": 11.817641
+          },
+          {
+            "t": 11.99,
+            "v": 10.806973
+          },
+          {
+            "t": 12.99,
+            "v": 15.823115999999999
+          },
+          {
+            "t": 13.99,
+            "v": 14.841966999999999
+          },
+          {
+            "t": 14.98,
+            "v": 13.857681999999997
+          },
+          {
+            "t": 15.98,
+            "v": 12.859876
+          },
+          {
+            "t": 16.98,
+            "v": 17.650275999999998
+          },
+          {
+            "t": 17.98,
+            "v": 22.648073999999998
+          },
+          {
+            "t": 18.98,
+            "v": 21.650118999999997
+          },
+          {
+            "t": 19.98,
+            "v": 20.624271999999998
+          },
+          {
+            "t": 20.99,
+            "v": 19.632074999999997
+          },
+          {
+            "t": 21.99,
+            "v": 18.635989
+          },
+          {
+            "t": 22.98,
+            "v": 17.636864999999997
+          },
+          {
+            "t": 23.98,
+            "v": 17.157636000000004
+          },
+          {
+            "t": 24.98,
+            "v": 16.176763
+          },
+          {
+            "t": 25.98,
+            "v": 15.175217000000004
+          },
+          {
+            "t": 26.98,
+            "v": 19.894495999999997
+          },
+          {
+            "t": 27.98,
+            "v": 19.067925
+          },
+          {
+            "t": 28.99,
+            "v": 18.048170999999996
+          },
+          {
+            "t": 29.99,
+            "v": 17.032524999999996
+          },
+          {
+            "t": 31.0,
+            "v": 16.027893999999996
+          },
+          {
+            "t": 31.99,
+            "v": 15.031334999999999
+          },
+          {
+            "t": 32.98,
+            "v": 14.060202999999994
+          },
+          {
+            "t": 33.99,
+            "v": 13.042831999999997
+          },
+          {
+            "t": 34.98,
+            "v": 12.046416
+          },
+          {
+            "t": 35.98,
+            "v": 11.064868999999995
+          },
+          {
+            "t": 36.98,
+            "v": 10.363858999999998
+          },
+          {
+            "t": 37.99,
+            "v": 9.360770000000002
+          },
+          {
+            "t": 38.99,
+            "v": 14.322617999999999
+          },
+          {
+            "t": 39.99,
+            "v": 13.367398000000001
+          },
+          {
+            "t": 40.99,
+            "v": 18.056767
+          },
+          {
+            "t": 41.99,
+            "v": 16.994106000000002
+          },
+          {
+            "t": 42.98,
+            "v": 16.048081000000003
+          },
+          {
+            "t": 43.98,
+            "v": 15.040073
+          },
+          {
+            "t": 44.98,
+            "v": 20.065723999999996
+          },
+          {
+            "t": 45.99,
+            "v": 19.069558
+          },
+          {
+            "t": 46.98,
+            "v": 18.068852
+          },
+          {
+            "t": 47.99,
+            "v": 17.11372800000001
+          },
+          {
+            "t": 48.98,
+            "v": 16.117106000000007
+          },
+          {
+            "t": 49.98,
+            "v": 15.106759000000004
+          },
+          {
+            "t": 50.98,
+            "v": 20.049924999999995
+          },
+          {
+            "t": 51.98,
+            "v": 19.068144999999994
+          },
+          {
+            "t": 52.99,
+            "v": 18.071673999999994
+          },
+          {
+            "t": 53.98,
+            "v": 17.163686999999996
+          },
+          {
+            "t": 54.98,
+            "v": 16.164276
+          },
+          {
+            "t": 55.98,
+            "v": 15.158932
+          },
+          {
+            "t": 56.98,
+            "v": 20.072823999999997
+          },
+          {
+            "t": 57.98,
+            "v": 19.070552999999997
+          },
+          {
+            "t": 58.99,
+            "v": 18.029430999999995
+          }
+        ],
+        "resolution_p": [
+          {
+            "t": 0.0,
+            "v": 1080
+          },
+          {
+            "t": 0.98,
+            "v": 1080
+          },
+          {
+            "t": 1.98,
+            "v": 1080
+          },
+          {
+            "t": 2.98,
+            "v": 1080
+          },
+          {
+            "t": 3.98,
+            "v": 1080
+          },
+          {
+            "t": 4.99,
+            "v": 1080
+          },
+          {
+            "t": 5.99,
+            "v": 1080
+          },
+          {
+            "t": 6.98,
+            "v": 1080
+          },
+          {
+            "t": 7.99,
+            "v": 1080
+          },
+          {
+            "t": 8.99,
+            "v": 1080
+          },
+          {
+            "t": 9.98,
+            "v": 1080
+          },
+          {
+            "t": 10.98,
+            "v": 1080
+          },
+          {
+            "t": 11.99,
+            "v": 1080
+          },
+          {
+            "t": 12.99,
+            "v": 1080
+          },
+          {
+            "t": 13.99,
+            "v": 1080
+          },
+          {
+            "t": 14.98,
+            "v": 1080
+          },
+          {
+            "t": 15.98,
+            "v": 1080
+          },
+          {
+            "t": 16.98,
+            "v": 1080
+          },
+          {
+            "t": 17.98,
+            "v": 1080
+          },
+          {
+            "t": 18.98,
+            "v": 1080
+          },
+          {
+            "t": 19.98,
+            "v": 1080
+          },
+          {
+            "t": 20.99,
+            "v": 1080
+          },
+          {
+            "t": 21.99,
+            "v": 1080
+          },
+          {
+            "t": 22.98,
+            "v": 1080
+          },
+          {
+            "t": 23.98,
+            "v": 1080
+          },
+          {
+            "t": 24.98,
+            "v": 1080
+          },
+          {
+            "t": 25.98,
+            "v": 1080
+          },
+          {
+            "t": 26.98,
+            "v": 1080
+          },
+          {
+            "t": 27.98,
+            "v": 1080
+          },
+          {
+            "t": 28.99,
+            "v": 1080
+          },
+          {
+            "t": 29.99,
+            "v": 1080
+          },
+          {
+            "t": 31.0,
+            "v": 1080
+          },
+          {
+            "t": 31.99,
+            "v": 1080
+          },
+          {
+            "t": 32.98,
+            "v": 1080
+          },
+          {
+            "t": 33.99,
+            "v": 1080
+          },
+          {
+            "t": 34.98,
+            "v": 1080
+          },
+          {
+            "t": 35.98,
+            "v": 1080
+          },
+          {
+            "t": 36.98,
+            "v": 1080
+          },
+          {
+            "t": 37.99,
+            "v": 1080
+          },
+          {
+            "t": 38.99,
+            "v": 1080
+          },
+          {
+            "t": 39.99,
+            "v": 1080
+          },
+          {
+            "t": 40.99,
+            "v": 1080
+          },
+          {
+            "t": 41.99,
+            "v": 1080
+          },
+          {
+            "t": 42.98,
+            "v": 1080
+          },
+          {
+            "t": 43.98,
+            "v": 1080
+          },
+          {
+            "t": 44.98,
+            "v": 1080
+          },
+          {
+            "t": 45.99,
+            "v": 1080
+          },
+          {
+            "t": 46.98,
+            "v": 1080
+          },
+          {
+            "t": 47.99,
+            "v": 1080
+          },
+          {
+            "t": 48.98,
+            "v": 1080
+          },
+          {
+            "t": 49.98,
+            "v": 1080
+          },
+          {
+            "t": 50.98,
+            "v": 1080
+          },
+          {
+            "t": 51.98,
+            "v": 1080
+          },
+          {
+            "t": 52.99,
+            "v": 1080
+          },
+          {
+            "t": 53.98,
+            "v": 1080
+          },
+          {
+            "t": 54.98,
+            "v": 1080
+          },
+          {
+            "t": 55.98,
+            "v": 1080
+          },
+          {
+            "t": 56.98,
+            "v": 1080
+          },
+          {
+            "t": 57.98,
+            "v": 1080
+          },
+          {
+            "t": 58.99,
+            "v": 1080
+          }
+        ],
+        "current_time_secs": [
+          {
+            "t": 0.0,
+            "v": 1.363861
+          },
+          {
+            "t": 0.98,
+            "v": 2.413176
+          },
+          {
+            "t": 1.98,
+            "v": 3.382333
+          },
+          {
+            "t": 2.98,
+            "v": 4.356677
+          },
+          {
+            "t": 3.98,
+            "v": 5.349207
+          },
+          {
+            "t": 4.99,
+            "v": 6.358542
+          },
+          {
+            "t": 5.99,
+            "v": 7.37233
+          },
+          {
+            "t": 6.98,
+            "v": 8.369368
+          },
+          {
+            "t": 7.99,
+            "v": 9.359513
+          },
+          {
+            "t": 8.99,
+            "v": 10.355929
+          },
+          {
+            "t": 9.98,
+            "v": 11.349303
+          },
+          {
+            "t": 10.98,
+            "v": 12.349025
+          },
+          {
+            "t": 11.99,
+            "v": 13.359693
+          },
+          {
+            "t": 12.99,
+            "v": 14.385216
+          },
+          {
+            "t": 13.99,
+            "v": 15.366365
+          },
+          {
+            "t": 14.98,
+            "v": 16.35065
+          },
+          {
+            "t": 15.98,
+            "v": 17.348456
+          },
+          {
+            "t": 16.98,
+            "v": 18.343224
+          },
+          {
+            "t": 17.98,
+            "v": 19.345426
+          },
+          {
+            "t": 18.98,
+            "v": 20.343381
+          },
+          {
+            "t": 19.98,
+            "v": 21.369228
+          },
+          {
+            "t": 20.99,
+            "v": 22.361425
+          },
+          {
+            "t": 21.99,
+            "v": 23.357511
+          },
+          {
+            "t": 22.98,
+            "v": 24.356635
+          },
+          {
+            "t": 23.98,
+            "v": 25.092363
+          },
+          {
+            "t": 24.98,
+            "v": 26.073236
+          },
+          {
+            "t": 25.98,
+            "v": 27.074782
+          },
+          {
+            "t": 26.98,
+            "v": 28.099004
+          },
+          {
+            "t": 27.98,
+            "v": 28.925575
+          },
+          {
+            "t": 28.99,
+            "v": 29.945329
+          },
+          {
+            "t": 29.99,
+            "v": 30.960975
+          },
+          {
+            "t": 31.0,
+            "v": 31.965606
+          },
+          {
+            "t": 31.99,
+            "v": 32.962165
+          },
+          {
+            "t": 32.98,
+            "v": 33.933297
+          },
+          {
+            "t": 33.99,
+            "v": 34.950668
+          },
+          {
+            "t": 34.98,
+            "v": 35.947084
+          },
+          {
+            "t": 35.98,
+            "v": 36.928631
+          },
+          {
+            "t": 36.98,
+            "v": 37.927807
+          },
+          {
+            "t": 37.99,
+            "v": 38.930896
+          },
+          {
+            "t": 38.99,
+            "v": 40.010714
+          },
+          {
+            "t": 39.99,
+            "v": 40.965934
+          },
+          {
+            "t": 40.99,
+            "v": 41.936733
+          },
+          {
+            "t": 41.99,
+            "v": 43.005893
+          },
+          {
+            "t": 42.98,
+            "v": 43.951918
+          },
+          {
+            "t": 43.98,
+            "v": 44.959926
+          },
+          {
+            "t": 44.98,
+            "v": 45.927776
+          },
+          {
+            "t": 45.99,
+            "v": 46.923942
+          },
+          {
+            "t": 46.98,
+            "v": 47.924648
+          },
+          {
+            "t": 47.99,
+            "v": 48.927938
+          },
+          {
+            "t": 48.98,
+            "v": 49.92456
+          },
+          {
+            "t": 49.98,
+            "v": 50.934907
+          },
+          {
+            "t": 50.98,
+            "v": 51.943575
+          },
+          {
+            "t": 51.98,
+            "v": 52.925355
+          },
+          {
+            "t": 52.99,
+            "v": 53.921826
+          },
+          {
+            "t": 53.98,
+            "v": 54.919645
+          },
+          {
+            "t": 54.98,
+            "v": 55.919056
+          },
+          {
+            "t": 55.98,
+            "v": 56.9244
+          },
+          {
+            "t": 56.98,
+            "v": 57.920676
+          },
+          {
+            "t": 57.98,
+            "v": 58.922947
+          },
+          {
+            "t": 58.99,
+            "v": 59.964069
+          }
+        ]
+      },
+      "rebuffer_spans": [],
+      "delivered_fraction_of_video": 0.033,
+      "measured_element": {
+        "available": true,
+        "samples_with_census": 60,
+        "dominant": "1440x1080@1317x988",
+        "dominant_sample_share": 1.0,
+        "origins": {
+          "no-stream": 60
+        },
+        "local_samples": 0,
+        "measured_local_any": false,
+        "box_area_min": 1301196,
+        "box_area_max": 1301196,
+        "distinct_elements": {
+          "1440x1080@1317x988": 60
+        },
+        "track_labels": {}
+      }
+    }
+  },
+  "player_qoe_available": true,
+  "limitations": {
+    "player_qoe_available": true,
+    "player_qoe_source": "real Chrome (Xvfb + SeleniumBase/undetected-chromedriver) driven inside the shaped ns1 namespace; metrics derived by shared/qoe.py",
+    "player_qoe_skipped": {},
+    "latency_scope": "link-wide (netem, not per-flow)",
+    "qtrace_available": false,
+    "per_app_throughput": true,
+    "per_app_attribution_method": "remote_hostname",
+    "per_app_attribution_note": "local_alias_ip = exact split by each app's namespace IP; remote_hostname = split by remote endpoint identified from in-capture DNS answers + TLS SNI (the deployed worker runs all browser apps in one namespace, so there is only one local IP). Media endpoints reached by IP carry no DNS answer or SNI; such flows are adopted into an app bucket only when one app can claim them by shared prefix or concurrent timing, and are left in `other` when ambiguous - see adopted_unnamed_ips",
+    "attributed_byte_fraction": 0.962,
+    "adopted_unnamed_ips": {
+      "198.189.66.12": "vimeo:timing",
+      "198.189.66.17": "vimeo:timing"
+    },
+    "local_ip_source": "declared_client_ips",
+    "declared_peer_ips": [
+      "172.16.1.20"
+    ],
+    "probe_endpoint_ips": {
+      "ctp": [
+        "172.16.1.20"
+      ]
+    }
+  },
+  "network_stats": {
+    "packets": 52964,
+    "duration_s": 77.96,
+    "total_mb": 60.81,
+    "avg_throughput_mbps": 5.863,
+    "peak_throughput_mbps": 9.963,
+    "p95_throughput_mbps": 9.945,
+    "delivered_fraction": 0.586,
+    "stall_seconds": 7.0,
+    "shaping_verified": true,
+    "shaping_error_pct": -41.4,
+    "note": ""
+  },
+  "irtt": null,
+  "netvibe": null,
+  "upstream_pcap": null,
+  "probe_path": null,
+  "per_app_stats": {
+    "vimeo": {
+      "download": {
+        "app": "vimeo",
+        "direction": "download",
+        "total_mb": 56.344,
+        "packets": 32591,
+        "avg_throughput_mbps": 5.854,
+        "peak_throughput_mbps": 9.97,
+        "p95_throughput_mbps": 9.946,
+        "stall_seconds": 16.0,
+        "delivered_fraction": 0.792,
+        "mean_over_cap": 0.585,
+        "classification": "served",
+        "hosts": [
+          "arclight.vimeo.com",
+          "f.vimeocdn.com",
+          "lensflare.vimeo.com",
+          "player.vimeo.com",
+          "vod-adaptive-ak.vimeocdn.com"
+        ],
+        "capture_t0_epoch": 1795116407.692
+      },
+      "upload": {
+        "app": "vimeo",
+        "direction": "upload",
+        "total_mb": 1.296,
+        "packets": 16959,
+        "avg_throughput_mbps": 0.135,
+        "peak_throughput_mbps": 0.329,
+        "p95_throughput_mbps": 0.246,
+        "stall_seconds": 20.0,
+        "delivered_fraction": 0.74,
+        "mean_over_cap": 0.014,
+        "classification": "starved",
+        "hosts": [
+          "arclight.vimeo.com",
+          "f.vimeocdn.com",
+          "lensflare.vimeo.com",
+          "player.vimeo.com",
+          "vod-adaptive-ak.vimeocdn.com"
+        ],
+        "capture_t0_epoch": 1795116407.692
+      },
+      "verdict_directions": [
+        "download"
+      ],
+      "plotted_directions": [
+        "download",
+        "upload"
+      ],
+      "classification": "served",
+      "player_qoe_status": "ok",
+      "attribution_method": "remote_hostname",
+      "pcap": "/home/student/athw-ctp-test/experiments/pramana/results/pramana_runs/vimeo_10mbps_100ms_0pct_pfifo_cubic_solo_t11753_64c50361ec/capture.pcap",
+      "player_qoe_available": true
+    }
+  },
+  "analysis_deferred": false,
+  "capture_buckets_mb": {
+    "vimeo": 57.64,
+    "off_link": 2.302,
+    "browser_infra": 0.86,
+    "other": 0.011
+  },
+  "capture_top_hosts_bytes": {
+    "vod-adaptive-ak.vimeocdn.com": 56612798,
+    "f.vimeocdn.com": 711504,
+    "rr5---sn-jxopj-n5oe.gvt1.com": 498370,
+    "player.vimeo.com": 211944,
+    "www.gstatic.com": 175692,
+    "arclight.vimeo.com": 93798,
+    "www.google.com": 62582,
+    "dns.google": 59603,
+    "ogads-pa.clients6.google.com": 33154,
+    "redirector.gvt1.com": 12040,
+    "accounts.google.com": 11185,
+    "play.google.com": 10817,
+    "lensflare.vimeo.com": 9736,
+    "clients2.google.com": 7252
+  },
+  "shaping_applied": {
+    "download_mbps": 10.0,
+    "upload_mbps": 10.0,
+    "latency_ms": 100.0,
+    "latency_location": "upstream",
+    "qdisc": "pfifo",
+    "verified": false,
+    "buffer_packets": 1000,
+    "qdisc_params": null,
+    "loss_rate_percent": 0.0,
+    "verification_log": [
+      "upload: measured=13.28Mbps expected=10.0Mbps diff=32.8%",
+      "FAIL: upload out of \u00b120% range",
+      "download: measured=8.74Mbps expected=10.0Mbps diff=12.6%",
+      "PASS: download",
+      "latency: measured_rtt=173.62ms expected_rtt=100.00ms diff=73.62ms",
+      "FAIL: latency out of \u00b110.0ms range"
+    ]
+  },
+  "per_app": {
+    "vimeo": {
+      "type": "streaming",
+      "traffic_verdict": "served",
+      "player_qoe_available": true,
+      "qoe": {
+        "app": "vimeo",
+        "kind": "html5_video",
+        "player_qoe_available": true,
+        "status": "ok",
+        "video_startup_time_ms": 1057.0,
+        "mean_bitrate_mbps": null,
+        "uniform": {
+          "schema": "uniform_qoe/1",
+          "sampling_interval_s": 1.0,
+          "startup_delay_ms": 2848.0,
+          "startup_basis": "requestVideoFrameCallback first presentationTime",
+          "buffer_level_secs": {
+            "mean": 16.4466,
+            "min": 9.360770000000002,
+            "max": 22.648073999999998,
+            "basis": "video.buffered end - currentTime, sampled once per interval"
+          },
+          "rebuffer_events": 2,
+          "rebuffer_duration_ms": 426.0,
+          "rebuffer_spans": [
+            {
+              "ct": 24.840461,
+              "dur_ms": 284,
+              "during_seek": false,
+              "end": 28083,
+              "start": 27799
+            },
+            {
+              "ct": 28.513892,
+              "dur_ms": 142,
+              "during_seek": false,
+              "end": 31890,
+              "start": 31748
+            }
+          ],
+          "rebuffer_basis": "media events (waiting -> playing), initial buffering excluded [1 initial span(s), 272ms, reported as startup]",
+          "initial_buffering_ms": 272.0,
+          "delivered_video_bitrate_mbps": 5.4036,
+          "delivered_audio_bitrate_mbps": 0.0944,
+          "bitrate_basis": "mse_appended_bytes(video sourcebuffer)",
+          "switch_events": [],
+          "switch_count": 0,
+          "switch_basis": "decoded_height + sourcebuffer mime history",
+          "rendered_fps": 23.32,
+          "rendered_fps_basis": "requestVideoFrameCallback.presentedFrames",
+          "raw_decoded_frames": 1445.0,
+          "raw_dropped_frames": 32.0,
+          "raw_presented_frames": 1410.0,
+          "mse_video_bytes": 39400661.0,
+          "mse_audio_bytes": 949118.0,
+          "mse_video_mime": "video/mp4; codecs=\"av01.0.00M.08.0.111.01.01.01.0\"",
+          "mse_audio_mime": "audio/mp4; codecs=\"opus\"",
+          "rt_media_bytes": 40534706.0,
+          "rt_sizes_usable": true,
+          "rt_all_bytes": 40558241.0,
+          "rt_all_entries": 75.0,
+          "rt_media_entries": 30.0,
+          "rt_dropped_by_initiator": 28.0,
+          "rt_dropped_by_size_floor": 17.0,
+          "rt_dropped_bytes": 23535.0,
+          "rt_bytes_by_initiator": {
+            "beacon": 0,
+            "fetch": 0,
+            "img": 0,
+            "link": 0,
+            "other": 829,
+            "script": 22670,
+            "xmlhttprequest": 40534742
+          },
+          "rt_buffer_full_events": 0.0,
+          "page_now_ms": 64049.0,
+          "probe_t0_page_ms": 716.0,
+          "nav_start_page_ms": 0.0,
+          "dom_content_loaded_ms": 769.0,
+          "uses_worker_media": false,
+          "mean_processing_duration_ms": 93.72301998519612
+        },
+        "max_bitrate_mbps": null,
+        "min_bitrate_mbps": null,
+        "mean_watched_bitrate_mbps": null,
+        "bitrate_changes": null,
+        "rebuffer_events": 0,
+        "rebuffer_duration_ms": 0.0,
+        "stall_duration_ms": 0.0,
+        "video_resolution_p": 1080,
+        "frame_rate_fps": 23.86,
+        "dropped_frame_pct": 2.215,
+        "dropped_video_frames": 32,
+        "total_video_frames": 1445,
+        "resolution_changes": 0,
+        "resolutions_observed": [
+          1080
+        ],
+        "mean_buffer_ahead_secs": 16.4518,
+        "min_buffer_ahead_secs": 9.36,
+        "connection_speed_estimate_mbps": null,
+        "watched_seconds": 58.6,
+        "session_seconds": 58.99,
+        "total_samples": 60,
+        "session_start_epoch": 1795116420.559,
+        "is_live": false,
+        "video_duration_secs": 1799.9583333333333,
+        "derivation": {
+          "progress_basis": "current_time_secs",
+          "startup_basis": "play_trigger",
+          "bitrate_basis": "unavailable (none)",
+          "fps_basis": "total_video_frames_delta",
+          "rebuffer_rule": "current_time_secs not advancing while not paused and not ended, corroborated by empty buffer or vendor BUFFERING state"
+        },
+        "series": {
+          "buffer_ahead_secs": [
+            {
+              "t": 0.0,
+              "v": 16.761138
+            },
+            {
+              "t": 0.98,
+              "v": 15.711822999999999
+            },
+            {
+              "t": 1.98,
+              "v": 20.611167000000002
+            },
+            {
+              "t": 2.98,
+              "v": 19.636823
+            },
+            {
+              "t": 3.98,
+              "v": 18.644293
+            },
+            {
+              "t": 4.99,
+              "v": 17.634958
+            },
+            {
+              "t": 5.99,
+              "v": 16.62117
+            },
+            {
+              "t": 6.98,
+              "v": 15.797298
+            },
+            {
+              "t": 7.99,
+              "v": 14.807153
+            },
+            {
+              "t": 8.99,
+              "v": 13.810737
+            },
+            {
+              "t": 9.98,
+              "v": 12.817362999999999
+            },
+            {
+              "t": 10.98,
+              "v": 11.817641
+            },
+            {
+              "t": 11.99,
+              "v": 10.806973
+            },
+            {
+              "t": 12.99,
+              "v": 15.823115999999999
+            },
+            {
+              "t": 13.99,
+              "v": 14.841966999999999
+            },
+            {
+              "t": 14.98,
+              "v": 13.857681999999997
+            },
+            {
+              "t": 15.98,
+              "v": 12.859876
+            },
+            {
+              "t": 16.98,
+              "v": 17.650275999999998
+            },
+            {
+              "t": 17.98,
+              "v": 22.648073999999998
+            },
+            {
+              "t": 18.98,
+              "v": 21.650118999999997
+            },
+            {
+              "t": 19.98,
+              "v": 20.624271999999998
+            },
+            {
+              "t": 20.99,
+              "v": 19.632074999999997
+            },
+            {
+              "t": 21.99,
+              "v": 18.635989
+            },
+            {
+              "t": 22.98,
+              "v": 17.636864999999997
+            },
+            {
+              "t": 23.98,
+              "v": 17.157636000000004
+            },
+            {
+              "t": 24.98,
+              "v": 16.176763
+            },
+            {
+              "t": 25.98,
+              "v": 15.175217000000004
+            },
+            {
+              "t": 26.98,
+              "v": 19.894495999999997
+            },
+            {
+              "t": 27.98,
+              "v": 19.067925
+            },
+            {
+              "t": 28.99,
+              "v": 18.048170999999996
+            },
+            {
+              "t": 29.99,
+              "v": 17.032524999999996
+            },
+            {
+              "t": 31.0,
+              "v": 16.027893999999996
+            },
+            {
+              "t": 31.99,
+              "v": 15.031334999999999
+            },
+            {
+              "t": 32.98,
+              "v": 14.060202999999994
+            },
+            {
+              "t": 33.99,
+              "v": 13.042831999999997
+            },
+            {
+              "t": 34.98,
+              "v": 12.046416
+            },
+            {
+              "t": 35.98,
+              "v": 11.064868999999995
+            },
+            {
+              "t": 36.98,
+              "v": 10.363858999999998
+            },
+            {
+              "t": 37.99,
+              "v": 9.360770000000002
+            },
+            {
+              "t": 38.99,
+              "v": 14.322617999999999
+            },
+            {
+              "t": 39.99,
+              "v": 13.367398000000001
+            },
+            {
+              "t": 40.99,
+              "v": 18.056767
+            },
+            {
+              "t": 41.99,
+              "v": 16.994106000000002
+            },
+            {
+              "t": 42.98,
+              "v": 16.048081000000003
+            },
+            {
+              "t": 43.98,
+              "v": 15.040073
+            },
+            {
+              "t": 44.98,
+              "v": 20.065723999999996
+            },
+            {
+              "t": 45.99,
+              "v": 19.069558
+            },
+            {
+              "t": 46.98,
+              "v": 18.068852
+            },
+            {
+              "t": 47.99,
+              "v": 17.11372800000001
+            },
+            {
+              "t": 48.98,
+              "v": 16.117106000000007
+            },
+            {
+              "t": 49.98,
+              "v": 15.106759000000004
+            },
+            {
+              "t": 50.98,
+              "v": 20.049924999999995
+            },
+            {
+              "t": 51.98,
+              "v": 19.068144999999994
+            },
+            {
+              "t": 52.99,
+              "v": 18.071673999999994
+            },
+            {
+              "t": 53.98,
+              "v": 17.163686999999996
+            },
+            {
+              "t": 54.98,
+              "v": 16.164276
+            },
+            {
+              "t": 55.98,
+              "v": 15.158932
+            },
+            {
+              "t": 56.98,
+              "v": 20.072823999999997
+            },
+            {
+              "t": 57.98,
+              "v": 19.070552999999997
+            },
+            {
+              "t": 58.99,
+              "v": 18.029430999999995
+            }
+          ],
+          "resolution_p": [
+            {
+              "t": 0.0,
+              "v": 1080
+            },
+            {
+              "t": 0.98,
+              "v": 1080
+            },
+            {
+              "t": 1.98,
+              "v": 1080
+            },
+            {
+              "t": 2.98,
+              "v": 1080
+            },
+            {
+              "t": 3.98,
+              "v": 1080
+            },
+            {
+              "t": 4.99,
+              "v": 1080
+            },
+            {
+              "t": 5.99,
+              "v": 1080
+            },
+            {
+              "t": 6.98,
+              "v": 1080
+            },
+            {
+              "t": 7.99,
+              "v": 1080
+            },
+            {
+              "t": 8.99,
+              "v": 1080
+            },
+            {
+              "t": 9.98,
+              "v": 1080
+            },
+            {
+              "t": 10.98,
+              "v": 1080
+            },
+            {
+              "t": 11.99,
+              "v": 1080
+            },
+            {
+              "t": 12.99,
+              "v": 1080
+            },
+            {
+              "t": 13.99,
+              "v": 1080
+            },
+            {
+              "t": 14.98,
+              "v": 1080
+            },
+            {
+              "t": 15.98,
+              "v": 1080
+            },
+            {
+              "t": 16.98,
+              "v": 1080
+            },
+            {
+              "t": 17.98,
+              "v": 1080
+            },
+            {
+              "t": 18.98,
+              "v": 1080
+            },
+            {
+              "t": 19.98,
+              "v": 1080
+            },
+            {
+              "t": 20.99,
+              "v": 1080
+            },
+            {
+              "t": 21.99,
+              "v": 1080
+            },
+            {
+              "t": 22.98,
+              "v": 1080
+            },
+            {
+              "t": 23.98,
+              "v": 1080
+            },
+            {
+              "t": 24.98,
+              "v": 1080
+            },
+            {
+              "t": 25.98,
+              "v": 1080
+            },
+            {
+              "t": 26.98,
+              "v": 1080
+            },
+            {
+              "t": 27.98,
+              "v": 1080
+            },
+            {
+              "t": 28.99,
+              "v": 1080
+            },
+            {
+              "t": 29.99,
+              "v": 1080
+            },
+            {
+              "t": 31.0,
+              "v": 1080
+            },
+            {
+              "t": 31.99,
+              "v": 1080
+            },
+            {
+              "t": 32.98,
+              "v": 1080
+            },
+            {
+              "t": 33.99,
+              "v": 1080
+            },
+            {
+              "t": 34.98,
+              "v": 1080
+            },
+            {
+              "t": 35.98,
+              "v": 1080
+            },
+            {
+              "t": 36.98,
+              "v": 1080
+            },
+            {
+              "t": 37.99,
+              "v": 1080
+            },
+            {
+              "t": 38.99,
+              "v": 1080
+            },
+            {
+              "t": 39.99,
+              "v": 1080
+            },
+            {
+              "t": 40.99,
+              "v": 1080
+            },
+            {
+              "t": 41.99,
+              "v": 1080
+            },
+            {
+              "t": 42.98,
+              "v": 1080
+            },
+            {
+              "t": 43.98,
+              "v": 1080
+            },
+            {
+              "t": 44.98,
+              "v": 1080
+            },
+            {
+              "t": 45.99,
+              "v": 1080
+            },
+            {
+              "t": 46.98,
+              "v": 1080
+            },
+            {
+              "t": 47.99,
+              "v": 1080
+            },
+            {
+              "t": 48.98,
+              "v": 1080
+            },
+            {
+              "t": 49.98,
+              "v": 1080
+            },
+            {
+              "t": 50.98,
+              "v": 1080
+            },
+            {
+              "t": 51.98,
+              "v": 1080
+            },
+            {
+              "t": 52.99,
+              "v": 1080
+            },
+            {
+              "t": 53.98,
+              "v": 1080
+            },
+            {
+              "t": 54.98,
+              "v": 1080
+            },
+            {
+              "t": 55.98,
+              "v": 1080
+            },
+            {
+              "t": 56.98,
+              "v": 1080
+            },
+            {
+              "t": 57.98,
+              "v": 1080
+            },
+            {
+              "t": 58.99,
+              "v": 1080
+            }
+          ],
+          "current_time_secs": [
+            {
+              "t": 0.0,
+              "v": 1.363861
+            },
+            {
+              "t": 0.98,
+              "v": 2.413176
+            },
+            {
+              "t": 1.98,
+              "v": 3.382333
+            },
+            {
+              "t": 2.98,
+              "v": 4.356677
+            },
+            {
+              "t": 3.98,
+              "v": 5.349207
+            },
+            {
+              "t": 4.99,
+              "v": 6.358542
+            },
+            {
+              "t": 5.99,
+              "v": 7.37233
+            },
+            {
+              "t": 6.98,
+              "v": 8.369368
+            },
+            {
+              "t": 7.99,
+              "v": 9.359513
+            },
+            {
+              "t": 8.99,
+              "v": 10.355929
+            },
+            {
+              "t": 9.98,
+              "v": 11.349303
+            },
+            {
+              "t": 10.98,
+              "v": 12.349025
+            },
+            {
+              "t": 11.99,
+              "v": 13.359693
+            },
+            {
+              "t": 12.99,
+              "v": 14.385216
+            },
+            {
+              "t": 13.99,
+              "v": 15.366365
+            },
+            {
+              "t": 14.98,
+              "v": 16.35065
+            },
+            {
+              "t": 15.98,
+              "v": 17.348456
+            },
+            {
+              "t": 16.98,
+              "v": 18.343224
+            },
+            {
+              "t": 17.98,
+              "v": 19.345426
+            },
+            {
+              "t": 18.98,
+              "v": 20.343381
+            },
+            {
+              "t": 19.98,
+              "v": 21.369228
+            },
+            {
+              "t": 20.99,
+              "v": 22.361425
+            },
+            {
+              "t": 21.99,
+              "v": 23.357511
+            },
+            {
+              "t": 22.98,
+              "v": 24.356635
+            },
+            {
+              "t": 23.98,
+              "v": 25.092363
+            },
+            {
+              "t": 24.98,
+              "v": 26.073236
+            },
+            {
+              "t": 25.98,
+              "v": 27.074782
+            },
+            {
+              "t": 26.98,
+              "v": 28.099004
+            },
+            {
+              "t": 27.98,
+              "v": 28.925575
+            },
+            {
+              "t": 28.99,
+              "v": 29.945329
+            },
+            {
+              "t": 29.99,
+              "v": 30.960975
+            },
+            {
+              "t": 31.0,
+              "v": 31.965606
+            },
+            {
+              "t": 31.99,
+              "v": 32.962165
+            },
+            {
+              "t": 32.98,
+              "v": 33.933297
+            },
+            {
+              "t": 33.99,
+              "v": 34.950668
+            },
+            {
+              "t": 34.98,
+              "v": 35.947084
+            },
+            {
+              "t": 35.98,
+              "v": 36.928631
+            },
+            {
+              "t": 36.98,
+              "v": 37.927807
+            },
+            {
+              "t": 37.99,
+              "v": 38.930896
+            },
+            {
+              "t": 38.99,
+              "v": 40.010714
+            },
+            {
+              "t": 39.99,
+              "v": 40.965934
+            },
+            {
+              "t": 40.99,
+              "v": 41.936733
+            },
+            {
+              "t": 41.99,
+              "v": 43.005893
+            },
+            {
+              "t": 42.98,
+              "v": 43.951918
+            },
+            {
+              "t": 43.98,
+              "v": 44.959926
+            },
+            {
+              "t": 44.98,
+              "v": 45.927776
+            },
+            {
+              "t": 45.99,
+              "v": 46.923942
+            },
+            {
+              "t": 46.98,
+              "v": 47.924648
+            },
+            {
+              "t": 47.99,
+              "v": 48.927938
+            },
+            {
+              "t": 48.98,
+              "v": 49.92456
+            },
+            {
+              "t": 49.98,
+              "v": 50.934907
+            },
+            {
+              "t": 50.98,
+              "v": 51.943575
+            },
+            {
+              "t": 51.98,
+              "v": 52.925355
+            },
+            {
+              "t": 52.99,
+              "v": 53.921826
+            },
+            {
+              "t": 53.98,
+              "v": 54.919645
+            },
+            {
+              "t": 54.98,
+              "v": 55.919056
+            },
+            {
+              "t": 55.98,
+              "v": 56.9244
+            },
+            {
+              "t": 56.98,
+              "v": 57.920676
+            },
+            {
+              "t": 57.98,
+              "v": 58.922947
+            },
+            {
+              "t": 58.99,
+              "v": 59.964069
+            }
+          ]
+        },
+        "rebuffer_spans": [],
+        "delivered_fraction_of_video": 0.033,
+        "measured_element": {
+          "available": true,
+          "samples_with_census": 60,
+          "dominant": "1440x1080@1317x988",
+          "dominant_sample_share": 1.0,
+          "origins": {
+            "no-stream": 60
+          },
+          "local_samples": 0,
+          "measured_local_any": false,
+          "box_area_min": 1301196,
+          "box_area_max": 1301196,
+          "distinct_elements": {
+            "1440x1080@1317x988": 60
+          },
+          "track_labels": {}
+        }
+      }
+    }
+  },
+  "workflow_ok": true,
+  "artifacts": {
+    "pcap": "/home/student/athw-ctp-test/experiments/pramana/results/pramana_runs/vimeo_10mbps_100ms_0pct_pfifo_cubic_solo_t11753_64c50361ec/capture.pcap",
+    "pcap_saved": true,
+    "pcap_per_app": {
+      "vimeo": "/home/student/athw-ctp-test/experiments/pramana/results/pramana_runs/vimeo_10mbps_100ms_0pct_pfifo_cubic_solo_t11753_64c50361ec/capture.pcap"
+    },
+    "pcap_split_method": "solo",
+    "plots": {},
+    "dir": "/home/student/athw-ctp-test/experiments/pramana/results/pramana_runs/vimeo_10mbps_100ms_0pct_pfifo_cubic_solo_t11753_64c50361ec"
+  }
+}
