@@ -122,8 +122,11 @@ def start_irtt(cfg: IrttRequest) -> IrttResponse:
     # terminates the server. Without it, an orchestrator that dies mid-run
     # would leave a server holding the port, and the next run's bind would
     # fail with an error that looks nothing like the real cause.
+    # `exec`, as for NetVibe: without it terminate() signals only /bin/sh and
+    # the irtt server is orphaned, still bound to the port, so the next
+    # POST /irtt can fail with "irtt server exited immediately" (bind).
     server_cmd = (
-        f"timeout -k 5 {server_max + 60}"
+        f"exec timeout -k 5 {server_max + 60}"
         f" ip netns exec {cfg.server_namespace} {binary} server"
         f" -b {bind} -d {server_max}s -i 1ms --timeout=10s"
     )
@@ -172,7 +175,7 @@ def start_irtt(cfg: IrttRequest) -> IrttResponse:
         )
 
     client_cmd = [
-        f"ip netns exec {cfg.client_namespace} {binary} client",
+        f"exec ip netns exec {cfg.client_namespace} {binary} client",
         f"-i {cfg.interval_ms}ms",
         f"-d {cfg.duration_seconds}s",
         "-Q",
