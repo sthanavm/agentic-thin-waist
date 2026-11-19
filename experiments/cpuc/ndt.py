@@ -32,7 +32,9 @@ import subprocess
 from dataclasses import dataclass, field
 from typing import Any, Optional
 
-WORKER_CONTAINER = "substrate-worker"
+# Overridable so a harness can drive a renamed worker instead of the shared
+# one; the default is unchanged.
+WORKER_CONTAINER = os.environ.get("CPUC_WORKER_CONTAINER", "substrate-worker")
 # The worker image already carries the ndt7 client at this path.
 NDT_BIN = os.environ.get("CPUC_NDT_BIN", "/usr/local/bin/ndt-client")
 CLIENT_NS = "ns1"
