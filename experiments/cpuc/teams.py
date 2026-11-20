@@ -32,6 +32,7 @@ import traceback
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from cpuc import conditions as C  # noqa: E402
+from cpuc import ctp as ctp_mod  # noqa: E402
 from cpuc import (
     deps,
     drive_pramana,
@@ -75,6 +76,8 @@ PEER_STATUS = os.environ.get(
     "/home/student/pramana-assets/peer-teams/teams_status.json",
 )
 PEER_FRESH_S = 180.0
+# Download-direction profiles only -- same side netns.start_ctp_replay plays.
+CTP_DIR = os.path.join(ctp_mod.DEFAULT_CTP_DIR, "download")
 
 # Teams' getStats path emits the same inbound-rtp fields Meet's does (see PR14
 # in agentic-thin-waist main: collect.py's WEBRTC_HOOK_JS is app-agnostic, it
@@ -84,8 +87,20 @@ PEER_FRESH_S = 180.0
 os.environ.setdefault("PRAMANA_REMOTE_TILE_MIN_AREA", "0")
 
 
-def drive_teams(app: str, condition, duration_s: int, out_dir: str) -> AppRunResult:
-    """One Teams run: bot publishes the clip, Chrome in ns1 receives it."""
+def drive_teams(
+    app: str,
+    condition,
+    duration_s: int,
+    out_dir: str,
+    ctp_profile: str = "",
+) -> AppRunResult:
+    """One Teams run: bot publishes the clip, Chrome in ns1 receives it.
+
+    `ctp_profile`: see drive_pramana.drive()'s docstring -- same mechanism,
+    reimplemented here rather than shared because this driver calls
+    H.run_direct(cfg) itself (for the bot/peer setup) instead of going
+    through drive_pramana.drive().
+    """
     deps.install()
     os.environ.setdefault(
         "PRAMANA_COLLECTOR_IMAGE", drive_pramana.REQUIRED_COLLECTOR_IMAGE
@@ -124,9 +139,14 @@ def drive_teams(app: str, condition, duration_s: int, out_dir: str) -> AppRunRes
                 "join_deadline_s": JOIN_DEADLINE_S,
             }
         },
+        extra_probe_endpoint_ips=(
+            {"ctp": {netns.CTP_PNAT_IP}} if ctp_profile else None
+        ),
     )
     restore = netns.install_shape_hook(H, condition.loss_pct, condition.rtt_ms)
     try:
+        if ctp_profile:
+            netns.start_ctp_replay(ctp_profile, CTP_DIR, seconds=duration_s + 30)
         with browser.CmdlineWatcher(timeout_s=duration_s + 240) as watcher:
             record = H.run_direct(cfg)
     except Exception as exc:  # noqa: BLE001
@@ -147,8 +167,8 @@ class TeamsAdapter:
     name = "teams"
     category = "conferencing"
 
-    def run_app(self, app, condition, duration_s, out_dir):
-        return drive_teams(app, condition, duration_s, out_dir)
+    def run_app(self, app, condition, duration_s, out_dir, ctp_profile=""):
+        return drive_teams(app, condition, duration_s, out_dir, ctp_profile=ctp_profile)
 
     def label(self, result, app, reference):
         pq = result.player_qoe.get(app, result.player_qoe)
@@ -203,6 +223,7 @@ def run_app_point(plan, adapter, out_root, csv_path, reference, attempt, clip_in
     )
     row.update({"suspect": False, "suspect_reason": "", "attempt": attempt})
     row.update(clip_info)
+    row["ctp_profile"] = plan.ctp_profile
 
     row.update(assert_room_reachable(ROOM))
     runner.apply_condition(cond)
@@ -210,7 +231,9 @@ def run_app_point(plan, adapter, out_root, csv_path, reference, attempt, clip_in
     row["link_idle_mbps_before"] = round(mbps, 3)
 
     try:
-        res = adapter.run_app(plan.app, cond, runner.APP_WINDOW_S, out_dir)
+        res = adapter.run_app(
+            plan.app, cond, runner.APP_WINDOW_S, out_dir, ctp_profile=plan.ctp_profile
+        )
     except Exception as exc:  # noqa: BLE001
         row["invalid_reason"] = f"teams run raised {type(exc).__name__}: {exc}"
         runner.write_row(csv_path, row)
@@ -315,10 +338,39 @@ def main() -> int:
         "when NDT is blocked (M-Lab rate limiting) or just not needed right "
         "now; run --ndt-only separately later to fill in the speed tests",
     )
+    ap.add_argument(
+        "--ctp-count",
+        type=int,
+        default=0,
+        help="run N additional CTP runs at 10 Mb/s / 100 ms, one random "
+        "profile each, on top of (or in place of, with --ctp-only) the main "
+        "matrix above",
+    )
+    ap.add_argument(
+        "--ctp-dir",
+        default=ctp_mod.DEFAULT_CTP_DIR,
+        help="CTP corpus root (must contain manifest.csv and a download/ "
+        "subdir), default /home/student/ctp_data",
+    )
+    ap.add_argument(
+        "--ctp-seed",
+        type=int,
+        default=None,
+        help="random seed for --ctp-count's profile pick, for a reproducible set",
+    )
+    ap.add_argument(
+        "--ctp-only",
+        action="store_true",
+        help="run only the CTP sweep (requires --ctp-count), skipping the "
+        "main rate/RTT matrix entirely",
+    )
     ap.add_argument("--out-root", default="/home/student/cpuc_data/teams/runs")
     ap.add_argument("--csv", default="/home/student/cpuc_data/teams/cpuc_runs.csv")
     ap.add_argument("--marker", default="/home/student/cpuc_data/teams/COMPLETE")
     args = ap.parse_args()
+
+    if args.ctp_only and not args.ctp_count:
+        ap.error("--ctp-only requires --ctp-count")
 
     if not ROOM:
         ap.error(
@@ -344,6 +396,9 @@ def main() -> int:
     drive_pramana.assert_collector_has_probe()
     log(f"collector OK: {drive_pramana.REQUIRED_COLLECTOR_IMAGE}")
     log(f"room: {ROOM}")
+    if args.ctp_count:
+        netns.assert_ctp_mount()
+        log(f"CTP mount OK: {netns.CTP_CONTAINER_DIR}")
 
     rates = (
         tuple(float(x) for x in args.rates.split(",") if x.strip())
@@ -379,6 +434,17 @@ def main() -> int:
         plans = [p for p in plans if p.run_type == "ndt"]
     if args.app_only:
         plans = [p for p in plans if p.run_type == "app"]
+    if args.ctp_only:
+        plans = []
+    if args.ctp_count:
+        profiles = ctp_mod.random_profiles(
+            args.ctp_count, args.ctp_dir, seed=args.ctp_seed
+        )
+        log(
+            f"CTP sweep: {args.ctp_count} profiles from {args.ctp_dir} "
+            f"(seed={args.ctp_seed}): {', '.join(profiles)}"
+        )
+        plans = plans + C.ctp_plan(app="teams", profiles=profiles)
     # All Teams runs first (highest rate first), then all NDT runs -- same
     # reasoning as meet.py: the meeting has a finite life, the NDT runs do not
     # need it, so they should not risk losing a bandwidth point to a meeting
@@ -403,6 +469,7 @@ def main() -> int:
                 f"{plan.run_type} {plan.app or 'ndt'} "
                 f"{plan.condition.rate_down_mbps:g}/{plan.condition.rate_up_mbps:g} Mb/s "
                 f"{plan.condition.rtt_ms:g}ms {plan.condition.loss_mode}"
+                + (f" ctp={plan.ctp_profile}" if plan.ctp_profile else "")
             )
             log(f"[{i}/{len(plans)}] {label}")
             row = {}

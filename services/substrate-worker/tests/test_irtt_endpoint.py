@@ -106,7 +106,15 @@ def test_server_accepts_at_least_the_clients_duration(started):
 def test_server_lifetime_is_bounded_so_it_cannot_outlive_the_run(started):
     """An orphan would hold the port and make the next run's bind fail obscurely."""
     _resp, popen, _s, _c = started
-    assert popen.call_args_list[0].args[0].startswith("timeout -k 5 150")
+    assert popen.call_args_list[0].args[0].startswith("exec timeout -k 5 150")
+
+
+def test_server_and_client_are_execd_so_delete_really_stops_them(started):
+    """Without `exec`, terminate() hits /bin/sh and the irtt server is orphaned,
+    still bound to 172.16.2.1:2112: the next POST /irtt then fails to bind."""
+    _resp, popen, _s, _c = started
+    for call in popen.call_args_list[:2]:
+        assert call.args[0].startswith("exec "), call.args[0]
 
 
 def test_readiness_is_checked_rather_than_slept_on():

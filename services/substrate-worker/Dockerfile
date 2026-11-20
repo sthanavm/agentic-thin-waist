@@ -70,13 +70,14 @@ ENV UV_PROJECT_ENVIRONMENT=/opt/substrate-worker-venv
 # deliberately: the probe's own send timing IS the measurement, so a bump that
 # changed its scheduler or its JSON schema would silently change the numbers.
 #
-# 0.9.1-1 is what this base image's suite (Ubuntu 26.04 "resolute", universe)
-# carries. Note that the base is `browserless/chromium:latest`, which is NOT
-# pinned and has already moved 24.04 -> 26.04, so this pin is only as stable as
-# that tag. When the base moves again the build FAILS here with "Version ... was
-# not found" rather than silently installing a different probe, which is the
-# intended behaviour: re-pin deliberately and re-check the JSON schema.
-# Verified: 0.9.1 emits json format version 1, the same as 0.9.0 on the host.
+# The pin must be a version the base image's suite carries. The base is pinned
+# to browserless/chromium:v2.56.7, which is Ubuntu 24.04 "noble"; noble universe
+# carries 0.9.0-2ubuntu0.24.04.3. Do NOT re-pin 0.9.1-1 here: that version only
+# exists in 26.04 "resolute" (what `:latest` was before the base was pinned) and
+# the build fails with "Version '0.9.1-1' for 'irtt' was not found" on noble.
+# 0.9.0-2ubuntu0.24.04.3 is also byte-identical to the host irtt that produced
+# the existing IRTT data. If the base moves suite, re-pin deliberately and
+# re-check the JSON schema (0.9.0 emits json format version 1).
 RUN apt-get update && apt-get install -y \
     python3 python-is-python3 \
     tshark iputils-ping iproute2 \
@@ -84,7 +85,7 @@ RUN apt-get update && apt-get install -y \
     curl wget iptables byobu nano \
     speedtest-cli tcpreplay \
     python3-flask python3-requests \
-    irtt=0.9.1-1 \
+    irtt=0.9.0-2ubuntu0.24.04.3 \
     sudo util-linux kmod \
     gcc libc6-dev \
     && rm -rf /var/lib/apt/lists/*

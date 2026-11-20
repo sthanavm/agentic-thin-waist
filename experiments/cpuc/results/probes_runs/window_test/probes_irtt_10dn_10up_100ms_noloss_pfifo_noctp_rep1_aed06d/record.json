@@ -1,0 +1,99 @@
+{
+  "slug": "probes_irtt_10dn_10up_100ms_noloss_pfifo_noctp_rep1_aed06d",
+  "timestamp_utc": "2026-11-19T18:06:46+00:00",
+  "mode": "irtt",
+  "ctp_profile": "",
+  "rep": 1,
+  "condition": "10dn_10up_100ms_noloss_pfifo",
+  "rate_down_mbps": 10.0,
+  "rate_up_mbps": 10.0,
+  "rtt_ms": 100.0,
+  "qdisc": "pfifo",
+  "duration_s": 60,
+  "worker_container": "jenil-fork-worker",
+  "errors": [
+    "IRTT did not start on the worker endpoint"
+  ],
+  "buffer_packets": 1000,
+  "shape": {
+    "status": "shaped",
+    "bottleneck_state": {
+      "download_mbps": 10.0,
+      "upload_mbps": 10.0,
+      "latency_ms": 100.0,
+      "latency_location": "upstream",
+      "qdisc": "pfifo",
+      "verified": false,
+      "buffer_packets": 1000,
+      "qdisc_params": null,
+      "loss_rate_percent": 0.0,
+      "verification_log": [
+        "upload: measured=12.23Mbps expected=10.0Mbps diff=22.3%",
+        "FAIL: upload out of \u00b120% range",
+        "download: measured=8.74Mbps expected=10.0Mbps diff=12.6%",
+        "PASS: download",
+        "latency: measured_rtt=171.95ms expected_rtt=100.00ms diff=71.95ms",
+        "FAIL: latency out of \u00b110.0ms range"
+      ]
+    },
+    "applied_commands": [
+      "tc qdisc del dev veth2 root 2>/dev/null || true",
+      "tc qdisc add dev veth2 root handle 1: htb default 10 r2q 100",
+      "tc class add dev veth2 parent 1: classid 1:10 htb rate 10.0Mbit ceil 10.0Mbit",
+      "tc qdisc add dev veth2 parent 1:10 handle 10: pfifo limit 1000",
+      "tc qdisc del dev veth4 root 2>/dev/null || true",
+      "tc qdisc add dev veth4 root handle 1: htb default 10 r2q 100",
+      "tc class add dev veth4 parent 1: classid 1:10 htb rate 10.0Mbit ceil 10.0Mbit",
+      "tc qdisc add dev veth4 parent 1:10 handle 10: pfifo limit 1000",
+      "tc qdisc del dev eth0 root 2>/dev/null || true",
+      "tc qdisc add dev eth0 root handle 1: htb default 10 r2q 100",
+      "tc class add dev eth0 parent 1: classid 1:10 htb rate 10.0Mbit ceil 10.0Mbit",
+      "tc qdisc add dev eth0 parent 1:10 handle 10: pfifo limit 1000",
+      "ip netns exec ns1 tc qdisc del dev veth1 root 2>/dev/null || true",
+      "ip netns exec ns2 tc qdisc del dev veth3 root 2>/dev/null || true",
+      "ip netns exec ns2 tc qdisc add dev veth3 root netem delay 100.0ms"
+    ]
+  },
+  "congestion": {
+    "current_algorithm": "cubic",
+    "available_algorithms": [
+      "reno",
+      "cubic",
+      "bbr",
+      "bic",
+      "cdg",
+      "highspeed",
+      "htcp",
+      "hybla",
+      "illinois",
+      "nv",
+      "scalable",
+      "vegas",
+      "veno",
+      "westwood",
+      "yeah"
+    ],
+    "status": "ok"
+  },
+  "window_epoch": [
+    1795111622.944,
+    1795111682.945
+  ],
+  "attribution_bucket_mb": {
+    "other": 0.0,
+    "off_link": 0.0
+  },
+  "ctp_observed": {
+    "mbps_window_mean": 0.0,
+    "mbps_window_p95_1s": 0.0,
+    "bytes_window": 0
+  },
+  "bytes_by_class": {
+    "ctp": 0,
+    "irtt": 66,
+    "netvibe": 0,
+    "other": 94
+  },
+  "pcap": "experiments/cpuc/results/probes_runs/window_test/probes_irtt_10dn_10up_100ms_noloss_pfifo_noctp_rep1_aed06d/capture.pcap",
+  "ok": false
+}

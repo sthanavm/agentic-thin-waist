@@ -8,6 +8,8 @@ are checked without namespaces or the Go binaries.
 """
 
 import json
+import os
+import sqlite3
 import subprocess
 from unittest.mock import MagicMock, patch
 
@@ -27,7 +29,7 @@ PAYLOAD = {
     "duration_seconds": 60,
     "rate_per_second": 10,
     "server_address": "172.16.2.1",
-    "signaling_address": "172.16.2.2",
+    "signaling_address": "172.16.2.1",
     "media_port": 10443,
     "sensor_id": "pramana-ns1",
 }
@@ -74,27 +76,32 @@ def test_missing_binaries_are_refused_with_build_instructions():
     assert "Go 1.25" in detail
 
 
-def test_start_returns_an_id_and_both_probe_addresses(started):
+def test_start_returns_an_id_and_the_probe_address(started):
     resp = started[0]
     assert resp.status_code == 200
     body = resp.json()
     assert body["status"] == "started"
     assert body["netvibe_id"]
-    # Media on ns2's veth3, the sensor API on the root side of veth4: both are
-    # the probe's, and both must be kept out of the app's figures.
-    assert body["endpoint_ips"] == ["172.16.2.1", "172.16.2.2"]
+    # Media and the sensor API are both on ns2's veth3 now, and must be kept
+    # out of the app's figures.
+    assert body["endpoint_ips"] == ["172.16.2.1"]
 
 
-def test_the_probe_server_is_placed_in_ns2_with_benchs_own_netns_key(started, tmp_path):
-    """Jaber's spec, done upstream's way rather than by wrapping bench."""
-    _resp, _popen, _bench, _sensor, _stub = started
+def test_bench_runs_in_ns2_and_listens_where_ns1_can_reach(started, tmp_path):
+    """Bench in the worker's root namespace listened on 172.16.2.2, which ns1
+    cannot reach: the sensor never registered and nothing was recorded. Bench
+    now runs inside ns2, as the host fallback does, so its probe server child
+    needs no `netns` key."""
+    _resp, popen, _bench, _sensor, _stub = started
+    bench_cmd = popen.call_args_list[1].args[0]
+    assert "ip netns exec ns2 /opt/netvibe/bin/netvibe-bench" in bench_cmd
     session = next(iter(main_module.ACTIVE_NETVIBE.values()))
     cfg = json.loads(open(f"{session['work']}/bench.yaml").read())
     server = cfg["probe_servers"][0]
-    assert server["netns"] == "ns2"
+    assert "netns" not in server
     assert server["media_port"] == 10443
     assert server["public_ip"] == "172.16.2.1"
-    assert cfg["listen"] == "172.16.2.2:9999"
+    assert cfg["listen"] == "172.16.2.1:9999"
     # No part of the deployed stack is involved.
     assert cfg["out"].endswith("bench.sqlite")
 
@@ -106,7 +113,7 @@ def test_the_sensor_runs_in_ns1_with_host_candidates_only(started):
     assert "ip netns exec ns1" in sensor_cmd
     assert "netvibe-cli test" in sensor_cmd
     assert "--no-stun" in sensor_cmd
-    assert "--signaling-host http://172.16.2.2" in sensor_cmd
+    assert "--signaling-host http://172.16.2.1" in sensor_cmd
 
 
 def test_the_speedtest_is_suppressed_by_a_stub_not_by_luck(started):
@@ -130,7 +137,36 @@ def test_the_speedtest_is_suppressed_by_a_stub_not_by_luck(started):
 
 def test_bench_lifetime_is_bounded_so_it_cannot_outlive_the_run(started):
     _resp, popen, _bench, _sensor, _stub = started
-    assert popen.call_args_list[1].args[0].startswith("timeout -k 5 240")
+    assert popen.call_args_list[1].args[0].startswith("exec timeout -k 5 240")
+
+
+def test_readiness_is_asked_from_inside_ns2_where_bench_runs(tmp_path):
+    """The worker's root namespace cannot reach ns2's veth3 address, so a
+    readiness check from there times out although bench is up."""
+    with patch.object(
+        probes_module, "_netvibe_bin", side_effect=lambda n: f"/opt/netvibe/bin/{n}"
+    ), patch.object(
+        main_module.subprocess,
+        "Popen",
+        side_effect=[_proc(None), _proc(None), _proc(None)],
+    ), patch.object(
+        main_module.subprocess,
+        "run",
+        return_value=MagicMock(returncode=0, stdout=b'{"ready":true}'),
+    ) as run:
+        r = client.post("/netvibe", json=PAYLOAD)
+    assert r.status_code == 200
+    ready_cmd = run.call_args_list[0].args[0]
+    assert ready_cmd.startswith("ip netns exec ns2 curl")
+    assert "http://172.16.2.1:9999/ready" in ready_cmd
+
+
+def test_every_command_is_execd_so_terminate_reaches_the_process(started):
+    """Without `exec`, terminate() signals only /bin/sh and bench runs on,
+    orphaned, never checkpointing its WAL."""
+    _resp, popen, _bench, _sensor, _stub = started
+    for call in popen.call_args_list:
+        assert call.args[0].startswith("exec "), call.args[0]
 
 
 def test_escalation_is_configured_only_when_asked(tmp_path):
@@ -187,7 +223,7 @@ def test_a_readiness_timeout_names_the_url():
         r = client.post("/netvibe", json=PAYLOAD)
     assert r.status_code == 504
     assert "never reported ready" in r.json()["detail"]
-    assert "172.16.2.2:9999" in r.json()["detail"]
+    assert "172.16.2.1:9999" in r.json()["detail"]
 
 
 def test_status_reports_running_then_finished(started):
@@ -204,6 +240,26 @@ def test_status_of_an_unknown_id_is_404():
     assert client.get("/netvibe/nope").status_code == 404
 
 
+def _bench_db(path, probe_records=3):
+    """A bench-shaped SQLite file in WAL mode with its rows still in the WAL.
+
+    The connection is returned open with autocheckpoint off, which is how bench
+    leaves it: the main file reads ~4 KB while the records sit in -wal.
+    """
+    conn = sqlite3.connect(path)
+    conn.execute("PRAGMA journal_mode=WAL")
+    conn.execute("PRAGMA wal_autocheckpoint=0")
+    for t in ("sensors", "probe_sessions", "probe_records"):
+        conn.execute(f'CREATE TABLE "{t}" (x INTEGER)')
+    conn.execute("INSERT INTO sensors VALUES (1)")
+    conn.execute("INSERT INTO probe_sessions VALUES (1)")
+    conn.executemany(
+        "INSERT INTO probe_records VALUES (?)", [(i,) for i in range(probe_records)]
+    )
+    conn.commit()
+    return conn
+
+
 def test_delete_stops_the_sensor_before_bench(started, tmp_path):
     """bench flushes its records and writes stopped_at_ns on SIGTERM.
 
@@ -213,17 +269,51 @@ def test_delete_stops_the_sensor_before_bench(started, tmp_path):
     resp, _popen, bench, sensor, _stub = started
     nid = resp.json()["netvibe_id"]
     out = tmp_path / "bench.sqlite"
-    out.write_bytes(b"SQLite format 3\x00" + b"\x00" * 100)
+    conn = _bench_db(str(out))
     main_module.ACTIVE_NETVIBE[nid]["out_sqlite"] = str(out)
 
     body = client.delete(f"/netvibe/{nid}").json()
+    conn.close()
     assert body["status"] == "stopped"
     assert body["error"] is None
     assert body["out_sqlite_bytes"] > 0
-    assert body["endpoint_ips"] == ["172.16.2.1", "172.16.2.2"]
+    assert body["endpoint_ips"] == ["172.16.2.1"]
     sensor.terminate.assert_called()
     bench.terminate.assert_called()
     assert nid not in main_module.ACTIVE_NETVIBE
+
+
+def test_delete_counts_records_still_in_the_wal(started, tmp_path):
+    """The main file alone read 4096 bytes while the data sat in the WAL, so a
+    run looked empty when it was not. The report must see the WAL's rows."""
+    resp = started[0]
+    nid = resp.json()["netvibe_id"]
+    out = tmp_path / "bench.sqlite"
+    conn = _bench_db(str(out), probe_records=50)
+    main_only = os.path.getsize(out)
+    assert os.path.getsize(str(out) + "-wal") > 0
+    main_module.ACTIVE_NETVIBE[nid]["out_sqlite"] = str(out)
+
+    body = client.delete(f"/netvibe/{nid}").json()
+    conn.close()
+    assert body["records"] == {"sensors": 1, "probe_sessions": 1, "probe_records": 50}
+    assert body["out_sqlite_bytes"] > main_only
+    assert body["error"] is None
+
+
+def test_delete_reports_a_run_that_recorded_no_probes(started, tmp_path):
+    """A valid file with zero probe records is a failed measurement, not a
+    quiet run: this is exactly what the unreachable-bench bug produced."""
+    resp = started[0]
+    nid = resp.json()["netvibe_id"]
+    out = tmp_path / "bench.sqlite"
+    conn = _bench_db(str(out), probe_records=0)
+    main_module.ACTIVE_NETVIBE[nid]["out_sqlite"] = str(out)
+
+    body = client.delete(f"/netvibe/{nid}").json()
+    conn.close()
+    assert body["records"]["probe_records"] == 0
+    assert "recorded no probes" in body["error"]
 
 
 def test_delete_reports_a_run_that_wrote_no_file(started):

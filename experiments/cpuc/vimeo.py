@@ -55,6 +55,7 @@ import traceback
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from cpuc import conditions as C  # noqa: E402
+from cpuc import ctp as ctp_mod  # noqa: E402
 from cpuc import (
     deps,
     drive_pramana,
@@ -69,6 +70,9 @@ MIN_FREE_BYTES = 2 * 1024**3
 VIMEO_URL = os.environ.get(
     "CPUC_VIMEO_URL", "https://player.vimeo.com/video/911411289?autoplay=1&muted=1"
 )
+# Download-direction profiles only -- the same side run_direct_teams_only_
+# experiment.py and netns.start_ctp_replay replay.
+CTP_DIR = os.path.join(ctp_mod.DEFAULT_CTP_DIR, "download")
 
 
 def log(msg: str) -> None:
@@ -98,9 +102,15 @@ class VimeoAdapter:
     name = "vimeo"
     category = "streaming"
 
-    def run_app(self, app, condition, duration_s, out_dir):
+    def run_app(self, app, condition, duration_s, out_dir, ctp_profile=""):
         return drive_pramana.drive(
-            app, condition, duration_s, out_dir, app_url=VIMEO_URL
+            app,
+            condition,
+            duration_s,
+            out_dir,
+            app_url=VIMEO_URL,
+            ctp_profile=ctp_profile,
+            ctp_dir=CTP_DIR,
         )
 
     def label(self, result, app, reference):
@@ -153,6 +163,7 @@ def run_app_point(plan, adapter, out_root, csv_path, reference, attempt):
         plan, run_id, group, out_dir, f"vimeo_{cond.rtt_ms:g}ms", time.gmtime()
     )
     row.update({"suspect": False, "suspect_reason": "", "attempt": attempt})
+    row["ctp_profile"] = plan.ctp_profile
 
     row.update(assert_url_reachable(VIMEO_URL))
     runner.apply_condition(cond)
@@ -160,7 +171,9 @@ def run_app_point(plan, adapter, out_root, csv_path, reference, attempt):
     row["link_idle_mbps_before"] = round(mbps, 3)
 
     try:
-        res = adapter.run_app(plan.app, cond, runner.APP_WINDOW_S, out_dir)
+        res = adapter.run_app(
+            plan.app, cond, runner.APP_WINDOW_S, out_dir, ctp_profile=plan.ctp_profile
+        )
     except Exception as exc:  # noqa: BLE001
         row["invalid_reason"] = f"vimeo run raised {type(exc).__name__}: {exc}"
         runner.write_row(csv_path, row)
@@ -250,10 +263,39 @@ def main() -> int:
         help="run only the Vimeo-play half, skipping NDT; run --ndt-only "
         "separately later to fill in the speed tests",
     )
+    ap.add_argument(
+        "--ctp-count",
+        type=int,
+        default=0,
+        help="run N additional CTP runs at 10 Mb/s / 100 ms, one random "
+        "profile each, on top of (or in place of, with --ctp-only) the main "
+        "matrix above",
+    )
+    ap.add_argument(
+        "--ctp-dir",
+        default=ctp_mod.DEFAULT_CTP_DIR,
+        help="CTP corpus root (must contain manifest.csv and a download/ "
+        "subdir), default /home/student/ctp_data",
+    )
+    ap.add_argument(
+        "--ctp-seed",
+        type=int,
+        default=None,
+        help="random seed for --ctp-count's profile pick, for a reproducible set",
+    )
+    ap.add_argument(
+        "--ctp-only",
+        action="store_true",
+        help="run only the CTP sweep (requires --ctp-count), skipping the "
+        "main rate/RTT matrix entirely",
+    )
     ap.add_argument("--out-root", default="/home/student/cpuc_data/vimeo/runs")
     ap.add_argument("--csv", default="/home/student/cpuc_data/vimeo/cpuc_runs.csv")
     ap.add_argument("--marker", default="/home/student/cpuc_data/vimeo/COMPLETE")
     args = ap.parse_args()
+
+    if args.ctp_only and not args.ctp_count:
+        ap.error("--ctp-only requires --ctp-count")
 
     os.makedirs(args.out_root, exist_ok=True)
     os.makedirs(os.path.dirname(args.csv), exist_ok=True)
@@ -265,6 +307,9 @@ def main() -> int:
     drive_pramana.assert_collector_has_probe()
     log(f"collector OK: {drive_pramana.REQUIRED_COLLECTOR_IMAGE}")
     log(f"video: {VIMEO_URL}")
+    if args.ctp_count:
+        netns.assert_ctp_mount()
+        log(f"CTP mount OK: {netns.CTP_CONTAINER_DIR}")
 
     rates = (
         tuple(float(x) for x in args.rates.split(",") if x.strip())
@@ -300,6 +345,17 @@ def main() -> int:
         plans = [p for p in plans if p.run_type == "ndt"]
     if args.app_only:
         plans = [p for p in plans if p.run_type == "app"]
+    if args.ctp_only:
+        plans = []
+    if args.ctp_count:
+        profiles = ctp_mod.random_profiles(
+            args.ctp_count, args.ctp_dir, seed=args.ctp_seed
+        )
+        log(
+            f"CTP sweep: {args.ctp_count} profiles from {args.ctp_dir} "
+            f"(seed={args.ctp_seed}): {', '.join(profiles)}"
+        )
+        plans = plans + C.ctp_plan(app="vimeo", profiles=profiles)
     plans.sort(key=lambda p: (p.run_type != "app", -p.condition.rate_down_mbps))
     if args.limit:
         plans = plans[: args.limit]
@@ -319,6 +375,7 @@ def main() -> int:
                 f"{plan.run_type} {plan.app or 'ndt'} "
                 f"{plan.condition.rate_down_mbps:g}/{plan.condition.rate_up_mbps:g} Mb/s "
                 f"{plan.condition.rtt_ms:g}ms {plan.condition.loss_mode}"
+                + (f" ctp={plan.ctp_profile}" if plan.ctp_profile else "")
             )
             log(f"[{i}/{len(plans)}] {label}")
             row = {}
