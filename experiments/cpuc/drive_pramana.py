@@ -154,6 +154,8 @@ def drive(
     duration_s: int,
     out_dir: str,
     app_url: Optional[str] = None,
+    ctp_profile: str = "",
+    ctp_dir: str = "",
 ) -> AppRunResult:
     """One app run in `condition`, returning what the guard and labeller need.
 
@@ -161,6 +163,14 @@ def drive(
     `pramana_helpers.APP_REGISTRY[app]["url"]`. Passed explicitly (e.g. by
     vimeo.py) so every row's record carries exactly what was played rather
     than relying on a registry default a reader of the CSV cannot see.
+
+    `ctp_profile` (optional): replay this CTP profile's download side for the
+    duration of the run. `ctp_dir` must be the directory holding
+    `<ctp_profile>.pcap` on the HOST (used only for the pre-flight existence
+    check -- see netns.start_ctp_replay for why the replay itself reads a
+    different, container-side path). Registers the replay's destination IP
+    as a named probe on `cfg` so `link_interference` does not flag this
+    traffic as unexplained background contention.
     """
     H = _helpers()
     netns.start_iperf3_server()
@@ -178,10 +188,19 @@ def drive(
         app_urls=({app: app_url} if app_url else {}),
         force_max_quality=FORCE_MAX_QUALITY,
         app_window=APP_WINDOW,
+        extra_probe_endpoint_ips=(
+            {"ctp": {netns.CTP_PNAT_IP}} if ctp_profile else None
+        ),
     )
 
     restore = netns.install_shape_hook(H, condition.loss_pct, condition.rtt_ms)
     try:
+        if ctp_profile:
+            # Margin over duration_s: this is a fire-and-forget start, not
+            # synchronized to run_direct's first sample (see
+            # netns.start_ctp_replay's docstring), so it must still be
+            # running through run_direct's own setup latency.
+            netns.start_ctp_replay(ctp_profile, ctp_dir, seconds=duration_s + 30)
         with browser.CmdlineWatcher(timeout_s=duration_s + 120) as watcher:
             record = H.run_direct(cfg)
     except Exception as exc:  # noqa: BLE001 - a failed run is data, not a crash
