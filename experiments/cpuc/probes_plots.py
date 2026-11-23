@@ -90,13 +90,31 @@ def _short(name: str) -> str:
     )
 
 
+def _ctp_rate(rows: list[dict], g: str) -> float:
+    vals = [
+        float(r["ctp_mbps_window_mean"])
+        for r in rows
+        if r["ctp_profile"] == g and r.get("ctp_mbps_window_mean") not in ("", None)
+    ]
+    return statistics.median(vals) if vals else 0.0
+
+
 def plot_comparison(rows: list[dict], out: Path) -> None:
-    groups = ["none"] + sorted({r["ctp_profile"] for r in rows} - {"none"})
-    labels = ["no CTP\n(baseline)"] + [textwrap.fill(_short(g), 18) for g in groups[1:]]
+    # Profiles ordered by the CTP rate measured on the link, so the RTT rise
+    # reads left to right against the load that caused it.
+    profiles = sorted(
+        {r["ctp_profile"] for r in rows} - {"none"}, key=lambda g: _ctp_rate(rows, g)
+    )
+    groups = ["none"] + profiles
+    labels = ["no CTP\n(baseline)"] + [
+        textwrap.fill(_short(g), 12) + f"\n{_ctp_rate(rows, g):.2f} Mb/s"
+        for g in profiles
+    ]
+    wide = len(groups) > 4
     fig, axes = plt.subplots(
-        1,
-        2,
-        figsize=(max(7, 1.3 * len(groups) + 3), 4.2),
+        2 if wide else 1,
+        1 if wide else 2,
+        figsize=(max(7, 1.1 * len(groups) + 2), 8.4) if wide else (7, 4.2),
         sharey=True,
         facecolor=SURFACE,
     )
@@ -131,8 +149,14 @@ def plot_comparison(rows: list[dict], out: Path) -> None:
             )
         ax.set_xticks(range(len(groups)))
         ax.set_xticklabels(labels, fontsize=8, color=INK2)
-        ax.set_title(f"{LABEL[p]} RTT p95 per run", color=INK, fontsize=10, loc="left")
-    axes[0].set_ylabel("RTT p95 (ms); bar = median of runs", color=INK2, fontsize=9)
+        ax.set_title(
+            f"{LABEL[p]} RTT p95 per run (profiles ordered by measured CTP rate)",
+            color=INK,
+            fontsize=10,
+            loc="left",
+        )
+    for ax in axes if wide else axes[:1]:
+        ax.set_ylabel("RTT p95 (ms); bar = median of runs", color=INK2, fontsize=9)
     fig.tight_layout()
     fig.savefig(out, dpi=130, facecolor=SURFACE)
     plt.close(fig)
