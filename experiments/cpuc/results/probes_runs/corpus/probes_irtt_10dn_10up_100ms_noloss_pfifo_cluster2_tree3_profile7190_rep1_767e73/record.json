@@ -1,0 +1,152 @@
+{
+  "slug": "probes_irtt_10dn_10up_100ms_noloss_pfifo_cluster2_tree3_profile7190_rep1_767e73",
+  "timestamp_utc": "2026-11-23T00:31:21+00:00",
+  "mode": "irtt",
+  "ctp_profile": "cluster2_tree3_profile7190",
+  "rep": 1,
+  "condition": "10dn_10up_100ms_noloss_pfifo",
+  "rate_down_mbps": 10.0,
+  "rate_up_mbps": 10.0,
+  "rtt_ms": 100.0,
+  "qdisc": "pfifo",
+  "duration_s": 60,
+  "worker_container": "jenil-fork-worker",
+  "errors": [],
+  "buffer_packets": 1000,
+  "shape": {
+    "status": "shaped",
+    "bottleneck_state": {
+      "download_mbps": 10.0,
+      "upload_mbps": 10.0,
+      "latency_ms": 100.0,
+      "latency_location": "upstream",
+      "qdisc": "pfifo",
+      "verified": false,
+      "buffer_packets": 1000,
+      "qdisc_params": null,
+      "loss_rate_percent": 0.0,
+      "verification_log": [
+        "upload: measured=12.23Mbps expected=10.0Mbps diff=22.3%",
+        "FAIL: upload out of \u00b120% range",
+        "download: measured=8.73Mbps expected=10.0Mbps diff=12.7%",
+        "PASS: download",
+        "latency: measured_rtt=168.98ms expected_rtt=100.00ms diff=68.98ms",
+        "FAIL: latency out of \u00b110.0ms range"
+      ]
+    },
+    "applied_commands": [
+      "tc qdisc del dev veth2 root 2>/dev/null || true",
+      "tc qdisc add dev veth2 root handle 1: htb default 10 r2q 100",
+      "tc class add dev veth2 parent 1: classid 1:10 htb rate 10.0Mbit ceil 10.0Mbit",
+      "tc qdisc add dev veth2 parent 1:10 handle 10: pfifo limit 1000",
+      "tc qdisc del dev veth4 root 2>/dev/null || true",
+      "tc qdisc add dev veth4 root handle 1: htb default 10 r2q 100",
+      "tc class add dev veth4 parent 1: classid 1:10 htb rate 10.0Mbit ceil 10.0Mbit",
+      "tc qdisc add dev veth4 parent 1:10 handle 10: pfifo limit 1000",
+      "tc qdisc del dev eth0 root 2>/dev/null || true",
+      "tc qdisc add dev eth0 root handle 1: htb default 10 r2q 100",
+      "tc class add dev eth0 parent 1: classid 1:10 htb rate 10.0Mbit ceil 10.0Mbit",
+      "tc qdisc add dev eth0 parent 1:10 handle 10: pfifo limit 1000",
+      "ip netns exec ns1 tc qdisc del dev veth1 root 2>/dev/null || true",
+      "ip netns exec ns2 tc qdisc del dev veth3 root 2>/dev/null || true",
+      "ip netns exec ns2 tc qdisc add dev veth3 root netem delay 100.0ms"
+    ]
+  },
+  "congestion": {
+    "current_algorithm": "cubic",
+    "available_algorithms": [
+      "reno",
+      "cubic",
+      "bbr",
+      "bic",
+      "cdg",
+      "highspeed",
+      "htcp",
+      "hybla",
+      "illinois",
+      "nv",
+      "scalable",
+      "vegas",
+      "veno",
+      "westwood",
+      "yeah"
+    ],
+    "status": "ok"
+  },
+  "ctp_replay": {
+    "ctp_profile": "cluster2_tree3_profile7190",
+    "ctp_direction": "download",
+    "ctp_pnat": "169.231.0.0/16:172.16.1.20",
+    "ctp_replay_seconds": 90
+  },
+  "window_epoch": [
+    1795393896.58,
+    1795393956.581
+  ],
+  "irtt": {
+    "probe": "irtt",
+    "transport": "worker_endpoint",
+    "server_address": "172.16.2.1",
+    "port": 2112,
+    "endpoint_ips": [
+      "172.16.2.1"
+    ],
+    "interval_ms": 100,
+    "client_returncode": 0,
+    "error": null,
+    "status": "ok",
+    "round_trip_ms": {
+      "min": 100.2772,
+      "mean": 109.314,
+      "median": 100.518,
+      "max": 212.4302,
+      "stddev": 23.3925
+    },
+    "one_way_ms": {
+      "send_mean": 0.2617,
+      "receive_mean": 109.0521
+    },
+    "jitter_ms": {
+      "round_trip_mean": 7.3455,
+      "send_mean": 0.0701,
+      "receive_mean": 7.3402
+    },
+    "packets": {
+      "sent": 598,
+      "received": 598,
+      "loss_percent": 0,
+      "upstream_loss_percent": 0,
+      "downstream_loss_percent": 0,
+      "duplicates": 0,
+      "late": 0
+    },
+    "bytes": {
+      "sent": 35880,
+      "received": 35880
+    },
+    "duration_ms": 60538.7884,
+    "timer": {
+      "error_percent": 0.217383,
+      "miss_percent": 0.1669449081803005,
+      "misses": 1
+    },
+    "irtt_version": "0.9.0"
+  },
+  "attribution_bucket_mb": {
+    "off_link": 22.054,
+    "irtt": 0.122
+  },
+  "ctp_observed": {
+    "mbps_window_mean": 1.792,
+    "mbps_window_p95_1s": 4.4906,
+    "bytes_window": 13440059
+  },
+  "bytes_by_class": {
+    "ctp": 22053572,
+    "irtt": 122326,
+    "netvibe": 0,
+    "other": 0
+  },
+  "pcap": "experiments/cpuc/results/probes_runs/corpus/probes_irtt_10dn_10up_100ms_noloss_pfifo_cluster2_tree3_profile7190_rep1_767e73/capture.pcap",
+  "ok": true
+}
