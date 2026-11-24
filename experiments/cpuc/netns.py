@@ -36,13 +36,16 @@ inside a run. The wrapper lives here; `pramana_helpers` is not modified.
 
 from __future__ import annotations
 
+import os
 import shlex
 import subprocess
 import time
 from pathlib import Path
 from typing import Optional
 
-WORKER_CONTAINER = "substrate-worker"
+# Overridable so a harness can drive a renamed worker instead of the shared
+# one; the default is unchanged.
+WORKER_CONTAINER = os.environ.get("CPUC_WORKER_CONTAINER", "substrate-worker")
 CLIENT_NS = "ns1"
 SERVER_NS = "ns2"
 CLIENT_IFACE = "veth1"  # ns1 side: egress = upload

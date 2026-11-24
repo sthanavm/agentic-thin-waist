@@ -1,0 +1,212 @@
+{
+  "slug": "probes_netvibe_10dn_10up_100ms_noloss_pfifo_cluster12_tree0_profile7029_rep1_01150f",
+  "timestamp_utc": "2026-11-23T01:07:10+00:00",
+  "mode": "netvibe",
+  "ctp_profile": "cluster12_tree0_profile7029",
+  "rep": 1,
+  "condition": "10dn_10up_100ms_noloss_pfifo",
+  "rate_down_mbps": 10.0,
+  "rate_up_mbps": 10.0,
+  "rtt_ms": 100.0,
+  "qdisc": "pfifo",
+  "duration_s": 60,
+  "worker_container": "jenil-fork-worker",
+  "errors": [],
+  "buffer_packets": 1000,
+  "shape": {
+    "status": "shaped",
+    "bottleneck_state": {
+      "download_mbps": 10.0,
+      "upload_mbps": 10.0,
+      "latency_ms": 100.0,
+      "latency_location": "upstream",
+      "qdisc": "pfifo",
+      "verified": false,
+      "buffer_packets": 1000,
+      "qdisc_params": null,
+      "loss_rate_percent": 0.0,
+      "verification_log": [
+        "upload: measured=12.23Mbps expected=10.0Mbps diff=22.3%",
+        "FAIL: upload out of \u00b120% range",
+        "download: measured=8.74Mbps expected=10.0Mbps diff=12.6%",
+        "PASS: download",
+        "latency: measured_rtt=170.50ms expected_rtt=100.00ms diff=70.50ms",
+        "FAIL: latency out of \u00b110.0ms range"
+      ]
+    },
+    "applied_commands": [
+      "tc qdisc del dev veth2 root 2>/dev/null || true",
+      "tc qdisc add dev veth2 root handle 1: htb default 10 r2q 100",
+      "tc class add dev veth2 parent 1: classid 1:10 htb rate 10.0Mbit ceil 10.0Mbit",
+      "tc qdisc add dev veth2 parent 1:10 handle 10: pfifo limit 1000",
+      "tc qdisc del dev veth4 root 2>/dev/null || true",
+      "tc qdisc add dev veth4 root handle 1: htb default 10 r2q 100",
+      "tc class add dev veth4 parent 1: classid 1:10 htb rate 10.0Mbit ceil 10.0Mbit",
+      "tc qdisc add dev veth4 parent 1:10 handle 10: pfifo limit 1000",
+      "tc qdisc del dev eth0 root 2>/dev/null || true",
+      "tc qdisc add dev eth0 root handle 1: htb default 10 r2q 100",
+      "tc class add dev eth0 parent 1: classid 1:10 htb rate 10.0Mbit ceil 10.0Mbit",
+      "tc qdisc add dev eth0 parent 1:10 handle 10: pfifo limit 1000",
+      "ip netns exec ns1 tc qdisc del dev veth1 root 2>/dev/null || true",
+      "ip netns exec ns2 tc qdisc del dev veth3 root 2>/dev/null || true",
+      "ip netns exec ns2 tc qdisc add dev veth3 root netem delay 100.0ms"
+    ]
+  },
+  "congestion": {
+    "current_algorithm": "cubic",
+    "available_algorithms": [
+      "reno",
+      "cubic",
+      "bbr",
+      "bic",
+      "cdg",
+      "highspeed",
+      "htcp",
+      "hybla",
+      "illinois",
+      "nv",
+      "scalable",
+      "vegas",
+      "veno",
+      "westwood",
+      "yeah"
+    ],
+    "status": "ok"
+  },
+  "ctp_replay": {
+    "ctp_profile": "cluster12_tree0_profile7029",
+    "ctp_direction": "download",
+    "ctp_pnat": "169.231.0.0/16:172.16.1.20",
+    "ctp_replay_seconds": 90
+  },
+  "window_epoch": [
+    1795396046.042,
+    1795396106.043
+  ],
+  "netvibe_stop": {
+    "netvibe_id": "aaf69d01-6e77-4a13-b086-d0fa970ab188",
+    "status": "stopped",
+    "server_address": "172.16.2.1",
+    "media_port": 10443,
+    "endpoint_ips": [
+      "172.16.2.1"
+    ],
+    "out_sqlite": "/tmp/netvibe_aaf69d01-6/bench.sqlite",
+    "out_sqlite_bytes": 233472,
+    "records": {
+      "sensors": 1,
+      "probe_sessions": 1,
+      "probe_records": 594
+    },
+    "work_dir": "/tmp/netvibe_aaf69d01-6",
+    "error": null,
+    "transport": "worker_endpoint"
+  },
+  "netvibe": {
+    "probe": "netvibe",
+    "transport": "worker_endpoint",
+    "server_address": "172.16.2.1",
+    "media_port": 10443,
+    "endpoint_ips": [
+      "172.16.2.1"
+    ],
+    "rate_per_second_configured": 10.0,
+    "escalation_configured": false,
+    "error": null,
+    "status": "ok",
+    "sqlite": "experiments/cpuc/results/probes_runs/corpus_10mbps/probes_netvibe_10dn_10up_100ms_noloss_pfifo_cluster12_tree0_profile7029_rep1_01150f/netvibe/bench.sqlite",
+    "delay_basis": "per-direction queueing above each leg's own floor; absolute one-way delay is not recoverable because t2/t3 are on the sensor's time base. Round trip is absolute.",
+    "records": {
+      "total": 594,
+      "ok": 593,
+      "by_status": {
+        "lost_unknown": 1,
+        "ok": 593
+      }
+    },
+    "sessions": [
+      {
+        "probes_sent": 594,
+        "ok": 593,
+        "lost_down": 0,
+        "lost_up": 0,
+        "lost_unknown": 1,
+        "duplicates": 0,
+        "late_echoes": 0,
+        "end_reason": "sensor"
+      }
+    ],
+    "rate_changes": [],
+    "netvibe_commit": "e9e93bec4eb523f0db7815ea31104db6e7934b1b",
+    "netvibe_commit_source": "stamped by bench",
+    "queueing_ms": {
+      "downstream_ns2_to_ns1": {
+        "min": 0.0,
+        "mean": 2.6107,
+        "median": 0.169,
+        "p95": 0.3242,
+        "max": 174.5765
+      },
+      "upstream_ns1_to_ns2": {
+        "min": 0.0,
+        "mean": 0.0562,
+        "median": 0.0555,
+        "p95": 0.083,
+        "max": 0.1338
+      }
+    },
+    "round_trip_ms": {
+      "min": 100.2544,
+      "mean": 102.8894,
+      "median": 100.4507,
+      "p95": 100.6106,
+      "max": 274.8565
+    },
+    "rates_observed": [
+      10.0
+    ],
+    "escalated": false
+  },
+  "attribution_bucket_mb": {
+    "off_link": 7.599,
+    "netvibe": 0.092,
+    "other": 0.0
+  },
+  "probe_path": {
+    "required_interfaces": [
+      "veth2",
+      "veth4"
+    ],
+    "probe_ips": [
+      "172.16.2.1"
+    ],
+    "evidence": {
+      "veth2": {
+        "to_probe": 623,
+        "from_probe": 623,
+        "other": 6676
+      },
+      "veth4": {
+        "to_probe": 623,
+        "from_probe": 623,
+        "other": 6676
+      }
+    },
+    "ok": true,
+    "problems": [],
+    "strict": true
+  },
+  "ctp_observed": {
+    "mbps_window_mean": 0.337,
+    "mbps_window_p95_1s": 1.8277,
+    "bytes_window": 2530707
+  },
+  "bytes_by_class": {
+    "ctp": 7598603,
+    "irtt": 0,
+    "netvibe": 90707,
+    "other": 1479
+  },
+  "pcap": "experiments/cpuc/results/probes_runs/corpus_10mbps/probes_netvibe_10dn_10up_100ms_noloss_pfifo_cluster12_tree0_profile7029_rep1_01150f/capture.pcap",
+  "ok": true
+}

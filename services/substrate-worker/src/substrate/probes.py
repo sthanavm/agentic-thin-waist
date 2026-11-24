@@ -24,6 +24,7 @@ without touching the orchestrator's app sequencing.
 import json
 import os
 import shutil
+import sqlite3
 import subprocess
 import time
 import uuid
@@ -121,8 +122,11 @@ def start_irtt(cfg: IrttRequest) -> IrttResponse:
     # terminates the server. Without it, an orchestrator that dies mid-run
     # would leave a server holding the port, and the next run's bind would
     # fail with an error that looks nothing like the real cause.
+    # `exec`, as for NetVibe: without it terminate() signals only /bin/sh and
+    # the irtt server is orphaned, still bound to the port, so the next
+    # POST /irtt can fail with "irtt server exited immediately" (bind).
     server_cmd = (
-        f"timeout -k 5 {server_max + 60}"
+        f"exec timeout -k 5 {server_max + 60}"
         f" ip netns exec {cfg.server_namespace} {binary} server"
         f" -b {bind} -d {server_max}s -i 1ms --timeout=10s"
     )
@@ -171,7 +175,7 @@ def start_irtt(cfg: IrttRequest) -> IrttResponse:
         )
 
     client_cmd = [
-        f"ip netns exec {cfg.client_namespace} {binary} client",
+        f"exec ip netns exec {cfg.client_namespace} {binary} client",
         f"-i {cfg.interval_ms}ms",
         f"-d {cfg.duration_seconds}s",
         "-Q",
@@ -314,7 +318,7 @@ def register_irtt_routes(app: FastAPI) -> None:
 
 
 class NetvibeRequest(BaseModel):
-    """One NetVibe probe run: bench here, its probe server in ns2, sensor in ns1."""
+    """One NetVibe probe run: bench and its probe server in ns2, sensor in ns1."""
 
     duration_seconds: int = Field(60, ge=1)
     rate_per_second: float = Field(10.0, gt=0, le=10)
@@ -322,10 +326,12 @@ class NetvibeRequest(BaseModel):
         "172.16.2.1", description="ns2's veth3 address; the probe server's media"
     )
     signaling_address: str = Field(
-        "172.16.2.2",
+        "172.16.2.1",
         description=(
-            "Where bench serves the sensor API. Bench runs in the worker's own "
-            "namespace, so this is the root side of veth4, reachable from ns1"
+            "Where bench serves the sensor API. Bench runs inside "
+            "server_namespace (ns2), so this is ns2's veth3 address, which ns1 "
+            "reaches. The root side of veth4 (172.16.2.2) is NOT reachable from "
+            "ns1: a sensor pointed there never registers and records nothing"
         ),
     )
     signaling_port: int = Field(9999, ge=1, le=65535)
@@ -469,8 +475,10 @@ def start_netvibe(cfg: NetvibeRequest) -> NetvibeResponse:
             {
                 "label": "pramana",
                 "media_port": cfg.media_port,
-                # Bench places its own child; this is what the key is for.
-                "netns": cfg.server_namespace,
+                # No `netns` key: bench itself runs inside server_namespace (see
+                # bench_cmd), so its probe server child is already in ns2. This
+                # is how the host fallback runs it, and the only placement where
+                # the sensor in ns1 can reach bench's signaling address.
                 "public_ip": cfg.server_address,
             }
         ],
@@ -483,12 +491,18 @@ def start_netvibe(cfg: NetvibeRequest) -> NetvibeResponse:
     stub_path = os.path.join(work, "stub_api.py")
     with open(stub_path, "w") as fh:
         fh.write(_NETVIBE_STUB_API_SRC)
+    # Every command is `exec`'d so the shell is replaced by the process itself.
+    # Without it, Popen.terminate() signals only `/bin/sh`, and bench keeps
+    # running orphaned: it never shuts down cleanly, never checkpoints its WAL,
+    # and the file read at DELETE time is incomplete. `timeout` forwards the
+    # SIGTERM to its child and `ip netns exec` execs the command it runs.
     stub_cmd = (
-        f"ip netns exec {cfg.server_namespace} python3 {stub_path}"
+        f"exec ip netns exec {cfg.server_namespace} python3 {stub_path}"
         f" {cfg.server_address} {cfg.stub_api_port}"
     )
     bench_cmd = (
-        f"timeout -k 5 {cfg.duration_seconds + 180} {bench_bin}" f" --config {cfg_path}"
+        f"exec timeout -k 5 {cfg.duration_seconds + 180}"
+        f" ip netns exec {cfg.server_namespace} {bench_bin} --config {cfg_path}"
     )
     try:
         stub_proc = subprocess.Popen(
@@ -517,8 +531,10 @@ def start_netvibe(cfg: NetvibeRequest) -> NetvibeResponse:
                     f"{out.decode(errors='replace')[-400:]}"
                 ),
             )
+        # Asked from inside server_namespace, where bench runs: the worker's
+        # root namespace cannot reach ns2's veth3 address either.
         probe_resp = subprocess.run(
-            f"curl -s -m 3 {ready_url}",
+            f"ip netns exec {cfg.server_namespace} curl -s -m 3 {ready_url}",
             shell=True,
             capture_output=True,
             timeout=15,
@@ -538,7 +554,7 @@ def start_netvibe(cfg: NetvibeRequest) -> NetvibeResponse:
         )
 
     sensor_cmd = (
-        f"timeout -k 5 {cfg.duration_seconds + 120}"
+        f"exec timeout -k 5 {cfg.duration_seconds + 120}"
         f" ip netns exec {cfg.client_namespace} {cli_bin} test"
         f" --signaling-host http://{cfg.signaling_address}"
         f" --signaling-port {cfg.signaling_port}"
@@ -571,9 +587,9 @@ def start_netvibe(cfg: NetvibeRequest) -> NetvibeResponse:
         "start_time": datetime.utcnow().isoformat(),
         "request": cfg.model_dump(),
     }
-    # Both addresses are the probe's: media on ns2's veth3, the sensor API on
-    # the root side of veth4. Registering both keeps either out of the app's
-    # per-app pcap and out of the shared-cap sum.
+    # Media and the sensor API are both the probe's (by default both on ns2's
+    # veth3). Registering them keeps either out of the app's per-app pcap and
+    # out of the shared-cap sum.
     endpoints = sorted({cfg.server_address, cfg.signaling_address})
     return NetvibeResponse(
         netvibe_id=netvibe_id,
@@ -606,6 +622,23 @@ def get_netvibe(netvibe_id: str) -> NetvibeStatusResponse:
     )
 
 
+def _netvibe_db_summary(path: str) -> dict:
+    """Fold bench's WAL into the main file and count what it recorded.
+
+    Called after bench has exited. The counts, not the HTTP status, are what
+    say whether the probe measured anything.
+    """
+    conn = sqlite3.connect(path)
+    try:
+        conn.execute("PRAGMA wal_checkpoint(TRUNCATE)")
+        return {
+            t: conn.execute(f'SELECT COUNT(*) FROM "{t}"').fetchone()[0]
+            for t in ("sensors", "probe_sessions", "probe_records")
+        }
+    finally:
+        conn.close()
+
+
 def delete_netvibe(netvibe_id: str):
     """Stop the probe and say where its records are.
 
@@ -632,10 +665,27 @@ def delete_netvibe(netvibe_id: str):
     out = session["out_sqlite"]
     error = None
     size = None
+    records = None
     if os.path.exists(out):
-        size = os.path.getsize(out)
-        if size == 0:
+        if os.path.getsize(out) == 0:
             error = f"bench wrote an empty file at {out}"
+            size = 0
+        else:
+            try:
+                records = _netvibe_db_summary(out)
+            except sqlite3.Error as exc:
+                error = f"bench file at {out} is not readable as SQLite: {exc}"
+            # Main file plus any WAL left behind: bench writes in WAL mode, and
+            # the main file alone reads ~4 KB while the records sit in the WAL.
+            size = sum(
+                os.path.getsize(p) for p in (out, out + "-wal") if os.path.exists(p)
+            )
+            if records is not None and records["probe_records"] == 0:
+                error = (
+                    f"bench recorded no probes (sensors={records['sensors']}, "
+                    f"probe_sessions={records['probe_sessions']}): the sensor "
+                    f"never reached bench"
+                )
     else:
         error = f"bench wrote no file at {out}"
 
@@ -652,6 +702,7 @@ def delete_netvibe(netvibe_id: str):
         # and is not JSON.
         "out_sqlite": out,
         "out_sqlite_bytes": size,
+        "records": records,
         "work_dir": session["work"],
         "request": session["request"],
         "error": error,
