@@ -1,0 +1,11 @@
+ctp_profile,same_file_sha256,ours_10mbps_cut_ctp_mbps,ours_sthanav_files_ctp_mbps,his_vimeo_run_ctp_mbps_in_capture,his_vimeo_run_capture_s,his_vimeo_run_non_ctp_down_mbps,his_shaper_avg_mbps
+cluster7_tree0_profile8904,yes,0.104,0.104,0.085,76,6.351,6.41
+cluster16_tree0_profile2604,yes,0.168,0.168,0.242,76,6.014,5.863
+cluster10_tree0_profile8224,yes,0.302,0.301,0.308,76,5.269,5.315
+cluster12_tree0_profile7029,yes,0.337,0.337,0.711,77,4.018,4.064
+cluster24_tree0_profile4703,yes,0.556,0.556,1.963,76,3.930,3.36
+cluster22_tree0_profile4506,yes,0.669,0.669,0.445,76,4.935,4.958
+cluster2_tree3_profile7190,yes,1.792,1.792,1.929,74,4.539,4.569
+cluster88_tree8_profile126,not in 10mbps set,,2.980,3.879,76,3.974,4.014
+cluster0_tree0_profile1307,yes,3.250,3.250,3.233,78,3.595,2.988
+cluster68_tree2_profile6239,yes,4.393,4.393,6.588,76,1.842,1.851
