@@ -108,7 +108,7 @@
     "escalation_configured": false,
     "error": null,
     "status": "ok",
-    "sqlite": "experiments/cpuc/results/probes_runs/corpus/probes_netvibe_10dn_10up_100ms_noloss_pfifo_noctp_rep1_a25726/netvibe/bench.sqlite",
+    "sqlite": "experiments/cpuc/results/probes_runs/corpus_10mbps/probes_netvibe_10dn_10up_100ms_noloss_pfifo_noctp_rep1_a25726/netvibe/bench.sqlite",
     "delay_basis": "per-direction queueing above each leg's own floor; absolute one-way delay is not recoverable because t2/t3 are on the sensor's time base. Round trip is absolute.",
     "records": {
       "total": 594,
@@ -201,6 +201,6 @@
     "netvibe": 90707,
     "other": 1479
   },
-  "pcap": "experiments/cpuc/results/probes_runs/corpus/probes_netvibe_10dn_10up_100ms_noloss_pfifo_noctp_rep1_a25726/capture.pcap",
+  "pcap": "experiments/cpuc/results/probes_runs/corpus_10mbps/probes_netvibe_10dn_10up_100ms_noloss_pfifo_noctp_rep1_a25726/capture.pcap",
   "ok": true
 }

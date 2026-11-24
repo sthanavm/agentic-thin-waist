@@ -141,6 +141,6 @@
     "netvibe": 0,
     "other": 0
   },
-  "pcap": "experiments/cpuc/results/probes_runs/corpus/probes_irtt_10dn_10up_100ms_noloss_pfifo_noctp_rep1_d3c6f2/capture.pcap",
+  "pcap": "experiments/cpuc/results/probes_runs/corpus_10mbps/probes_irtt_10dn_10up_100ms_noloss_pfifo_noctp_rep1_d3c6f2/capture.pcap",
   "ok": true
 }
