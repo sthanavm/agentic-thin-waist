@@ -1,63 +1,87 @@
 # Probe-only worker
 
 `probes_only.py` runs IRTT and NetVibe against its own renamed copy of the
-substrate worker, never the shared `substrate-worker`. `probes_worker.sh` builds
-that copy and starts it as `jenil-fork-worker`: network `jenil-fork-net`, port
-`127.0.0.1:18202 -> 8002`, CTP profiles mounted read-only at `/ctpsrc`.
+substrate worker, never the shared `substrate-worker`. `probes_worker.sh`
+builds that copy and runs it, on this machine or on any server you can SSH to.
 
-## 1. Build the image
-
-From a checkout of this branch (it has the irtt pin and the NetVibe fix):
-
-```bash
-experiments/cpuc/probes_worker.sh build --netvibe <source>
+```
+experiments/cpuc/probes_worker.sh [--host H] [--name N] [--port P] [--image I] <command>
 ```
 
-`<source>` is either:
+| option | default | meaning |
+|---|---|---|
+| `--host` | this machine | SSH destination: an alias from `~/.ssh/config`, or `user@host` |
+| `--name` | `jenil-fork-worker` | container name; the network is the same name with `-worker` swapped for `-net` |
+| `--port` | `18202` | host port, bound to 127.0.0.1, mapped to the worker's 8002 |
+| `--image` | `jenil-fork-substrate-worker:netvibe` | image tag to build or run |
 
-- a git URL you can already read on this host, for example
-  `git@github.com:SNL-UCSB/netvibe.git`. The NetVibe repo is private, so this
-  needs your own access.
-- a path to a NetVibe clone on this host. If you don't have repo access, ask
-  for a copy of someone's clone; it must contain the commit pinned in the
-  Dockerfile (`NETVIBE_COMMIT`).
+Use a different `--name` and `--port` for each worker that shares a host.
 
-If the source can't be read, the script stops before building and says why.
+## Commands
 
-The build takes several minutes. It runs in its own temporary buildx builder,
-because the default Docker builder on vm4 fails on a damaged snapshot. The
-builder is removed when the script exits, whether the build succeeds or not.
-NetVibe is mirrored on the host and served to the build over loopback, so no
-credentials go into the image or its build args.
+**`check`** is read-only. It reports whether the host can build and run a
+worker: Docker access without sudo, buildx, git and git daemon, curl, free
+disk, and whether the name and port are free.
 
-## 2. Start the worker
+**`build --netvibe <src>`** builds the image. `<src>` is either a NetVibe git
+URL you can read, such as `git@github.com:SNL-UCSB/netvibe.git`, or a path to
+a NetVibe clone. The NetVibe repo is private. Without access, ask someone for
+a copy of their clone; it must contain the commit pinned in the Dockerfile
+(`NETVIBE_COMMIT`). If the source can't be read, the script stops before
+building and says why.
+
+The build takes several minutes and needs about 25 GB free for Docker. It
+runs in its own temporary buildx builder, which is removed afterwards; vm4's
+default builder fails on a damaged snapshot. NetVibe is served to the build
+over loopback, so no credentials go into the image.
+
+**`up --ctp-dir <dir>`** starts the worker with `<dir>/*.pcap` mounted
+read-only at `/ctpsrc`, waits for `/health`, and prints the exports
+`probes_only.py` needs.
+
+**`status`** shows the worker's state and health. **`down`** removes the
+worker and its network.
+
+## With `--host`
+
+`--netvibe` and `--ctp-dir` are paths on **your** machine. The script copies
+what the server needs into `~/probes-worker/` there:
+
+- `build` fetches NetVibe on your machine with your own access, then copies
+  the repo's code (no results) to `repo/` and the NetVibe mirror to
+  `netvibe.git/`. The server never needs access to the private repo.
+- `up` copies the profile pcaps to `<name>/ctp/`.
+- `check`, `status` and `down` copy nothing.
+
+The server needs Docker (usable without sudo), buildx, git with
+`git daemon`, curl and rsync. The script installs nothing; run `check` first.
+
+## Example: two workers on one server
 
 ```bash
-experiments/cpuc/probes_worker.sh up --ctp-dir /path/to/profiles
+W=experiments/cpuc/probes_worker.sh
+$W --host snl6 check
+$W --host snl6 build --netvibe git@github.com:SNL-UCSB/netvibe.git
+$W --host snl6 --name probes-a-worker --port 18203 up --ctp-dir experiments/cpuc/results/vimeo_ctp_profiles_used
+$W --host snl6 --name probes-b-worker --port 18204 up --ctp-dir experiments/cpuc/results/vimeo_ctp_profiles_used
+$W --host snl6 --name probes-a-worker --port 18203 status
 ```
 
-`--ctp-dir` is a directory of `<profile>.pcap` files, for example #29's
-`experiments/cpuc/results/vimeo_ctp_profiles_used`. The script waits until
-`/health` answers, then prints the exports `probes_only.py` needs.
-
-## 3. Run
+Then on the server, from `~/probes-worker/repo`:
 
 ```bash
-export CPUC_WORKER_CONTAINER=jenil-fork-worker
-export PRAMANA_SUBSTRATE_URL=http://127.0.0.1:18202
+export CPUC_WORKER_CONTAINER=probes-a-worker
+export PRAMANA_SUBSTRATE_URL=http://127.0.0.1:18203
 python3 experiments/cpuc/probes_only.py --mode irtt \
-    --ctp-profile cluster68_tree2_profile6239 \
-    --ctp-dir /path/to/profiles
+    --ctp-profile cluster68_tree2_profile6239 --ctp-dir ~/probes-worker/probes-a-worker/ctp
 ```
 
 `--mode` is `irtt`, `netvibe` or `both`. Leave out `--ctp-profile` for a
-no-CTP baseline. `probes_only.py` refuses to run against `substrate-worker`.
+no-CTP baseline.
 
-## 4. Stop
+## Safety
 
-```bash
-experiments/cpuc/probes_worker.sh down
-```
-
-This removes `jenil-fork-worker` and `jenil-fork-net`. It doesn't touch the
-image, any other container, or the Docker daemon.
+The script labels everything it creates. `down` and `status` refuse to touch a
+container or network without that label, so the shared `substrate-worker`
+and other people's containers are safe even if you pass their name. It
+never restarts Docker and never prunes.
